@@ -1,0 +1,14 @@
+node_modules
+.next
+postgres_data
+.git
+.env
+Dockerfile
+docker-compose.yml
+README.md
+task.md
+walkthrough.md
+implementation_plan.md
+AGENTS.md
+CLAUDE.md
+prisma/migrations

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: contador-db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: contador
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  app:
+    image: contador-app
+    container_name: contador-app
+    ports:
+      - "3030:3030"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/contador
+      NEXT_PUBLIC_PORT: 3030
+      BASIC_AUTH_USER: admin
+      BASIC_AUTH_PASSWORD: securepassword
+    depends_on:
+      - db

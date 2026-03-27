@@ -1,0 +1,52 @@
+import { NextResponse } from "next/server";
+import { encrypt } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import bcrypt from "bcryptjs";
+
+export async function POST(request: Request) {
+  try {
+    const { email, password } = await request.json();
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { organizations: true }
+    });
+
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return NextResponse.json({ error: "Неверный логин или пароль" }, { status: 401 });
+    }
+
+    if (user.organizations.length === 0) {
+       return NextResponse.json({ error: "Нет доступных организаций" }, { status: 403 });
+    }
+
+    // Default to the first organization for now
+    const organizationId = user.organizations[0].id;
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const session = await encrypt({ 
+      user: { id: user.id, email: user.email }, 
+      organizationId,
+      expires 
+    });
+
+    const response = NextResponse.json({ success: true, user: { name: user.name } });
+    
+    response.cookies.set("session", session, { 
+      expires, 
+      httpOnly: true,
+      secure: false
+    });
+
+    // Also set organizationId cookie for frontend state
+    response.cookies.set("organizationId", organizationId, {
+      expires,
+      httpOnly: false,
+      secure: false
+    });
+
+    return response;
+  } catch (error) {
+    console.error("Login error:", error);
+    return NextResponse.json({ error: "Ошибка сервера" }, { status: 500 });
+  }
+}

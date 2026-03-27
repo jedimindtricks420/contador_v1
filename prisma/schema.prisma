@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  ACTIVE
+  PASSIVE
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password_hash String
+  name          String?
+  organizations Organization[]
+  createdAt     DateTime       @default(now())
+}
+
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  inn         String?
+  user_id     String
+  user        User     @relation(fields: [user_id], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  accounts       Account[]
+  counterparties Counterparty[]
+  transactions   Transaction[]
+  settings       SystemSettings[]
+}
+
+model Account {
+  id              String        @id @default(uuid())
+  code            String
+  name            String
+  type            AccountType
+  organization_id String
+  organization    Organization  @relation(fields: [organization_id], references: [id])
+
+  transactions_dr Transaction[] @relation("DebitAccount")
+  transactions_cr Transaction[] @relation("CreditAccount")
+
+  @@unique([code, organization_id])
+}
+
+model Counterparty {
+  id              String        @id @default(uuid())
+  name            String
+  inn             String?
+  organization_id String
+  organization    Organization  @relation(fields: [organization_id], references: [id])
+
+  transactions Transaction[]
+}
+
+model Transaction {
+  id              String       @id @default(uuid())
+  date            DateTime
+  period          String       // Format: MM.YYYY (for reporting)
+  description     String
+  amount          Decimal      @db.Decimal(20, 2)
+  debit_id        String
+  credit_id       String
+  counterparty_id String?
+  organization_id String
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  is_deleted      Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+
+  debit        Account       @relation("DebitAccount", fields: [debit_id], references: [id])
+  credit       Account       @relation("CreditAccount", fields: [credit_id], references: [id])
+  counterparty Counterparty? @relation(fields: [counterparty_id], references: [id])
+
+  @@index([date])
+  @@index([period])
+  @@index([debit_id])
+  @@index([credit_id])
+  @@index([counterparty_id])
+  @@index([organization_id])
+}
+
+model SystemSettings {
+  id                 String       @id @default(uuid())
+  closed_period_date DateTime
+  organization_id    String       @unique
+  organization       Organization @relation(fields: [organization_id], references: [id])
+}
