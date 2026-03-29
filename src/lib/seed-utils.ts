@@ -3,6 +3,7 @@ import { PrismaClient, AccountType } from '@prisma/client'
 const prisma = new PrismaClient()
 
 export const defaultAccounts = [
+  { code: '0000', name: 'Вспомогательный (ввод начальных остатков)', type: AccountType.ACTIVE_PASSIVE },
   { code: '0100', name: 'СЧЕТА УЧЁТА ОСНОВНЫХ СРЕДСТВ', type: AccountType.ACTIVE },
   { code: '0110', name: 'Земля', type: AccountType.ACTIVE },
   { code: '0111', name: 'Благоустройство земли', type: AccountType.ACTIVE },
