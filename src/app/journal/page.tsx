@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Plus, Trash2, Loader2, ArrowRightLeft } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Account {
   id: string;
@@ -115,31 +116,21 @@ export default function JournalPage() {
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Дебет</label>
-            <select
+            <SearchableSelect
+              options={accounts || []}
               value={formData.debit_id}
-              onChange={(e) => setFormData({ ...formData, debit_id: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
-              required
-            >
-              <option value="">Счет...</option>
-              {accounts?.map((acc) => (
-                <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setFormData({ ...formData, debit_id: val })}
+              placeholder="Счет..."
+            />
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Кредит</label>
-            <select
+            <SearchableSelect
+              options={accounts || []}
               value={formData.credit_id}
-              onChange={(e) => setFormData({ ...formData, credit_id: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
-              required
-            >
-              <option value="">Счет...</option>
-              {accounts?.map((acc) => (
-                <option key={acc.id} value={acc.id}>{acc.code} - {acc.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setFormData({ ...formData, credit_id: val })}
+              placeholder="Счет..."
+            />
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Сумма</label>
@@ -154,16 +145,12 @@ export default function JournalPage() {
           </div>
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Контрагент</label>
-            <select
+            <SearchableSelect
+              options={counterparties || []}
               value={formData.counterparty_id}
-              onChange={(e) => setFormData({ ...formData, counterparty_id: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
-            >
-              <option value="">—</option>
-              {counterparties?.map((cp) => (
-                <option key={cp.id} value={cp.id}>{cp.name}</option>
-              ))}
-            </select>
+              onChange={(val) => setFormData({ ...formData, counterparty_id: val })}
+              placeholder="—"
+            />
           </div>
           <div className="space-y-1 md:col-span-2">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Описание</label>
