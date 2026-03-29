@@ -7,7 +7,18 @@ interface Option {
   id: string;
   code?: string;
   name: string;
+  type?: string; 
 }
+
+const TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  ACTIVE: { label: "Активный", color: "text-blue-500 bg-blue-50" },
+  CONTRA_ACTIVE: { label: "Контрактивный", color: "text-blue-700 bg-blue-100" },
+  PASSIVE: { label: "Пассивный", color: "text-amber-600 bg-amber-50" },
+  CONTRA_PASSIVE: { label: "Контрпассивный", color: "text-amber-700 bg-amber-100" },
+  TRANSIT: { label: "Транзитный", color: "text-purple-600 bg-purple-50" },
+  OFF_BALANCE: { label: "Забалансовый", color: "text-emerald-600 bg-emerald-50" },
+  ACTIVE_PASSIVE: { label: "Акт.-Пасс.", color: "text-gray-600 bg-gray-50" },
+};
 
 interface SearchableSelectProps {
   options: Option[];
@@ -22,7 +33,7 @@ export default function SearchableSelect({ options, value, onChange, placeholder
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const selectedOption = useMemo(() => options.find((opt) => opt.id === value), [options, value]);
+  const selectedOption = useMemo(() => options.find((opt: Option) => opt.id === value), [options, value]);
 
   // Sync search input with selected option when not open
   useEffect(() => {
@@ -37,13 +48,11 @@ export default function SearchableSelect({ options, value, onChange, placeholder
   }, [selectedOption, isOpen]);
 
   const filteredOptions = useMemo(() => {
-    // If typing but it precisely matches current code, still show list?
-    // Let's allow typing to filter.
     if (!search || (selectedOption && search === (selectedOption.code || selectedOption.name))) {
         return options;
     }
     const s = search.toLowerCase();
-    return options.filter(opt => 
+    return options.filter((opt: Option) => 
       opt.name.toLowerCase().includes(s) || 
       (opt.code && opt.code.toLowerCase().includes(s))
     );
@@ -93,10 +102,15 @@ export default function SearchableSelect({ options, value, onChange, placeholder
 
       {/* Selected Name Subtitle (Only shown when closed and an option with code was chosen) */}
       {!isOpen && selectedOption && selectedOption.code && (
-        <div className="mt-1 px-1">
-          <p className="text-[11px] text-gray-400 font-medium leading-tight">
+        <div className="mt-1 px-1 flex items-center justify-between">
+          <p className="text-[11px] text-gray-400 font-medium leading-tight truncate">
             {selectedOption.name}
           </p>
+          {selectedOption.type && TYPE_LABELS[selectedOption.type] && (
+            <span className={`text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded ml-2 whitespace-nowrap ${TYPE_LABELS[selectedOption.type].color}`}>
+              {TYPE_LABELS[selectedOption.type].label}
+            </span>
+          )}
         </div>
       )}
 
@@ -106,24 +120,31 @@ export default function SearchableSelect({ options, value, onChange, placeholder
             filteredOptions.map((opt) => (
               <div
                 key={opt.id}
-                onMouseDown={(e) => {
+                onMouseDown={(e: React.MouseEvent) => {
                   e.preventDefault();
                   onChange(opt.id);
                   setIsOpen(false);
                 }}
-                className={`px-4 py-2.5 cursor-pointer hover:bg-black group transition-colors flex flex-col border-b border-gray-50 last:border-0 ${
+                className={`px-4 py-2.5 cursor-pointer hover:bg-gray-50 group transition-colors flex flex-col border-b border-gray-100 last:border-0 ${
                   value === opt.id ? "bg-gray-50" : ""
                 }`}
               >
-                {opt.code && (
-                    <span className={`text-[14px] font-semibold leading-tight group-hover:text-white ${
-                        value === opt.id ? "text-black" : "text-gray-900"
-                    }`}>
-                        {opt.code}
+                <div className="flex items-center justify-between">
+                  {opt.code && (
+                      <span className={`text-[14px] font-semibold leading-tight ${
+                          value === opt.id ? "text-black" : "text-gray-900"
+                      }`}>
+                          {opt.code}
+                      </span>
+                  )}
+                  {opt.type && TYPE_LABELS[opt.type] && (
+                    <span className={`text-[9px] font-bold uppercase tracking-tight px-2 py-0.5 rounded ${TYPE_LABELS[opt.type].color}`}>
+                      {TYPE_LABELS[opt.type].label}
                     </span>
-                )}
-                <span className={`text-[13px] font-normal leading-snug break-words group-hover:text-gray-300 ${
-                    value === opt.id ? "text-gray-500" : "text-gray-500"
+                  )}
+                </div>
+                <span className={`text-[13px] font-normal leading-snug break-words mt-1 ${
+                    value === opt.id ? "text-black" : "text-gray-500"
                 }`}>
                     {opt.name}
                 </span>

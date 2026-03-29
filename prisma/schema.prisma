@@ -9,7 +9,11 @@ datasource db {
 
 enum AccountType {
   ACTIVE
+  CONTRA_ACTIVE
   PASSIVE
+  CONTRA_PASSIVE
+  TRANSIT
+  OFF_BALANCE
   ACTIVE_PASSIVE
 }
 

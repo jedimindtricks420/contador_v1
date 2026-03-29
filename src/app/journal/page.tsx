@@ -9,6 +9,7 @@ interface Account {
   id: string;
   code: string;
   name: string;
+  type?: string;
 }
 
 interface Counterparty {
@@ -189,7 +190,7 @@ export default function JournalPage() {
             <SearchableSelect
               options={accounts || []}
               value={formData.debit_id}
-              onChange={(val) => setFormData({ ...formData, debit_id: val })}
+              onChange={(val: string) => setFormData({ ...formData, debit_id: val })}
               placeholder="Счет..."
             />
           </div>
@@ -198,7 +199,7 @@ export default function JournalPage() {
             <SearchableSelect
               options={accounts || []}
               value={formData.credit_id}
-              onChange={(val) => setFormData({ ...formData, credit_id: val })}
+              onChange={(val: string) => setFormData({ ...formData, credit_id: val })}
               placeholder="Счет..."
             />
           </div>
@@ -218,7 +219,7 @@ export default function JournalPage() {
             <SearchableSelect
               options={counterparties || []}
               value={formData.counterparty_id}
-              onChange={(val) => setFormData({ ...formData, counterparty_id: val })}
+              onChange={(val: string) => setFormData({ ...formData, counterparty_id: val })}
               placeholder="—"
             />
           </div>
