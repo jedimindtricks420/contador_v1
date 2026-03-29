@@ -15,7 +15,7 @@
   - `createdAt`: DateTime
 - **Связи (ForeignKey):**
   - Добавить `organization_id` в модели: `Transaction`, `Counterparty`, `Account`, `SystemSettings`.
-  - Удалить глобальные настройки и сделать их уникальными для каждого `organization_id`.
+  - Удалить глобальные настройки. Теперь `SystemSettings` (включая дату закрытия периода, дату ввода остатков и флаг фиксации) уникальны для каждой организации.
 
 ### 2.2. Уровень доступа (Multi-tenancy)
 - Каждое API-запрос должен автоматически фильтровать данные по `active_organization_id`.
