@@ -22,15 +22,23 @@ export async function POST(request: Request) {
     
     if (!name) return NextResponse.json({ error: 'Name required' }, { status: 400 })
 
-    const organization = await prisma.organization.create({
-      data: {
-        name,
-        inn,
-        user_id: user.id
-      },
-    })
+    const result = await prisma.$transaction(async (tx) => {
+      const organization = await tx.organization.create({
+        data: {
+          name,
+          inn,
+          user_id: user.id
+        },
+      });
 
-    return NextResponse.json(organization)
+      // Seed default accounts and settings for the new organization
+      const { seedDefaultDataForOrg } = await import('@/lib/seed-utils');
+      await seedDefaultDataForOrg(organization.id);
+
+      return organization;
+    });
+
+    return NextResponse.json(result)
   } catch (error: any) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
