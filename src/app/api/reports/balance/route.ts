@@ -8,7 +8,7 @@ export async function GET() {
     const orgId = await getActiveOrganizationId();
     
     const accounts = await prisma.account.findMany({
-        where: { organization_id: orgId },
+        where: { organization_id: orgId, code: { not: '0000' } },
     })
 
     const getBalance = async (codes: string[]) => {

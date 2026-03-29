@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { Plus, Trash2, Loader2, ArrowRightLeft } from "lucide-react";
+import { Plus, Trash2, Loader2, ArrowRightLeft, Lock as LockIcon } from "lucide-react";
 import SearchableSelect from "@/components/SearchableSelect";
 
 interface Account {
@@ -43,6 +43,12 @@ export default function JournalPage() {
   const { data: accounts } = useQuery<Account[]>({
     queryKey: ["accounts"],
     queryFn: () => fetch("/api/accounts").then((res) => res.json()),
+  });
+
+  const { data: obStatus } = useQuery({
+    queryKey: ["opening-balance"],
+    queryFn: () => fetch("/api/reports/opening-balance").then((res) => res.json()),
+    refetchInterval: 3000, // Refresh every 3 seconds for real-time feedback
   });
 
   const { data: counterparties } = useQuery<Counterparty[]>({
@@ -92,7 +98,71 @@ export default function JournalPage() {
         <h2 className="text-xl font-bold text-gray-900">Журнал операций</h2>
       </header>
 
-      <div className="bg-white border border-gray-200 p-6 rounded shadow-sm">
+      {/* Opening Balance Status Widget */}
+      {obStatus && (obStatus.debit > 0 || obStatus.credit > 0) && (
+        <div className="bg-white border-2 border-dashed border-gray-100 p-6 rounded-lg mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
+          <div className="space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${Math.abs(obStatus.difference) < 0.01 ? 'bg-green-500' : 'bg-amber-500'}`} />
+              <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b-2 border-black inline-block pb-0.5">
+                Баланс ввода остатков (0000)
+              </h3>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Дебет (Σ)</p>
+                <p className="text-sm font-bold tabular-nums">{obStatus.debit?.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Кредит (Σ)</p>
+                <p className="text-sm font-bold tabular-nums">{obStatus.credit?.toLocaleString()}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Разница</p>
+                <div className="flex items-center space-x-2">
+                  <p className={`text-sm font-bold tabular-nums ${Math.abs(obStatus.difference) < 0.01 ? 'text-green-600' : 'text-amber-600'}`}>
+                    {obStatus.difference?.toLocaleString()}
+                  </p>
+                  {Math.abs(obStatus.difference) < 0.01 ? (
+                    <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded font-bold uppercase tracking-tighter">✅ Баланс ок</span>
+                  ) : (
+                    <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-bold uppercase tracking-tighter">⚠️ Не сбалансировано</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            {Math.abs(obStatus.difference) < 0.01 && !obStatus.isFixed && (
+              <button
+                onClick={() => {
+                   if (confirm('Это заблокирует редактирование остатков. Продолжить?')) {
+                     fetch('/api/settings', {
+                       method: 'POST',
+                       headers: { 'Content-Type': 'application/json' },
+                       body: JSON.stringify({ is_initial_balance_fixed: true })
+                     }).then(() => queryClient.invalidateQueries({ queryKey: ['opening-balance', 'settings'] }));
+                   }
+                }}
+                className="bg-black text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded hover:opacity-80 transition-opacity"
+              >
+                Зафиксировать остатки
+              </button>
+            )}
+            {obStatus.isFixed && (
+               <div className="bg-gray-100 text-gray-500 text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded flex items-center space-x-2">
+                 <LockIcon size={12} />
+                 <span>Остатки подтверждены</span>
+               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Форма ввода */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Дата</label>

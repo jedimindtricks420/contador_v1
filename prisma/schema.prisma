@@ -88,8 +88,10 @@ model Transaction {
 }
 
 model SystemSettings {
-  id                 String       @id @default(uuid())
-  closed_period_date DateTime
-  organization_id    String       @unique
-  organization       Organization @relation(fields: [organization_id], references: [id])
+  id                      String       @id @default(uuid())
+  closed_period_date      DateTime
+  opening_balance_date    DateTime     @default("2025-01-01T00:00:00Z")
+  is_initial_balance_fixed Boolean      @default(false)
+  organization_id         String       @unique
+  organization            Organization @relation(fields: [organization_id], references: [id])
 }

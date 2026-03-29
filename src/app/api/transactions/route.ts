@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma'
 import { getActiveOrganizationId } from '@/lib/context'
 import { z } from 'zod'
 import Decimal from 'decimal.js'
+import { validateTransaction } from '@/lib/accounting-logic'
 
 const transactionSchema = z.object({
   date: z.string(),
@@ -50,13 +51,23 @@ export async function POST(request: Request) {
     const body = await request.json()
     const validated = transactionSchema.parse(body)
 
-    // Check closed period
     const settings = await prisma.systemSettings.findUnique({
       where: { organization_id: organizationId }
     })
-    
+
     if (settings && new Date(validated.date) <= settings.closed_period_date) {
       return NextResponse.json({ error: 'Период закрыт для редактирования' }, { status: 400 })
+    }
+
+    try {
+      await validateTransaction({
+        date: new Date(validated.date),
+        debit_id: validated.debit_id,
+        credit_id: validated.credit_id,
+        organization_id: organizationId
+      });
+    } catch (err: any) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
     const result = await prisma.$transaction(async (tx) => {
