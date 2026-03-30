@@ -2,8 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
-import { Plus, Trash2, Loader2, ArrowRightLeft, Lock as LockIcon } from "lucide-react";
+import { Plus, Trash2, Loader2, ArrowRightLeft, Lock as LockIcon, Bot } from "lucide-react";
 import SearchableSelect from "@/components/SearchableSelect";
+import AIChat from "@/components/AIChat";
 
 interface Account {
   id: string;
@@ -93,9 +94,11 @@ export default function JournalPage() {
     addTransaction.mutate(formData);
   };
 
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
   return (
-    <div className="space-y-8">
-      <header>
+    <div className="space-y-8 relative min-h-screen">
+      <header className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-gray-900">Журнал операций</h2>
       </header>
 
@@ -290,6 +293,8 @@ export default function JournalPage() {
           </tbody>
         </table>
       </div>
+
+      <AIChat isOpen={isChatOpen} setIsOpen={setIsChatOpen} />
     </div>
   );
 }
