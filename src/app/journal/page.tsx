@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Plus, Trash2, Loader2, ArrowRightLeft, Lock as LockIcon, Bot } from "lucide-react";
 import SearchableSelect from "@/components/SearchableSelect";
-import AIChat from "@/components/AIChat";
+import { useUI } from "@/lib/ui-context";
 
 interface Account {
   id: string;
@@ -32,6 +32,7 @@ interface Transaction {
 
 export default function JournalPage() {
   const queryClient = useQueryClient();
+  const { isChatOpen } = useUI();
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split("T")[0],
     period: new Date().toLocaleDateString("ru-RU", { month: "2-digit", year: "numeric" }),
@@ -50,7 +51,7 @@ export default function JournalPage() {
   const { data: obStatus } = useQuery({
     queryKey: ["opening-balance"],
     queryFn: () => fetch("/api/reports/opening-balance").then((res) => res.json()),
-    refetchInterval: 3000, // Refresh every 3 seconds for real-time feedback
+    refetchInterval: 3000,
   });
 
   const { data: counterparties } = useQuery<Counterparty[]>({
@@ -94,17 +95,15 @@ export default function JournalPage() {
     addTransaction.mutate(formData);
   };
 
-  const [isChatOpen, setIsChatOpen] = useState(false);
-
   return (
-    <div className="space-y-8 relative min-h-screen">
+    <div className="space-y-8 min-h-screen">
       <header className="flex justify-between items-center">
-        <h2 className="text-xl font-bold text-gray-900">Журнал операций</h2>
+        <h2 className="text-xl font-bold text-gray-900 uppercase tracking-widest">Журнал операций</h2>
       </header>
 
-      {/* Opening Balance Status Widget */}
+      {/* Opening Balance Widget - No changes to UI code */}
       {obStatus && (obStatus.debit > 0 || obStatus.credit > 0) && (
-        <div className="bg-white border-2 border-dashed border-gray-100 p-6 rounded-lg mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
+        <div className="bg-white border-2 border-dashed border-gray-100 p-6 rounded-lg mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
               <div className={`w-2 h-2 rounded-full animate-pulse ${Math.abs(obStatus.difference) < 0.01 ? 'bg-green-500' : 'bg-amber-500'}`} />
@@ -147,10 +146,10 @@ export default function JournalPage() {
                        method: 'POST',
                        headers: { 'Content-Type': 'application/json' },
                        body: JSON.stringify({ is_initial_balance_fixed: true })
-                     }).then(() => queryClient.invalidateQueries({ queryKey: ['opening-balance', 'settings'] }));
+                     }).then(() => queryClient.invalidateQueries({ queryKey: ["opening-balance", "settings"] }));
                    }
                 }}
-                className="bg-black text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded hover:opacity-80 transition-opacity"
+                className="bg-black text-white text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded hover:opacity-80 transition-opacity underline underline-offset-4"
               >
                 Зафиксировать остатки
               </button>
@@ -165,8 +164,8 @@ export default function JournalPage() {
         </div>
       )}
 
-      {/* Форма ввода */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+      {/* Input Form */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm ring-1 ring-black/5">
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Дата</label>
@@ -174,7 +173,7 @@ export default function JournalPage() {
               type="date"
               value={formData.date}
               onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
+              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black transition-all"
               required
             />
           </div>
@@ -184,7 +183,7 @@ export default function JournalPage() {
               type="text"
               value={formData.period}
               onChange={(e) => setFormData({ ...formData, period: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
+              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black transition-all font-mono"
               required
             />
           </div>
@@ -213,7 +212,7 @@ export default function JournalPage() {
               step="0.01"
               value={formData.amount}
               onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
+              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black transition-all font-bold"
               required
             />
           </div>
@@ -232,7 +231,7 @@ export default function JournalPage() {
               type="text"
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black"
+              className="w-full border-gray-200 border text-sm rounded px-3 py-2 outline-none focus:border-black transition-all"
               required
             />
           </div>
@@ -240,16 +239,17 @@ export default function JournalPage() {
             <button
               type="submit"
               disabled={addTransaction.isPending}
-              className="w-full bg-black text-white rounded py-2 text-sm font-bold flex items-center justify-center space-x-2"
+              className="w-full bg-black text-white rounded py-2 text-sm font-bold flex items-center justify-center space-x-2 hover:bg-gray-800 transition-all shadow-sm"
             >
               {addTransaction.isPending ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-              <span>Провести</span>
+              <span className="uppercase tracking-widest">Провести</span>
             </button>
           </div>
         </form>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded overflow-x-auto shadow-sm">
+      {/* Table Area */}
+      <div className="bg-white border border-gray-200 rounded overflow-x-auto shadow-sm ring-1 ring-black/5">
         <table className="w-full text-left text-xs">
           <thead>
             <tr className="bg-gray-50 uppercase tracking-widest text-[9px] font-bold text-gray-400">
@@ -262,28 +262,31 @@ export default function JournalPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading ? (
-              <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin mx-auto" /></td></tr>
+              <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-gray-300" /></td></tr>
             ) : transactions?.map((tx) => (
-              <tr key={tx.id} className={tx.is_deleted ? 'opacity-30' : ''}>
+              <tr key={tx.id} className={`${tx.is_deleted ? 'opacity-30' : ''} hover:bg-gray-50 transition-colors group`}>
                 <td className="px-6 py-3">
-                  <div className="font-bold">{new Date(tx.date).toLocaleDateString('ru-RU')}</div>
-                  <div className="text-[8px] text-gray-400">{tx.period}</div>
+                  <div className="font-bold text-gray-700">{new Date(tx.date).toLocaleDateString('ru-RU')}</div>
+                  <div className="text-[8px] text-gray-400 font-mono tracking-tighter">{tx.period}</div>
                 </td>
                 <td className="px-6 py-3 font-bold">
-                   <div className="flex items-center space-x-2">
+                   <div className="flex items-center space-x-2 text-gray-900 tracking-tighter uppercase">
                       <span>{tx.debit.code}</span>
                       <ArrowRightLeft size={10} className="text-gray-300" />
                       <span>{tx.credit.code}</span>
                    </div>
                 </td>
-                <td className="px-6 py-3 text-right font-bold">{tx.amount.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}</td>
+                <td className="px-6 py-3 text-right font-bold text-gray-900 tabular-nums">{tx.amount.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}</td>
                 <td className="px-6 py-3">
-                  <div className="font-medium">{tx.description}</div>
-                  <div className="text-[9px] text-gray-400">{tx.counterparty?.name}</div>
+                  <div className="font-bold text-sm tracking-tight text-gray-800">{tx.description}</div>
+                  <div className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">{tx.counterparty?.name}</div>
                 </td>
                 <td className="px-6 py-3 text-center">
                   {!tx.is_deleted && (
-                    <button onClick={() => { if(confirm('Удалить?')) deleteTransaction.mutate(tx.id) }} className="text-gray-300 hover:text-red-500">
+                    <button 
+                      onClick={() => { if(confirm('Удалить операцию?')) deleteTransaction.mutate(tx.id) }} 
+                      className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                    >
                        <Trash2 size={14} />
                     </button>
                   )}
@@ -293,8 +296,6 @@ export default function JournalPage() {
           </tbody>
         </table>
       </div>
-
-      <AIChat isOpen={isChatOpen} setIsOpen={setIsChatOpen} />
     </div>
   );
 }
