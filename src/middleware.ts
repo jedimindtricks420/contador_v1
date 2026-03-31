@@ -2,23 +2,31 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { decrypt } from './lib/auth'
 
-const publicRoutes = ['/login', '/api/auth/login']
+const publicRoutes = [
+  '/login',
+  '/register',
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/templates',
+]
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Check if route is public
-  if (publicRoutes.includes(pathname)) {
+  if (publicRoutes.some(route => pathname === route || pathname.startsWith(route + '/'))) {
     return NextResponse.next()
   }
+
+  // Onboarding routes are semi-public (need session but no org)
+  const isOnboarding = pathname.startsWith('/onboarding') || pathname.startsWith('/api/onboarding')
 
   // Get session
   const session = request.cookies.get('session')?.value
 
   if (!session) {
-    // Redirect to login
     if (pathname.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     return NextResponse.redirect(new URL('/login', request.url))
   }
@@ -28,19 +36,11 @@ export async function middleware(request: NextRequest) {
     const expires = new Date(parsed.expires)
 
     if (expires < new Date()) {
-       throw new Error('Expired')
+      throw new Error('Expired')
     }
 
-    // Success - proceed
-    const response = NextResponse.next()
-    
-    // Inject organization context if needed? 
-    // Actually, we'll read it from the cookie/session in the API routes.
-    
-    return response
-
+    return NextResponse.next()
   } catch (error) {
-    // Session invalid or expired
     const response = NextResponse.redirect(new URL('/login', request.url))
     response.cookies.delete('session')
     response.cookies.delete('organizationId')
@@ -50,12 +50,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 }

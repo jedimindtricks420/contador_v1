@@ -10,7 +10,8 @@ import {
   FileText, 
   Users, 
   Settings2,
-  LogOut
+  LogOut,
+  ListTree
 } from "lucide-react";
 import { OrgSwitcher } from "../OrgSwitcher";
 
@@ -21,6 +22,7 @@ const menuItems = [
   { name: "Баланс", href: "/balance", icon: Scale },
   { name: "ОФР", href: "/pnl", icon: FileText },
   { name: "Контрагенты", href: "/counterparties", icon: Users },
+  { name: "Счета", href: "/settings/accounts", icon: ListTree },
   { name: "Справочники", href: "/settings", icon: Settings2 },
 ];
 

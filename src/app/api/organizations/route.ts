@@ -4,12 +4,25 @@ import { getUser } from '@/lib/context'
 
 export async function GET() {
   try {
-    const user = await getUser();
-    const organizations = await prisma.organization.findMany({
-      where: { user_id: user.id },
-      orderBy: { name: 'asc' },
+    const { id: userId } = await getUser()
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { active_org_id: true }
     })
-    return NextResponse.json(organizations)
+
+    const organizations = await prisma.organization.findMany({
+      where: { user_id: userId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, name: true, inn: true, onboarding_state: true }
+    })
+
+    const result = organizations.map(org => ({
+      ...org,
+      is_active: org.id === user?.active_org_id,
+    }))
+
+    return NextResponse.json(result)
   } catch (error: any) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -17,29 +30,31 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await getUser();
+    const { id: userId } = await getUser()
     const { name, inn } = await request.json()
-    
-    if (!name) return NextResponse.json({ error: 'Name required' }, { status: 400 })
+
+    if (!name?.trim()) {
+      return NextResponse.json({ error: 'Название организации обязательно' }, { status: 400 })
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const organization = await tx.organization.create({
         data: {
-          name,
-          inn,
-          user_id: user.id
+          name: name.trim(),
+          inn: inn?.trim() || null,
+          user_id: userId,
+          onboarding_state: 'COMPLETED',
         },
-      });
+      })
 
-      // Seed default accounts and settings for the new organization
-      const { seedDefaultDataForOrg } = await import('@/lib/seed-utils');
-      await seedDefaultDataForOrg(organization.id);
+      const { seedDefaultDataForOrg } = await import('@/lib/seed-utils')
+      await seedDefaultDataForOrg(organization.id)
 
-      return organization;
-    });
+      return organization
+    })
 
     return NextResponse.json(result)
   } catch (error: any) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 })
   }
 }

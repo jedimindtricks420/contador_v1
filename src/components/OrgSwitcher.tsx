@@ -3,9 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Building2, ChevronDown, Plus, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export function OrgSwitcher() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -14,42 +16,19 @@ export function OrgSwitcher() {
     queryFn: () => fetch("/api/organizations").then((res) => res.json()),
   });
 
-  // Get active org from cookies (or better, a specialized API, but for MVP we use a helper)
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const id = document.cookie
-      .split("; ")
-      .find((row) => row.startsWith("organizationId="))
-      ?.split("=")[1];
-    setActiveId(id || null);
-  }, []);
-
-  const activeOrg = organizations?.find((o: any) => o.id === activeId);
+  const activeOrg = organizations?.find((o: any) => o.is_active);
 
   const switchMutation = useMutation({
-    mutationFn: (id: string) =>
+    mutationFn: (org_id: string) =>
       fetch("/api/auth/switch-org", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: id }),
+        body: JSON.stringify({ org_id }),
       }).then((res) => res.json()),
     onSuccess: () => {
-      window.location.reload(); // Hard reload to clear all react-query states and refetch with new org context
+      window.location.reload();
     },
   });
-
-  const createOrgMutation = useMutation({
-    mutationFn: (name: string) =>
-        fetch("/api/organizations", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name }),
-        }).then((res) => res.json()),
-    onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["organizations"] });
-    }
-  })
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -73,11 +52,11 @@ export function OrgSwitcher() {
             <Building2 size={16} strokeWidth={1.5} />
           </div>
           <div className="text-left overflow-hidden">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1 text-ellipsis overflow-hidden">Организация</p>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Организация</p>
             <p className="text-xs font-bold text-gray-900 truncate">{activeOrg?.name || "Загрузка..."}</p>
           </div>
         </div>
-        <ChevronDown size={14} className={`text-gray-400 group-hover:text-black transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`text-gray-400 group-hover:text-black transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
       {isOpen && (
@@ -89,27 +68,30 @@ export function OrgSwitcher() {
             {organizations?.map((org: any) => (
               <button
                 key={org.id}
-                onClick={() => switchMutation.mutate(org.id)}
-                disabled={org.id === activeId || switchMutation.isPending}
+                onClick={() => {
+                  if (!org.is_active) switchMutation.mutate(org.id);
+                  setIsOpen(false);
+                }}
+                disabled={org.is_active || switchMutation.isPending}
                 className={`w-full text-left px-4 py-3 text-xs font-medium flex items-center justify-between transition-colors
-                  ${org.id === activeId ? 'bg-black text-white' : 'hover:bg-gray-50 text-gray-700'}`}
+                  ${org.is_active ? "bg-black text-white" : "hover:bg-gray-50 text-gray-700"}`}
               >
                 <span className="truncate">{org.name}</span>
-                {org.id === activeId && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                {org.is_active && <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
               </button>
             ))}
           </div>
           <div className="p-2 border-t border-gray-100">
-             <button 
-                onClick={() => {
-                    const name = prompt("Введите название новой организации:");
-                    if (name) createOrgMutation.mutate(name);
-                }}
-                className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black hover:bg-gray-50 rounded transition-all"
-             >
-                {createOrgMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                <span>Добавить компанию</span>
-             </button>
+            <button
+              onClick={() => {
+                setIsOpen(false);
+                router.push("/onboarding/step-1?new=true");
+              }}
+              className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black hover:bg-gray-50 rounded transition-all"
+            >
+              <Plus size={12} />
+              <span>Добавить компанию</span>
+            </button>
           </div>
         </div>
       )}

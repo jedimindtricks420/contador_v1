@@ -1,36 +1,44 @@
 import { NextResponse } from 'next/server'
-import { encrypt, getSession } from '@/lib/auth'
+import prisma from '@/lib/prisma'
+import { getUser } from '@/lib/context'
 
 export async function POST(request: Request) {
   try {
-    const { organizationId } = await request.json()
-    const session = await getSession()
+    const { id: userId } = await getUser()
     
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Support both old (organizationId) and new (org_id) field names
+    const body = await request.json()
+    const orgId = body.org_id || body.organizationId
 
-    // Update session with new organizationId
-    const expires = new Date(session.expires)
-    const newSession = await encrypt({ 
-      ...session,
-      organizationId,
+    if (!orgId) {
+      return NextResponse.json({ error: 'org_id обязателен' }, { status: 400 })
+    }
+
+    // Verify org belongs to this user
+    const org = await prisma.organization.findFirst({
+      where: { id: orgId, user_id: userId }
     })
 
-    const response = NextResponse.json({ success: true })
-    
-    response.cookies.set("session", newSession, { 
-      expires, 
-      httpOnly: true,
-      secure: false
-    });
+    if (!org) {
+      return NextResponse.json({ error: 'Организация не найдена или нет доступа' }, { status: 403 })
+    }
 
-    response.cookies.set("organizationId", organizationId, {
-      expires,
+    // Update active_org_id in DB — no JWT reissue needed
+    await prisma.user.update({
+      where: { id: userId },
+      data: { active_org_id: orgId }
+    })
+
+    // Update the readable cookie for frontend state
+    const response = NextResponse.json({ success: true })
+    response.cookies.set('organizationId', orgId, {
+      expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
       httpOnly: false,
-      secure: false
-    });
+      secure: false,
+    })
 
     return response
   } catch (error: any) {
-    return NextResponse.json({ error: 'Error switching organization' }, { status: 500 })
+    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 })
   }
 }
