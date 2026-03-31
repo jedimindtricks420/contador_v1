@@ -33,8 +33,32 @@ async function main() {
   })
   console.log(`Organization created: ${org.name}`)
 
-  // 3. Seed Accounts and Settings using shared utility
-  const { seedDefaultDataForOrg } = await import('../src/lib/seed-utils');
+  // 3. Seed MasterAccounts from shared utility
+  const { defaultAccounts, seedDefaultDataForOrg } = await import('../src/lib/seed-utils');
+  console.log('Seeding MasterAccounts...');
+  for (const acc of defaultAccounts) {
+    await prisma.masterAccount.upsert({
+      where: { code: acc.code },
+      update: { name: acc.name, type: acc.type },
+      create: {
+        code: acc.code,
+        name: acc.name,
+        type: acc.type,
+        description: "",
+        section: "",
+        is_system: acc.code === '0000' || acc.code === '9910'
+      }
+    });
+  }
+
+  // 4. Update User's active_org_id
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { active_org_id: org.id }
+  });
+  console.log(`Updated user ${user.email} with active_org_id: ${org.id}`);
+
+  // 5. Seed Accounts and Settings for the organization
   await seedDefaultDataForOrg(org.id);
 
   console.log('Seeding finished successfully.')

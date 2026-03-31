@@ -348,6 +348,10 @@ export const defaultAccounts = [
 export async function seedDefaultDataForOrg(organizationId: string) {
   // 1. Seed Accounts
   for (const account of defaultAccounts) {
+    const masterAccount = await prisma.masterAccount.findUnique({
+      where: { code: account.code }
+    });
+
     await prisma.account.upsert({
       where: { 
         code_organization_id: {
@@ -355,10 +359,15 @@ export async function seedDefaultDataForOrg(organizationId: string) {
           organization_id: organizationId
         }
       },
-      update: { name: account.name, type: account.type },
+      update: { 
+        name: account.name, 
+        type: account.type,
+        master_account_id: masterAccount?.id || null 
+      },
       create: {
         ...account,
-        organization_id: organizationId
+        organization_id: organizationId,
+        master_account_id: masterAccount?.id || null
       },
     })
   }

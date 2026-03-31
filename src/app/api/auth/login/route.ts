@@ -22,6 +22,15 @@ export async function POST(request: Request) {
 
     // Default to the first organization for now
     const organizationId = user.organizations[0].id;
+
+    // Update active_org_id in DB if it's not set or different
+    if (user.active_org_id !== organizationId) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { active_org_id: organizationId }
+      });
+    }
+
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const session = await encrypt({ 
       user: { id: user.id, email: user.email }, 

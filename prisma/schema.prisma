@@ -7,16 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum AccountType {
-  ACTIVE
-  CONTRA_ACTIVE
-  PASSIVE
-  CONTRA_PASSIVE
-  TRANSIT
-  OFF_BALANCE
-  ACTIVE_PASSIVE
-}
-
 model User {
   id            String         @id @default(uuid())
   email         String         @unique
@@ -24,33 +14,41 @@ model User {
   name          String?
   organizations Organization[]
   createdAt     DateTime       @default(now())
+  active_org_id String?
 }
 
 model Organization {
-  id          String   @id @default(uuid())
-  name        String
-  inn         String?
-  user_id     String
-  user        User     @relation(fields: [user_id], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  accounts       Account[]
-  counterparties Counterparty[]
-  transactions   Transaction[]
-  settings       SystemSettings[]
+  id               String          @id @default(uuid())
+  name             String
+  inn              String?
+  user_id          String
+  user             User            @relation(fields: [user_id], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  accounts         Account[]
+  counterparties   Counterparty[]
+  transactions     Transaction[]
+  settings         SystemSettings[]
+  template_id      String?
+  onboarding_state OnboardingState @default(COMPLETED)
+  onboarding_step  Int             @default(1)
+  ai_description   String?
+  template         IndustryTemplate? @relation(fields: [template_id], references: [id])
 }
 
 model Account {
-  id              String        @id @default(uuid())
-  code            String
-  name            String
-  type            AccountType
-  organization_id String
-  organization    Organization  @relation(fields: [organization_id], references: [id])
-
-  transactions_dr Transaction[] @relation("DebitAccount")
-  transactions_cr Transaction[] @relation("CreditAccount")
+  id                String        @id @default(uuid())
+  code              String
+  name              String
+  type              AccountType
+  organization_id   String
+  organization      Organization  @relation(fields: [organization_id], references: [id])
+  transactions_dr   Transaction[] @relation("DebitAccount")
+  transactions_cr   Transaction[] @relation("CreditAccount")
+  master_account_id String?
+  is_active         Boolean       @default(true)
+  is_custom         Boolean       @default(false)
+  master_account    MasterAccount? @relation(fields: [master_account_id], references: [id])
 
   @@unique([code, organization_id])
 }
@@ -61,14 +59,13 @@ model Counterparty {
   inn             String?
   organization_id String
   organization    Organization  @relation(fields: [organization_id], references: [id])
-
-  transactions Transaction[]
+  transactions    Transaction[]
 }
 
 model Transaction {
   id              String       @id @default(uuid())
   date            DateTime
-  period          String       // Format: MM.YYYY (for reporting)
+  period          String // Format: MM.YYYY (for reporting)
   description     String
   amount          Decimal      @db.Decimal(20, 2)
   debit_id        String
@@ -78,10 +75,9 @@ model Transaction {
   organization    Organization @relation(fields: [organization_id], references: [id])
   is_deleted      Boolean      @default(false)
   createdAt       DateTime     @default(now())
-
-  debit        Account       @relation("DebitAccount", fields: [debit_id], references: [id])
-  credit       Account       @relation("CreditAccount", fields: [credit_id], references: [id])
-  counterparty Counterparty? @relation(fields: [counterparty_id], references: [id])
+  debit           Account      @relation("DebitAccount", fields: [debit_id], references: [id])
+  credit          Account      @relation("CreditAccount", fields: [credit_id], references: [id])
+  counterparty    Counterparty? @relation(fields: [counterparty_id], references: [id])
 
   @@index([date])
   @@index([period])
@@ -92,10 +88,102 @@ model Transaction {
 }
 
 model SystemSettings {
-  id                      String       @id @default(uuid())
-  closed_period_date      DateTime
-  opening_balance_date    DateTime     @default("2025-01-01T00:00:00Z")
+  id                       String       @id @default(uuid())
+  closed_period_date       DateTime
+  opening_balance_date     DateTime     @default("2025-01-01T00:00:00Z")
   is_initial_balance_fixed Boolean      @default(false)
-  organization_id         String       @unique
-  organization            Organization @relation(fields: [organization_id], references: [id])
+  organization_id          String       @unique
+  organization             Organization @relation(fields: [organization_id], references: [id])
+}
+
+model MasterAccount {
+  id          String               @id @default(uuid())
+  code        String               @unique
+  name        String
+  type        AccountType
+  description String?
+  section     String?
+  is_system   Boolean              @default(false)
+  sort_order  Int                  @default(0)
+  template_items IndustryTemplateItem[]
+  accounts    Account[]
+}
+
+model IndustryTemplate {
+  id          String                 @id @default(uuid())
+  key         String                 @unique
+  name        String
+  description String?
+  is_active   Boolean                @default(true)
+  sort_order  Int                    @default(0)
+  items       IndustryTemplateItem[]
+  organizations Organization[]
+}
+
+model IndustryTemplateItem {
+  id                String           @id @default(uuid())
+  template_id       String
+  master_account_id String
+  is_required       Boolean          @default(false)
+  template          IndustryTemplate @relation(fields: [template_id], references: [id])
+  master_account    MasterAccount    @relation(fields: [master_account_id], references: [id])
+
+  @@unique([template_id, master_account_id])
+}
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  organization_id String
+  user_id         String
+  action          String
+  entity_type     String?
+  entity_id       String?
+  payload         Json?
+  ip_address      String?
+  created_at      DateTime @default(now())
+
+  @@index([organization_id])
+  @@index([created_at])
+}
+
+model ChatMessage {
+  id              String   @id @default(uuid())
+  organization_id String
+  user_id         String
+  role            String
+  content         String
+  tokens_used     Int?
+  created_at      DateTime @default(now())
+
+  @@index([organization_id])
+  @@index([created_at])
+}
+
+model AiUsage {
+  id              String   @id @default(uuid())
+  organization_id String
+  user_id         String
+  feature         String
+  tokens_input    Int
+  tokens_output   Int
+  cost_usd        Decimal  @db.Decimal(10, 6)
+  created_at      DateTime @default(now())
+
+  @@index([organization_id, created_at])
+}
+
+enum OnboardingState {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AccountType {
+  ACTIVE
+  CONTRA_ACTIVE
+  PASSIVE
+  CONTRA_PASSIVE
+  TRANSIT
+  OFF_BALANCE
+  ACTIVE_PASSIVE
 }
