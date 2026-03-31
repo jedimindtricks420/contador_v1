@@ -4,11 +4,11 @@ import { getActiveOrganizationId } from '@/lib/context'
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> } // Params is now a Promise in Next.js 15+
 ) {
   try {
     const orgId = await getActiveOrganizationId()
-    const { id } = params
+    const { id } = await context.params // Await the params
 
     // 1. Verify account belongs to this org
     const account = await prisma.account.findFirst({

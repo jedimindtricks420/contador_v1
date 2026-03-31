@@ -2,16 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  BookText, 
-  TableProperties, 
-  Scale, 
-  FileText, 
-  Users, 
+import {
+  LayoutDashboard,
+  BookText,
+  TableProperties,
+  Scale,
+  FileText,
+  Users,
   Settings2,
   LogOut,
-  ListTree
+  ListTree,
+  Building2
 } from "lucide-react";
 import { OrgSwitcher } from "../OrgSwitcher";
 
@@ -22,8 +23,9 @@ const menuItems = [
   { name: "Баланс", href: "/balance", icon: Scale },
   { name: "ОФР", href: "/pnl", icon: FileText },
   { name: "Контрагенты", href: "/counterparties", icon: Users },
+  { name: "Мои компании", href: "/settings/organizations", icon: Building2 },
   { name: "Счета", href: "/settings/accounts", icon: ListTree },
-  { name: "Справочники", href: "/settings", icon: Settings2 },
+  { name: "Система", href: "/settings", icon: Settings2 },
 ];
 
 export default function Sidebar() {
@@ -32,23 +34,22 @@ export default function Sidebar() {
   return (
     <div className="w-64 h-screen bg-[#F9FAFB] border-r border-[#E5E7EB] flex flex-col fixed left-0 top-0">
       <div className="p-6 border-b border-[#E5E7EB]">
-        <h1 className="text-sm font-bold tracking-tight text-[#111827]">GORGEOUS PARTNERS</h1>
+        <h1 className="text-sm font-bold tracking-tight text-[#111827]">CONTADOR</h1>
       </div>
-      
+
       <nav className="flex-1 p-4 space-y-1">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
-          
+
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded transition-colors ${
-                isActive 
-                  ? "bg-white text-black shadow-sm" 
+              className={`flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded transition-colors ${isActive
+                  ? "bg-white text-black shadow-sm"
                   : "text-gray-500 hover:text-black hover:bg-gray-100"
-              }`}
+                }`}
             >
               <Icon size={18} strokeWidth={1.5} />
               <span>{item.name}</span>
@@ -56,15 +57,15 @@ export default function Sidebar() {
           );
         })}
       </nav>
-      
+
       <div className="p-4 border-t border-[#E5E7EB] space-y-4">
         <OrgSwitcher />
-        
+
         <button
           onClick={async () => {
-            if(confirm("Вы действительно хотите выйти?")) {
-                await fetch("/api/auth/logout", { method: "POST" });
-                window.location.href = "/login";
+            if (confirm("Вы действительно хотите выйти?")) {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.href = "/login";
             }
           }}
           className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-gray-400 hover:text-red-500 hover:bg-red-50/50 rounded transition-all"
