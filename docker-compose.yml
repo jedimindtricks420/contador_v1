@@ -25,5 +25,6 @@ services:
       NEXT_PUBLIC_PORT: 3030
       BASIC_AUTH_USER: admin
       BASIC_AUTH_PASSWORD: securepassword
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       - db

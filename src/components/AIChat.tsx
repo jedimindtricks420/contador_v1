@@ -217,7 +217,7 @@ export default function AIChat() {
                             <p className="font-mono text-sm font-bold text-gray-900">{msg.action.data.debit.code}</p>
                             <p className="text-[10px] text-gray-500 truncate">{msg.action.data.debit.name}</p>
                           </div>
-                          {msg.action.data.debit.is_missing && <Plus size={12} className="text-blue-500 flex-shrink-0 mt-1" title="Будет активирован автоматически" />}
+                          {msg.action.data.debit.is_missing && <Plus size={12} className="text-blue-500 flex-shrink-0 mt-1" />}
                         </div>
                       </div>
                       
@@ -229,7 +229,7 @@ export default function AIChat() {
                             <p className="font-mono text-sm font-bold text-gray-900">{msg.action.data.credit.code}</p>
                             <p className="text-[10px] text-gray-500 truncate">{msg.action.data.credit.name}</p>
                           </div>
-                          {msg.action.data.credit.is_missing && <Plus size={12} className="text-blue-500 flex-shrink-0 mt-1" title="Будет активирован автоматически" />}
+                          {msg.action.data.credit.is_missing && <Plus size={12} className="text-blue-500 flex-shrink-0 mt-1" />}
                         </div>
                       </div>
                     </div>

@@ -5,8 +5,6 @@ import { getJournalSystemPrompt } from "@/../ai/prompts";
 import { NextResponse } from "next/server";
 import { Decimal } from "decimal.js";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 // Тарифы GPT-4o (на 1M токенов): $2.50 input, $10.00 output
 const COST_INPUT_PER_TOKEN = 0.0000025;
 const COST_OUTPUT_PER_TOKEN = 0.0000100;
@@ -16,6 +14,12 @@ export async function POST(req: Request) {
     const organizationId = await getActiveOrganizationId(); 
     const user = await getUser();
     const { message, history } = await req.json();
+
+    // Инициализация OpenAI внутри обработчика, чтобы не ломать сборку (Build Stage)
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "dummy" });
+    if (!process.env.OPENAI_API_KEY) {
+       console.warn("OPENAI_API_KEY is missing in the environment");
+    }
 
     // 1. Сбор контекста (Счета и Настройки)
     const [accounts, settings] = await Promise.all([
