@@ -90,7 +90,7 @@ export default function OnboardingStep1() {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-100 p-3 rounded text-red-600 text-[10px] font-bold uppercase tracking-widest">
+            <div className="bg-red-50 border border-red-100 p-4 rounded text-red-600 text-[11px] font-bold leading-normal">
               {error}
             </div>
           )}

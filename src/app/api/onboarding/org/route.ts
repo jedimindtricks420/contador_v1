@@ -21,8 +21,7 @@ export async function POST(request: Request) {
     
     if (hasFreePlan && user?.organizations.length! >= 1) {
       return NextResponse.json({ 
-        error: 'LIMIT_REACHED', 
-        message: 'Лимит организаций для бесплатного тарифа (1) исчерпан. Перейдите на PRO для создания неограниченного количества компаний.' 
+        error: 'Достигнут лимит: Бесплатный тариф позволяет создать только одну организацию. Для управления несколькими компаниями обновите подписку до PRO.'
       }, { status: 403 })
     }
 
