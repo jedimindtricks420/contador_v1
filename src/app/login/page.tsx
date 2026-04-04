@@ -38,11 +38,11 @@ export default function LoginPage() {
     <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-[400px] space-y-8">
         <header className="text-center space-y-2">
-          <div className="w-12 h-12 bg-black rounded-lg mx-auto flex items-center justify-center text-white mb-6">
-            <ShieldCheck size={28} strokeWidth={1.5} />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-black uppercase">GORGEOUS PARTNERS</h1>
-          <p className="text-sm text-gray-500 font-medium">Accounting System & Management MVP</p>
+          <img 
+            src="/contador text logo.svg" 
+            alt="Contador" 
+            className="h-12 w-auto mx-auto mb-8"
+          />
         </header>
 
         <form onSubmit={handleLogin} className="space-y-6">

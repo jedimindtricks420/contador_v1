@@ -4,8 +4,11 @@ import { Providers } from "@/components/Providers";
 import { ClientLayout } from "@/components/Layout/ClientLayout";
 
 export const metadata: Metadata = {
-  title: "GORGEOUS PARTNERS | Accounting",
+  title: "CONTADOR | Accounting",
   description: "IT Service Company Financial Management",
+  icons: {
+    icon: "/contador icon.svg",
+  },
 };
 
 export default function RootLayout({

@@ -33,7 +33,11 @@ export default function Sidebar() {
   return (
     <div className="w-64 h-screen bg-[#F9FAFB] border-r border-[#E5E7EB] flex flex-col fixed left-0 top-0">
       <div className="p-6 border-b border-[#E5E7EB]">
-        <h1 className="text-sm font-bold tracking-tight text-[#111827]">CONTADOR</h1>
+        <img
+          src="/contador text logo.svg"
+          alt="Contador"
+          className="h-8 w-auto"
+        />
       </div>
       
       <nav className="flex-1 p-4 space-y-1">
