@@ -18,6 +18,7 @@ services:
     build: .
     image: contador-app
     container_name: contador-app
+    restart: always
     ports:
       - "3030:3030"
     environment:
@@ -26,5 +27,21 @@ services:
       BASIC_AUTH_USER: admin
       BASIC_AUTH_PASSWORD: securepassword
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      - db
+
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    image: contador-admin
+    container_name: contador-admin
+    restart: always
+    ports:
+      - "3031:3031"
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/contador
+      ADMIN_PORT: 3031
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:
       - db

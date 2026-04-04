@@ -1,0 +1,17 @@
+FROM node:20-alpine
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+# Явно устанавливаем Express и его типы для admin-сервера
+RUN npm install express @types/express
+
+COPY prisma ./prisma
+RUN npx prisma generate
+
+COPY admin ./admin
+COPY tsconfig.json ./
+
+EXPOSE 3031
+CMD ["npx", "tsx", "admin/server.ts"]

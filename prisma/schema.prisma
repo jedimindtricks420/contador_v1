@@ -34,6 +34,7 @@ model Organization {
   onboarding_step  Int             @default(1)
   ai_description   String?
   template         IndustryTemplate? @relation(fields: [template_id], references: [id])
+  subscription     Subscription?
 }
 
 model Account {
@@ -186,4 +187,56 @@ enum AccountType {
   TRANSIT
   OFF_BALANCE
   ACTIVE_PASSIVE
+}
+
+model Subscription {
+  id              String       @id @default(uuid())
+  organization_id String       @unique
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  
+  plan            PlanType     @default(FREE)
+  valid_until     DateTime?    // Null for FREE, specific date for PRO
+  
+  custom_api_key  String?
+  
+  updated_at      DateTime     @updatedAt
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  organization_id String
+  amount          Decimal       @db.Decimal(20, 2)
+  provider        PaymentProvider 
+  external_id     String?
+  status          PaymentStatus @default(PENDING)
+  created_at      DateTime      @default(now())
+
+  @@index([organization_id])
+}
+
+model Voucher {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  days_granted    Int       @default(30)
+  is_used         Boolean   @default(false)
+  used_by_org_id  String?   
+  activated_at    DateTime?
+  created_at      DateTime  @default(now())
+}
+
+enum PlanType {
+  FREE
+  PRO
+}
+
+enum PaymentProvider {
+  PAYME
+  CLICK
+  VOUCHER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }

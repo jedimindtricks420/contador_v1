@@ -19,6 +19,12 @@ export async function POST(request: Request) {
           user_id: userId,
           onboarding_state: 'IN_PROGRESS',
           onboarding_step: 2,
+          // Автоматически создаём FREE подписку при регистрации организации
+          subscription: {
+            create: {
+              plan: 'FREE'
+            }
+          }
         }
       })
 
