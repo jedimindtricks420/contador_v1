@@ -84,6 +84,7 @@ export async function POST(req: Request) {
 
     const closedDate = settings?.closed_period_date || new Date("2000-01-01");
 
+    const startTime = Date.now();
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -93,6 +94,7 @@ export async function POST(req: Request) {
       ],
       response_format: { type: "json_object" }
     });
+    const durationMs = Date.now() - startTime;
 
     const aiResponseContent = response.choices[0].message.content || "{}";
     const usage = response.usage;
@@ -128,7 +130,8 @@ export async function POST(req: Request) {
             feature: "JournalChat",
             tokens_input: usage.prompt_tokens,
             tokens_output: usage.completion_tokens,
-            cost_usd: totalCost
+            cost_usd: totalCost,
+            duration_ms: durationMs
           }
         });
       }

@@ -35,22 +35,49 @@ app.use(adminAuth);
 // DASHBOARD — сводная статистика
 // ─────────────────────────────────────────────
 app.get("/api/dashboard", async (_req: Request, res: Response) => {
-  const [userCount, orgCount, totalPayments, aiTransactions] = await Promise.all([
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  
+  const [userCount, orgCount, totalPayments, aiTransactions, avgLatency] = await Promise.all([
     prisma.user.count(),
     prisma.organization.count(),
     prisma.payment.aggregate({
       where: { status: "SUCCESS" },
       _sum: { amount: true }
     }),
-    prisma.aiUsage.count()
+    prisma.aiUsage.count(),
+    (prisma.aiUsage.aggregate({
+      where: { created_at: { gte: yesterday }, duration_ms: { not: null } },
+      _avg: { duration_ms: true }
+    }) as any)
   ]);
 
   res.json({
     users: userCount,
     organizations: orgCount,
-    total_payments_usd: totalPayments._sum.amount || 0,
-    ai_transactions: aiTransactions
+    total_payments_usd: Number(totalPayments._sum.amount || 0),
+    ai_transactions: aiTransactions,
+    avg_latency_ms: (avgLatency as any)?._avg?.duration_ms || 0
   });
+});
+
+// МОДУЛЬ «ВОРОНКА КОНВЕРСИИ»
+app.get("/api/admin/analytics/funnel", async (_req: Request, res: Response) => {
+  const [totalUsers, orgUsers, activeOrgs, proSubscriptions] = await Promise.all([
+    prisma.user.count(),
+    prisma.organization.groupBy({ by: ['user_id'] }).then(res => res.length),
+    prisma.transaction.groupBy({ 
+      by: ['organization_id'],
+      where: { is_deleted: false }
+    }).then(res => res.length),
+    prisma.subscription.count({ where: { plan: 'PRO' } })
+  ]);
+
+  res.json([
+    { label: 'Регистрация', count: totalUsers },
+    { label: 'Создание организации', count: orgUsers },
+    { label: 'Первая проводка', count: activeOrgs },
+    { label: 'Оплата PRO', count: proSubscriptions }
+  ]);
 });
 
 // ─────────────────────────────────────────────
@@ -64,12 +91,28 @@ app.get("/api/users", async (req: Request, res: Response) => {
       : {},
     include: {
       organizations: {
-        include: { subscription: true }
+        include: { 
+          subscription: true,
+          transactions: { where: { is_deleted: false }, take: 1, orderBy: { createdAt: 'desc' } }
+        }
       }
     },
     take: 50
   });
-  res.json(users);
+
+  // Добавляем инфо о последнем платеже для каждой организации
+  const enrichedUsers = await Promise.all(users.map(async (u) => {
+    const orgsWithPayments = await Promise.all(u.organizations.map(async (o) => {
+      const lastPayment = await prisma.payment.findFirst({
+        where: { organization_id: o.id, status: 'SUCCESS' },
+        orderBy: { created_at: 'desc' }
+      });
+      return { ...o, lastPayment };
+    }));
+    return { ...u, organizations: orgsWithPayments };
+  }));
+
+  res.json(enrichedUsers);
 });
 
 // Апгрейд подписки
@@ -170,7 +213,13 @@ app.get("/api/payments", async (_req: Request, res: Response) => {
     orderBy: { created_at: "desc" },
     take: 100
   });
-  res.json(payments);
+
+  const enriched = await Promise.all(payments.map(async (p) => {
+    const org = await prisma.organization.findUnique({ where: { id: p.organization_id }, select: { name: true } });
+    return { ...p, org_name: org?.name || "Unknown" };
+  }));
+
+  res.json(enriched);
 });
 
 // ─────────────────────────────────────────────

@@ -168,6 +168,7 @@ model AiUsage {
   tokens_input    Int
   tokens_output   Int
   cost_usd        Decimal  @db.Decimal(10, 6)
+  duration_ms     Int?
   created_at      DateTime @default(now())
 
   @@index([organization_id, created_at])
