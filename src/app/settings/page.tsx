@@ -123,11 +123,44 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* OpenAI API Key Section (MYAPI only) */}
+        {settings?.organization?.subscription?.plan === 'MYAPI' && (
+          <div className="p-8 space-y-6">
+            <div className="flex items-start space-x-4">
+              <div className="w-10 h-10 rounded bg-gray-50 flex items-center justify-center text-gray-400">
+                <span className="font-bold text-xs">AI</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">OpenAI API Key (BYOK)</h3>
+                <p className="text-xs text-gray-500 mt-1 max-w-sm leading-relaxed">
+                  Ваш личный ключ будет использоваться для всех запросов к ИИ. Лимиты Contador на этот тариф не распространяются.
+                </p>
+              </div>
+            </div>
+
+            <div className="pl-14 space-y-4">
+              <div className="flex items-center space-x-4">
+                <input 
+                  type="password" 
+                  placeholder="sk-..."
+                  defaultValue={settings?.organization?.subscription?.custom_api_key || ""}
+                  onBlur={(e) => {
+                    if (e.target.value !== settings?.organization?.subscription?.custom_api_key) {
+                      updateSettings.mutate({ custom_api_key: e.target.value } as any);
+                    }
+                  }}
+                  className="border border-gray-200 rounded px-4 py-2 text-sm font-mono w-full focus:ring-1 focus:ring-black outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Other Settings Placeholder */}
-        <div className="p-8 flex justify-between items-center opacity-40 grayscale">
+        <div className="p-8 flex justify-between items-center opacity-40 grayscale text-gray-400">
             <div>
-                 <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Резервное копирование</h3>
-                 <p className="text-xs text-gray-500 mt-1">Автоматический дамп базы данных каждые 24 часа.</p>
+                 <h3 className="text-sm font-bold uppercase tracking-widest">Резервное копирование</h3>
+                 <p className="text-xs mt-1">Автоматический дамп базы данных каждые 24 часа.</p>
             </div>
             <span className="text-[10px] font-bold bg-gray-200 px-2 py-0.5 rounded tracking-widest uppercase">Активно</span>
         </div>

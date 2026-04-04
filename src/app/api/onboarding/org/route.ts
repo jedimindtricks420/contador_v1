@@ -7,6 +7,25 @@ export async function POST(request: Request) {
     const { id: userId } = await getUser()
     const { name, inn } = await request.json()
 
+    // 1. Проверка лимитов на количество организаций (FREE = 1)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        organizations: {
+          include: { subscription: true }
+        }
+      }
+    })
+
+    const hasFreePlan = user?.organizations.some(o => o.subscription?.plan === 'FREE') || user?.organizations.length === 0;
+    
+    if (hasFreePlan && user?.organizations.length! >= 1) {
+      return NextResponse.json({ 
+        error: 'LIMIT_REACHED', 
+        message: 'Лимит организаций для бесплатного тарифа (1) исчерпан. Перейдите на PRO для создания неограниченного количества компаний.' 
+      }, { status: 403 })
+    }
+
     if (!name?.trim()) {
       return NextResponse.json({ error: 'Название организации обязательно' }, { status: 400 })
     }

@@ -12,7 +12,8 @@ import {
   Settings2,
   LogOut,
   ListTree,
-  Building2
+  Building2,
+  CreditCard
 } from "lucide-react";
 import { OrgSwitcher } from "../OrgSwitcher";
 
@@ -69,12 +70,24 @@ export default function Sidebar() {
           href="/settings/organizations"
           className={`w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded transition-all ${
             pathname === "/settings/organizations"
-              ? "bg-black text-white"
+              ? "bg-black text-white shadow-sm"
               : "text-gray-400 hover:text-black hover:bg-gray-50"
           }`}
         >
           <Building2 size={18} strokeWidth={1.5} />
           <span>Мои компании</span>
+        </Link>
+
+        <Link
+          href="/settings/subscription"
+          className={`w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded transition-all ${
+            pathname === "/settings/subscription"
+              ? "bg-black text-white shadow-sm"
+              : "text-gray-400 hover:text-black hover:bg-gray-50"
+          }`}
+        >
+          <CreditCard size={18} strokeWidth={1.5} />
+          <span>Тариф</span>
         </Link>
         
         <button

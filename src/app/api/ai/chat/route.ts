@@ -23,42 +23,48 @@ export async function POST(req: Request) {
     });
 
     let apiKey: string;
+    const plan = subscription?.plan || "FREE";
 
-    if (subscription?.custom_api_key) {
-      // 1. BYOK — пользователь использует свой ключ, лимиты не применяются
-      apiKey = subscription.custom_api_key;
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
 
-    } else if (
-      subscription?.plan === "PRO" &&
-      subscription.valid_until &&
-      subscription.valid_until > new Date()
-    ) {
-      // 2. PRO тариф — используем системный ключ
-      apiKey = process.env.OPENAI_API_KEY || "";
-
-    } else {
-      // 3. FREE тариф — проверяем месячный лимит
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const usageCount = await prisma.aiUsage.count({
+    const getUsageCount = async () => {
+      return await prisma.aiUsage.count({
         where: {
           organization_id: organizationId,
           created_at: { gte: startOfMonth }
         }
       });
+    };
 
-      if (usageCount >= FREE_MONTHLY_LIMIT) {
-        return NextResponse.json(
-          {
-            error: "FREE_LIMIT_REACHED",
-            message: `Лимит ${FREE_MONTHLY_LIMIT} бесплатных запросов в месяц исчерпан. Перейдите на PRO или добавьте свой ключ OpenAI в настройках.`
-          },
-          { status: 403 }
-        );
+    if (plan === "MYAPI") {
+      // 1. MYAPI — Всегда использует кастомный ключ, лимитов нет
+      if (!subscription?.custom_api_key) {
+        return NextResponse.json({ error: "MYAPI_KEY_MISSING", message: "OpenAI API Key не найден в настройках" }, { status: 400 });
+      }
+      apiKey = subscription.custom_api_key;
+    } else if (plan === "PRO") {
+      // 2. PRO тариф — лимит 300 запросов
+      const isExpired = subscription?.valid_until && subscription.valid_until < new Date();
+      if (isExpired) {
+        return NextResponse.json({ error: "PRO_EXPIRED", message: "Срок действия PRO подписки истек" }, { status: 403 });
       }
 
+      const usageCount = await getUsageCount();
+      if (usageCount >= 300) {
+        return NextResponse.json({ error: "PRO_LIMIT_REACHED", message: "Месячный бюджетный лимит PRO (300 запросов) исчерпан" }, { status: 403 });
+      }
+      apiKey = process.env.OPENAI_API_KEY || "";
+    } else {
+      // 3. FREE тариф — лимит 10 запросов
+      const usageCount = await getUsageCount();
+      if (usageCount >= 10) {
+        return NextResponse.json({ 
+          error: "FREE_LIMIT_REACHED", 
+          message: "Вы достигли лимита в 10 бесплатных сообщений в месяц. Перейдите на PRO или используйте свой ключ (MYAPI)." 
+        }, { status: 403 });
+      }
       apiKey = process.env.OPENAI_API_KEY || "";
     }
 

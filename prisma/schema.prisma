@@ -227,6 +227,7 @@ model Voucher {
 enum PlanType {
   FREE
   PRO
+  MYAPI
 }
 
 enum PaymentProvider {

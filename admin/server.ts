@@ -109,6 +109,38 @@ app.post("/api/users/:orgId/reset-ai", async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+// Смена тарифа (FREE, PRO, MYAPI)
+app.patch("/api/users/:orgId/plan", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { plan } = req.body;
+
+  if (!["FREE", "PRO", "MYAPI"].includes(plan)) {
+    return res.status(400).json({ error: "Invalid plan type" });
+  }
+
+  const updated = await prisma.subscription.upsert({
+    where: { organization_id: orgId },
+    update: { plan },
+    create: { organization_id: orgId, plan }
+  });
+
+  res.json({ success: true, subscription: updated });
+});
+
+// Управление API ключом
+app.patch("/api/users/:orgId/api-key", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { apiKey } = req.body;
+
+  const updated = await prisma.subscription.upsert({
+    where: { organization_id: orgId },
+    update: { custom_api_key: apiKey || null },
+    create: { organization_id: orgId, plan: "FREE", custom_api_key: apiKey || null }
+  });
+
+  res.json({ success: true, subscription: updated });
+});
+
 // ─────────────────────────────────────────────
 // AI USAGE — мониторинг расходов
 // ─────────────────────────────────────────────
