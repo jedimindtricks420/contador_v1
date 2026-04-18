@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { decrypt } from './lib/auth'
 
 const publicRoutes = [
+  '/',
   '/login',
   '/register',
   '/api/auth/login',
@@ -11,15 +12,31 @@ const publicRoutes = [
 ]
 
 export async function middleware(request: NextRequest) {
+  try {
+    const response = await handleRequest(request);
+    
+    // Security Headers (Enterprise Hardening)
+    response.headers.set('X-Frame-Options', 'DENY');
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocations=()');
+    
+    return response;
+  } catch (error) {
+    const response = NextResponse.redirect(new URL('/login', request.url))
+    response.cookies.delete('session')
+    response.cookies.delete('organizationId')
+    return response
+  }
+}
+
+async function handleRequest(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Check if route is public
   if (publicRoutes.some(route => pathname === route || pathname.startsWith(route + '/'))) {
     return NextResponse.next()
   }
-
-  // Onboarding routes are semi-public (need session but no org)
-  const isOnboarding = pathname.startsWith('/onboarding') || pathname.startsWith('/api/onboarding')
 
   // Get session
   const session = request.cookies.get('session')?.value
@@ -36,15 +53,12 @@ export async function middleware(request: NextRequest) {
     const expires = new Date(parsed.expires)
 
     if (expires < new Date()) {
-      throw new Error('Expired')
+       throw new Error('Expired')
     }
 
     return NextResponse.next()
   } catch (error) {
-    const response = NextResponse.redirect(new URL('/login', request.url))
-    response.cookies.delete('session')
-    response.cookies.delete('organizationId')
-    return response
+    throw error // Let the outer catch handle it
   }
 }
 

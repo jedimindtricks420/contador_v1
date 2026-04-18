@@ -2,7 +2,12 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { Lock, Save, Loader2, AlertCircle } from "lucide-react";
+import { Lock, Save, Loader2, AlertCircle, Zap, CreditCard } from "lucide-react";
+
+const PROVIDERS = [
+  { id: 'PAYME', name: 'Payme', icon: 'https://cdn.payme.uz/logo/payme_color.svg' },
+  { id: 'CLICK', name: 'Click', icon: 'https://click.uz/click/images/logo.png' }
+];
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -14,6 +19,14 @@ export default function SettingsPage() {
     queryKey: ["settings"],
     queryFn: () => fetch("/api/settings").then((res) => res.json()),
   });
+
+  const { data: paymentInfo } = useQuery({
+    queryKey: ["paymentInfo"],
+    queryFn: () => fetch("/admin/api/payment-info").then((res) => res.json()),
+  });
+
+  const subscription = settings?.organization?.subscription;
+  const isPro = subscription?.plan === "PRO";
 
   useEffect(() => {
     if (settings?.closed_period_date) {
@@ -40,6 +53,27 @@ export default function SettingsPage() {
     },
   });
 
+  const initiatePayment = async (provider: string) => {
+    try {
+      const orgId = settings?.organization_id;
+      if (!orgId) return;
+
+      const res = await fetch("/admin/api/payments/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgId, provider }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert("Ошибка инициации платежа: " + (data.error || "Неизвестная ошибка"));
+      }
+    } catch (e) {
+      alert("Ошибка сети");
+    }
+  };
+
   return (
     <div className="max-w-2xl space-y-10">
       <header>
@@ -47,7 +81,52 @@ export default function SettingsPage() {
         <p className="text-sm text-gray-500 mt-1">Управление глобальными параметрами учета и безопасности.</p>
       </header>
 
+
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm divide-y divide-gray-100">
+        {/* Subscription & Plans Section */}
+        <div className="p-8 space-y-6 bg-gray-50/30">
+            <div className="flex items-start space-x-4">
+                <div className="w-10 h-10 rounded bg-black flex items-center justify-center text-white">
+                    <Zap size={20} />
+                </div>
+                <div className="flex-1">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Текущий тариф: {isPro ? 'PRO' : 'FREE'}</h3>
+                            <p className="text-xs text-gray-500 mt-1">
+                                {isPro 
+                                    ? `Ваш тариф активен до ${new Date(subscription.valid_until).toLocaleDateString('ru-RU')}` 
+                                    : 'Расширьте возможности вашей бухгалтерии с продвинутыми инструментами ИИ.'}
+                            </p>
+                        </div>
+                        {isPro && (
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">Активен</span>
+                        )}
+                    </div>
+                    
+                    {!isPro && (
+                        <div className="mt-6 flex flex-wrap gap-4">
+                            {PROVIDERS.map(p => (
+                                <button
+                                    key={p.id}
+                                    onClick={() => initiatePayment(p.id)}
+                                    className="bg-white border border-gray-200 px-6 py-4 rounded-xl flex items-center space-x-3 transition-all hover:border-black hover:shadow-md group"
+                                >
+                                    <div className="w-8 h-8 flex items-center justify-center grayscale group-hover:grayscale-0 transition-all">
+                                        <img src={p.icon} alt={p.name} className="max-h-full max-w-full" />
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Купить PRO через</div>
+                                        <div className="text-sm font-bold font-mono">{paymentInfo?.pro_price_yearly?.toLocaleString()} UZS / год</div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+
         {/* Closed Period Section */}
         <div className="p-8 space-y-6">
           <div className="flex items-start space-x-4">

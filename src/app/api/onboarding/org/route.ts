@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUser } from '@/lib/context'
+import { z } from 'zod'
+
+const onboardingOrgSchema = z.object({
+  name: z.string().min(2, "Название организации должно быть не менее 2 символов").max(100),
+  inn: z.string().optional().nullable(),
+})
 
 export async function POST(request: Request) {
   try {
     const { id: userId } = await getUser()
-    const { name, inn } = await request.json()
+    const body = await request.json()
+    const validated = onboardingOrgSchema.parse(body)
 
     // 1. Проверка лимитов на количество организаций (FREE = 1)
     const user = await prisma.user.findUnique({
@@ -25,19 +32,14 @@ export async function POST(request: Request) {
       }, { status: 403 })
     }
 
-    if (!name?.trim()) {
-      return NextResponse.json({ error: 'Название организации обязательно' }, { status: 400 })
-    }
-
     const org = await prisma.$transaction(async (tx) => {
       const organization = await tx.organization.create({
         data: {
-          name: name.trim(),
-          inn: inn?.trim() || null,
+          name: validated.name.trim(),
+          inn: validated.inn?.trim() || null,
           user_id: userId,
           onboarding_state: 'IN_PROGRESS',
           onboarding_step: 2,
-          // Автоматически создаём FREE подписку при регистрации организации
           subscription: {
             create: {
               plan: 'FREE'
@@ -65,7 +67,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, org_id: org.id })
   } catch (error: any) {
-    console.error('Onboarding org error:', error)
-    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 })
+    console.error('[API_ONBOARDING_ORG]', error)
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.flatten().fieldErrors }, { status: 400 })
+    }
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getUser } from '@/lib/context'
+import { z } from 'zod'
+
+const organizationSchema = z.object({
+  name: z.string().min(2, "Название организации должно быть не менее 2 символов").max(100),
+  inn: z.string().optional().nullable(),
+})
 
 export async function GET() {
   try {
@@ -24,6 +30,7 @@ export async function GET() {
 
     return NextResponse.json(result)
   } catch (error: any) {
+    console.error('[API_ORGANIZATIONS_GET]', error);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 }
@@ -31,17 +38,14 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { id: userId } = await getUser()
-    const { name, inn } = await request.json()
-
-    if (!name?.trim()) {
-      return NextResponse.json({ error: 'Название организации обязательно' }, { status: 400 })
-    }
+    const body = await request.json()
+    const validated = organizationSchema.parse(body)
 
     const result = await prisma.$transaction(async (tx) => {
       const organization = await tx.organization.create({
         data: {
-          name: name.trim(),
-          inn: inn?.trim() || null,
+          name: validated.name.trim(),
+          inn: validated.inn?.trim() || null,
           user_id: userId,
           onboarding_state: 'COMPLETED',
         },
@@ -55,6 +59,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Ошибка сервера' }, { status: 500 })
+    console.error('[API_ORGANIZATIONS_POST]', error);
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.flatten().fieldErrors }, { status: 400 })
+    }
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }

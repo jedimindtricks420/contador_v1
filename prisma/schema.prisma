@@ -22,7 +22,7 @@ model Organization {
   name             String
   inn              String?
   user_id          String
-  user             User            @relation(fields: [user_id], references: [id])
+  user             User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   accounts         Account[]
@@ -35,6 +35,10 @@ model Organization {
   ai_description   String?
   template         IndustryTemplate? @relation(fields: [template_id], references: [id])
   subscription     Subscription?
+  auditLogs        AuditLog[]
+  chatMessages     ChatMessage[]
+  aiUsages         AiUsage[]
+  payments         Payment[]
 }
 
 model Account {
@@ -43,7 +47,7 @@ model Account {
   name              String
   type              AccountType
   organization_id   String
-  organization      Organization  @relation(fields: [organization_id], references: [id])
+  organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   transactions_dr   Transaction[] @relation("DebitAccount")
   transactions_cr   Transaction[] @relation("CreditAccount")
   master_account_id String?
@@ -59,7 +63,7 @@ model Counterparty {
   name            String
   inn             String?
   organization_id String
-  organization    Organization  @relation(fields: [organization_id], references: [id])
+  organization    Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   transactions    Transaction[]
 }
 
@@ -73,7 +77,7 @@ model Transaction {
   credit_id       String
   counterparty_id String?
   organization_id String
-  organization    Organization @relation(fields: [organization_id], references: [id])
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   is_deleted      Boolean      @default(false)
   createdAt       DateTime     @default(now())
   debit           Account      @relation("DebitAccount", fields: [debit_id], references: [id])
@@ -94,7 +98,7 @@ model SystemSettings {
   opening_balance_date     DateTime     @default("2025-01-01T00:00:00Z")
   is_initial_balance_fixed Boolean      @default(false)
   organization_id          String       @unique
-  organization             Organization @relation(fields: [organization_id], references: [id])
+  organization             Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
 }
 
 model MasterAccount {
@@ -141,6 +145,7 @@ model AuditLog {
   entity_id       String?
   payload         Json?
   ip_address      String?
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   created_at      DateTime @default(now())
 
   @@index([organization_id])
@@ -154,6 +159,7 @@ model ChatMessage {
   role            String
   content         String
   tokens_used     Int?
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   created_at      DateTime @default(now())
 
   @@index([organization_id])
@@ -169,6 +175,7 @@ model AiUsage {
   tokens_output   Int
   cost_usd        Decimal  @db.Decimal(10, 6)
   duration_ms     Int?
+  organization    Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   created_at      DateTime @default(now())
 
   @@index([organization_id, created_at])
@@ -204,15 +211,35 @@ model Subscription {
 }
 
 model Payment {
-  id              String        @id @default(uuid())
-  organization_id String
-  amount          Decimal       @db.Decimal(20, 2)
-  provider        PaymentProvider 
-  external_id     String?
-  status          PaymentStatus @default(PENDING)
-  created_at      DateTime      @default(now())
+  id                  String        @id @default(uuid())
+  organization_id     String
+  organization        Organization @relation(fields: [organization_id], references: [id], onDelete: Cascade)
+  amount              Decimal       @db.Decimal(20, 2)
+  amount_tiyin        BigInt?
+  provider            PaymentProvider 
+  external_id         String?       @unique
+  status              PaymentStatus @default(PENDING)
+  processing_status   String?       // e.g. "PROCESSING"
+  cancel_reason       String?
+  cancel_time         DateTime?
+  paid_at             DateTime?
+  created_at          DateTime      @default(now())
 
   @@index([organization_id])
+}
+
+model PaymentConfig {
+  id                String   @id @default("default")
+  payme_merchant_id String?
+  payme_key         String?
+  payme_test_key    String?
+  payme_env         String   @default("test")
+  click_merchant_id String?
+  click_service_id  String?
+  click_secret_key  String?
+  click_env         String   @default("test")
+  pro_price_yearly  Int      @default(299000)
+  updated_at        DateTime @updatedAt
 }
 
 model Voucher {

@@ -1,5 +1,9 @@
 version: '3.8'
 
+networks:
+  contador-net:
+    driver: bridge
+
 services:
   db:
     image: postgres:16-alpine
@@ -9,10 +13,18 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: contador
-    ports:
-      - "5433:5432"
+    # No public ports for DB in Enterprise mode
+    expose:
+      - "5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
+    networks:
+      - contador-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d contador"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   app:
     build: .
@@ -27,8 +39,12 @@ services:
       BASIC_AUTH_USER: admin
       BASIC_AUTH_PASSWORD: securepassword
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    networks:
+      - contador-net
 
   admin:
     build:
@@ -44,4 +60,7 @@ services:
       ADMIN_PORT: 3031
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    networks:
+      - contador-net

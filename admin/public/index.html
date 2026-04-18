@@ -10,7 +10,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide-static@0.223.0/lib/lucide.min.js"></script>
     <script>
-        window.lucideIcons = { Layout: 'layout', Users: 'users', CreditCard: 'credit-card', Zap: 'zap', History: 'history', ArrowRight: 'arrow-right' };
+        window.lucideIcons = { Layout: 'layout', Users: 'users', CreditCard: 'credit-card', Zap: 'zap', History: 'history', ArrowRight: 'arrow-right', Settings: 'settings', Trash2: 'trash-2', UserX: 'user-x', LogOut: 'log-out' };
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -34,6 +34,7 @@
             const [funnel, setFunnel] = useState([]);
             const [payments_log, setPaymentsLog] = useState([]);
             const [password, setPassword] = useState(localStorage.getItem('admin_pass') || '');
+            const [config, setConfig] = useState(null);
             const [isAuthed, setIsAuthed] = useState(false);
             const [loading, setLoading] = useState(false);
             const [search, setSearch] = useState('');
@@ -51,7 +52,10 @@
                 const config = { method, headers };
                 if (body) config.body = JSON.stringify(body);
                 
-                const res = await fetch(endpoint, config);
+                // Префикс для API админки
+                const fullPath = endpoint.startsWith('/api') ? `/admin${endpoint}` : `/admin/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+                
+                const res = await fetch(fullPath, config);
                 if (res.status === 401) {
                     setIsAuthed(false);
                     return null;
@@ -93,6 +97,18 @@
                 if (data) setPaymentsLog(data);
             };
 
+            const loadSettings = async () => {
+                const data = await apiFetch('/api/payment-settings');
+                if (data) setConfig(data);
+            };
+
+            const saveSettings = async () => {
+                setLoading(true);
+                const r = await apiFetch('/api/payment-settings', 'POST', config);
+                setLoading(false);
+                if (r?.success) alert('Настройки сохранены ✓');
+            };
+
             useEffect(() => {
                 if (isAuthed) {
                     if (tab === 'dashboard') { loadDashboard(); loadFunnel(); }
@@ -100,6 +116,7 @@
                     if (tab === 'billing') loadBilling();
                     if (tab === 'payments_log') loadPaymentsLog();
                     if (tab === 'ai') loadAI();
+                    if (tab === 'settings') loadSettings();
                 }
             }, [tab, isAuthed, search]);
 
@@ -156,7 +173,8 @@
                                 { id: 'users', label: 'Управление юзерами', icon: 'Users' },
                                 { id: 'billing', label: 'Биллинг и Ваучеры', icon: 'CreditCard' },
                                 { id: 'payments_log', label: 'Журнал платежей', icon: 'History' },
-                                { id: 'ai', label: 'Мониторинг AI', icon: 'Zap' }
+                                { id: 'ai', label: 'Мониторинг AI', icon: 'Zap' },
+                                { id: 'settings', label: 'Настройки шлюзов', icon: 'Settings' }
                             ].map(item => (
                                 <button
                                     key={item.id}
@@ -268,11 +286,12 @@
                                                     <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Действия</th>
                                                 </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-gray-100">
+                                            <tbody className="divide-y divide-gray-100 bg-white">
                                                 {users.flatMap(u => (u.organizations || []).map(o => ({ 
                                                     ...o, 
                                                     userEmail: u.email, 
                                                     userCreatedAt: u.createdAt,
+                                                    userId: u.id,
                                                     lastPaymentDate: o.lastPayment?.created_at 
                                                 }))).map(item => {
                                                     const now = new Date();
@@ -292,26 +311,30 @@
                                                             statusColor = 'text-rose-600 bg-rose-50';
                                                         }
                                                     } else if (plan === 'MYAPI') {
-                                                        statusText = 'Manual';
+                                                        statusText = 'Manual API';
                                                         statusColor = 'text-blue-600 bg-blue-50';
                                                     }
 
                                                     return (
                                                         <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                                                            <td className="px-6 py-5">
-                                                                <div className="font-mono text-xs font-bold text-gray-900">{item.userEmail}</div>
-                                                                <div className="text-[10px] text-gray-400 mt-1">Рег: {new Date(item.userCreatedAt).toLocaleDateString()}</div>
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-mono text-xs font-bold text-gray-900 truncate max-w-[180px]" title={item.userEmail}>{item.userEmail}</span>
+                                                                    <span className="text-[10px] text-gray-400 mt-1 whitespace-nowrap">Рег: {new Date(item.userCreatedAt).toLocaleDateString()}</span>
+                                                                </div>
                                                             </td>
-                                                            <td className="px-6 py-5">
-                                                                <div className="font-bold text-sm text-gray-800">{item.name}</div>
-                                                                <div className="text-[10px] text-gray-400">ИНН: {item.inn || '—'}</div>
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-sm text-gray-800 truncate max-w-[180px]">{item.name}</span>
+                                                                    <span className="text-[10px] text-gray-400">ИНН: {item.inn || '—'}</span>
+                                                                </div>
                                                             </td>
-                                                            <td className="px-6 py-5">
-                                                                <div className="flex flex-col space-y-1">
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex flex-col space-y-1.5">
                                                                     <select 
-                                                                        className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${
-                                                                            plan === 'PRO' ? 'bg-black text-white border-black' : 
-                                                                            plan === 'MYAPI' ? 'bg-white text-blue-600 border-blue-200' : 'bg-white text-gray-400 border-gray-200'
+                                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${
+                                                                            plan === 'PRO' ? 'bg-black text-white border-black shadow-sm' : 
+                                                                            plan === 'MYAPI' ? 'bg-white text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'
                                                                         }`}
                                                                         value={plan}
                                                                         onChange={async (e) => {
@@ -325,54 +348,86 @@
                                                                         <option value="MYAPI">MYAPI</option>
                                                                     </select>
                                                                     {item.lastPaymentDate && (
-                                                                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">
-                                                                            Оплата: {new Date(item.lastPaymentDate).toLocaleDateString()}
+                                                                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter text-center">
+                                                                            {new Date(item.lastPaymentDate).toLocaleDateString()}
                                                                         </span>
                                                                     )}
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-5">
-                                                                <div className={`inline-flex px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest ${statusColor}`}>
-                                                                    {statusText}
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex flex-col space-y-1">
+                                                                    <span className={`inline-flex items-center justify-center px-2 py-1.5 rounded text-[10px] font-black uppercase tracking-widest ${statusColor}`}>
+                                                                        {statusText}
+                                                                    </span>
+                                                                    {validUntil && plan === 'PRO' && (
+                                                                         <span className="text-[9px] text-gray-400 text-center font-medium">{validUntil.toLocaleDateString()}</span>
+                                                                    )}
                                                                 </div>
-                                                                {validUntil && plan === 'PRO' && (
-                                                                     <div className="text-[9px] text-gray-400 mt-1 font-medium">{validUntil.toLocaleDateString()}</div>
-                                                                )}
                                                             </td>
-                                                            <td className="px-6 py-5 text-right">
-                                                                <div className="flex items-center justify-end space-x-3">
-                                                                    <button 
-                                                                        onClick={async () => {
-                                                                            const days = prompt("На сколько дней продлить PRO?", "30");
-                                                                            if(days) {
-                                                                                await apiFetch(`/api/users/${item.id}/upgrade`, 'POST', { days });
-                                                                                loadUsers();
-                                                                            }
-                                                                        }}
-                                                                        className="flex items-center space-x-2 px-4 py-2.5 bg-black text-white rounded-xl hover:bg-gray-800 transition-all shadow-sm text-[11px] font-bold uppercase tracking-tight"
-                                                                    >
-                                                                        <LucideIcon name="ArrowRight" size={14} />
-                                                                        <span>Продлить PRO</span>
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={async () => {
-                                                                            if(confirm(`Сбросить лимит ИИ для "${item.name}"?`)) {
-                                                                                await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
-                                                                                alert('Лимит сброшен!');
-                                                                            }
-                                                                        }}
-                                                                        className="flex items-center space-x-2 px-4 py-2.5 bg-white text-gray-900 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all shadow-sm text-[11px] font-bold uppercase tracking-tight"
-                                                                    >
-                                                                        <LucideIcon name="Zap" size={14} />
-                                                                        <span>Сброс ИИ</span>
-                                                                    </button>
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                const days = prompt("На сколько дней продлить PRO?", "30");
+                                                                                if(days) {
+                                                                                    await apiFetch(`/api/users/${item.id}/upgrade`, 'POST', { days });
+                                                                                    loadUsers();
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                        >
+                                                                            <LucideIcon name="ArrowRight" size={12} />
+                                                                            <span>Продлить PRO</span>
+                                                                        </button>
+
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                if(confirm(`Сбросить лимит ИИ для "${item.name}"?`)) {
+                                                                                    await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
+                                                                                    alert('Лимит сброшен!');
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                        >
+                                                                            <LucideIcon name="Zap" size={12} />
+                                                                            <span>Сброс ИИ</span>
+                                                                        </button>
+
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                if(confirm(`УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ "${item.userEmail}" И ВСЕ ЕГО ОРГАНИЗАЦИИ? Это действие необратимо!`)) {
+                                                                                    await apiFetch(`/api/users/${item.userId}`, 'DELETE');
+                                                                                    loadUsers();
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-400 border border-gray-200 rounded-lg hover:text-black hover:border-black transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                        >
+                                                                            <LucideIcon name="UserX" size={12} />
+                                                                            <span>Удалить юзера</span>
+                                                                        </button>
+
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                if(confirm(`УДАЛИТЬ ОРГАНИЗАЦИЮ "${item.name}"? Все данные будут стерты!`)) {
+                                                                                    await apiFetch(`/api/organizations/${item.id}`, 'DELETE');
+                                                                                    loadUsers();
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-400 border border-gray-200 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                        >
+                                                                            <LucideIcon name="Trash2" size={12} />
+                                                                            <span>Удалить орг</span>
+                                                                        </button>
+                                                                    </div>
+                                                                    
                                                                     {plan === 'MYAPI' && (
-                                                                        <div className="flex items-center space-x-2 bg-gray-50 p-2 rounded-xl border border-gray-100">
+                                                                        <div className="flex items-center space-x-2 bg-gray-50 px-2 py-2 rounded-lg border border-gray-100 h-[38px]">
                                                                             <input 
                                                                                 type="password"
                                                                                 placeholder="API KEY"
                                                                                 defaultValue={item.subscription?.custom_api_key || ''}
-                                                                                className="text-[10px] font-mono border-none bg-transparent w-20 outline-none focus:ring-0"
+                                                                                className="text-[10px] font-mono border-none bg-transparent w-16 outline-none focus:ring-0"
                                                                                 onBlur={async (e) => {
                                                                                     if (e.target.value !== item.subscription?.custom_api_key) {
                                                                                         await apiFetch(`/api/users/${item.id}/api-key`, 'PATCH', { apiKey: e.target.value });
@@ -380,7 +435,7 @@
                                                                                     }
                                                                                 }}
                                                                             />
-                                                                            <span className="text-[9px] font-black text-gray-900 uppercase">BYOK</span>
+                                                                            <span className="text-[8px] font-black text-gray-400 uppercase">KEY</span>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -553,6 +608,114 @@
                                                 ))}
                                             </tbody>
                                         </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {tab === 'settings' && config && (
+                                <div className="space-y-10">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-3xl font-bold tracking-tight">Настройки шлюзов</h2>
+                                        <button onClick={saveSettings} disabled={loading} className="px-10 py-4 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-95 disabled:opacity-50">
+                                            {loading ? 'Сохранение...' : 'Сохранить изменения'}
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                        {/* Plan Pricing */}
+                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                                            <div className="flex items-center space-x-3 mb-2">
+                                                <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+                                                     <LucideIcon name="Zap" className="text-emerald-600" />
+                                                </div>
+                                                <h3 className="text-lg font-bold">Тариф PRO</h3>
+                                            </div>
+                                            
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Стоимость (UZS / Год)</label>
+                                                    <input type="number" value={config.pro_price_yearly || 0} onChange={e => setConfig({...config, pro_price_yearly: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-bold text-lg" />
+                                                </div>
+                                                <div className="bg-emerald-50/50 p-4 rounded-xl">
+                                                    <p className="text-[10px] text-emerald-800 font-medium leading-relaxed italic">
+                                                        Эта цена будет отображаться клиентам и использоваться при формировании чеков Payme/Click.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Payme */}
+                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                                            <div className="flex items-center space-x-3 mb-2">
+                                                <div className="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center">
+                                                     <LucideIcon name="CreditCard" className="text-cyan-600" />
+                                                </div>
+                                                <h3 className="text-lg font-bold">Payme Бизнес</h3>
+                                            </div>
+                                            
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Merchant ID</label>
+                                                    <input type="text" value={config.payme_merchant_id || ''} onChange={e => setConfig({...config, payme_merchant_id: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key (Production)</label>
+                                                    <input type="password" value={config.payme_key || ''} onChange={e => setConfig({...config, payme_key: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key (Test)</label>
+                                                    <input type="password" value={config.payme_test_key || ''} onChange={e => setConfig({...config, payme_test_key: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Окружение</label>
+                                                    <select value={config.payme_env} onChange={e => setConfig({...config, payme_env: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
+                                                        <option value="test">TEST MODE</option>
+                                                        <option value="prod">PRODUCTION</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Click */}
+                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                                            <div className="flex items-center space-x-3 mb-2">
+                                                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
+                                                     <LucideIcon name="CreditCard" className="text-blue-600" />
+                                                </div>
+                                                <h3 className="text-lg font-bold">Click Evolution</h3>
+                                            </div>
+                                            
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Merchant ID</label>
+                                                        <input type="text" value={config.click_merchant_id || ''} onChange={e => setConfig({...config, click_merchant_id: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Service ID</label>
+                                                        <input type="text" value={config.click_service_id || ''} onChange={e => setConfig({...config, click_service_id: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key</label>
+                                                    <input type="password" value={config.click_secret_key || ''} onChange={e => setConfig({...config, click_secret_key: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Окружение</label>
+                                                    <select value={config.click_env} onChange={e => setConfig({...config, click_env: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
+                                                        <option value="test">TEST MODE</option>
+                                                        <option value="prod">PRODUCTION</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex items-start space-x-4">
+                                        <LucideIcon name="AlertTriangle" className="text-amber-600 mt-1" />
+                                        <div>
+                                            <h3 className="text-amber-900 font-bold">Безопасность данных</h3>
+                                            <p className="text-amber-700 text-sm mt-1">Ключи хранятся в зашифрованном виде в базе данных. В целях безопасности они скрыты звездочками. Если вы не вводите новый ключ, старый останется без изменений.</p>
+                                        </div>
                                     </div>
                                 </div>
                             )}

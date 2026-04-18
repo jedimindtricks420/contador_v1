@@ -18,7 +18,7 @@ import {
 import { OrgSwitcher } from "../OrgSwitcher";
 
 const menuItems = [
-  { name: "Дашборд", href: "/", icon: LayoutDashboard },
+  { name: "Дашборд", href: "/dashboard", icon: LayoutDashboard },
   { name: "Журнал операций", href: "/journal", icon: BookText },
   { name: "ОСВ", href: "/osv", icon: TableProperties },
   { name: "Баланс", href: "/balance", icon: Scale },

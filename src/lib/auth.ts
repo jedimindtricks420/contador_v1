@@ -2,8 +2,14 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-const secretKey = "secret"; // In production, move to .env
-const key = new TextEncoder().encode(secretKey);
+const secretKey = process.env.JWT_SECRET;
+const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || process.env.NODE_ENV === 'test';
+
+if (!secretKey && process.env.NODE_ENV === "production" && !isBuildTime) {
+  throw new Error("JWT_SECRET environment variable is not defined");
+}
+
+const key = new TextEncoder().encode(secretKey || "dev-secret-only-for-local");
 
 export async function encrypt(payload: any) {
   return await new SignJWT(payload)
