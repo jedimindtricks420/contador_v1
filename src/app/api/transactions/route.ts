@@ -70,6 +70,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
+    const counterparty_id = validated.counterparty_id === "" ? null : validated.counterparty_id;
+
     const result = await prisma.$transaction(async (tx) => {
       return await tx.transaction.create({
         data: {
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
           amount: new Decimal(validated.amount),
           debit_id: validated.debit_id,
           credit_id: validated.credit_id,
-          counterparty_id: validated.counterparty_id,
+          counterparty_id,
           organization_id: organizationId
         },
       })

@@ -61,7 +61,7 @@ export async function validateTransaction(
     const openingDate = new Date(settings.opening_balance_date).toISOString().split('T')[0];
 
     if (txDate !== openingDate) {
-      throw new Error(`Счет 0000 можно использовать только на дату начала учета (${openingDate})`);
+      throw new Error(`Счет 0000 (Ввод остатков) можно использовать только на дату начала учета (${openingDate}). Если вы вводите начальные остатки, исправьте дату операции на ${openingDate}.`);
     }
 
     if (settings.is_initial_balance_fixed) {
