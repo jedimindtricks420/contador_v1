@@ -11,17 +11,19 @@ export async function DELETE(
     const { id } = await params
 
     const result = await prisma.$transaction(async (tx) => {
-        // Validation check
+        // Проверяем что транзакция существует и принадлежит организации
         const transaction = await tx.transaction.findFirst({
             where: { id, organization_id: orgId }
         })
-        if (!transaction) throw new Error('Transaction not found')
+        if (!transaction) {
+          throw Object.assign(new Error('Операция не найдена'), { status: 404 })
+        }
 
         const settings = await tx.systemSettings.findUnique({
             where: { organization_id: orgId }
         })
         if (settings && transaction.date <= settings.closed_period_date) {
-            throw new Error('Period is closed')
+            throw Object.assign(new Error('Период закрыт для редактирования'), { status: 403 })
         }
 
         return await tx.transaction.update({
@@ -32,6 +34,8 @@ export async function DELETE(
 
     return NextResponse.json(result)
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 401 })
+    const status = error.status ?? 400
+    return NextResponse.json({ error: error.message }, { status })
   }
 }
+

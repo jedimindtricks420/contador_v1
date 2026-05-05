@@ -66,7 +66,7 @@ export default function BalancePage() {
               <div key={key} className="flex justify-between items-baseline text-sm">
                 <span className="text-gray-600">{label}</span>
                 <span className="font-medium border-b border-gray-100 flex-1 mx-4 h-3"></span>
-                <span className="font-bold text-gray-900">{data?.assets.items[key].toLocaleString('ru-RU')}</span>
+                <span className="font-bold text-gray-900">{(data?.assets.items[key] ?? 0).toLocaleString('ru-RU')}</span>
               </div>
             ))}
           </div>
@@ -87,7 +87,7 @@ export default function BalancePage() {
               <div key={key} className="flex justify-between items-baseline text-sm">
                 <span className="text-gray-600">{label}</span>
                 <span className="font-medium border-b border-gray-100 flex-1 mx-4 h-3"></span>
-                <span className="font-bold text-gray-900">{data?.passives.items[key].toLocaleString('ru-RU')}</span>
+                <span className="font-bold text-gray-900">{(data?.passives.items[key] ?? 0).toLocaleString('ru-RU')}</span>
               </div>
             ))}
           </div>
@@ -100,9 +100,18 @@ export default function BalancePage() {
 
       {/* Balance Check */}
       <div className="flex justify-center pt-10">
-        <div className={`px-8 py-3 rounded-full border text-[10px] font-bold uppercase tracking-[0.2em] ${data?.assets.total === data?.passives.total ? 'bg-black text-white border-black' : 'bg-red-500 text-white border-red-500'}`}>
-          {data?.assets.total === data?.passives.total ? 'Баланс сходится' : 'Ошибка: Баланс не сходится'}
-        </div>
+        {data && (() => {
+          const diff = Math.abs((data.assets.total ?? 0) - (data.passives.total ?? 0));
+          const balanced = diff < 0.01;
+          return (
+            <div className={`px-8 py-3 rounded-full border text-[10px] font-bold uppercase tracking-[0.2em] ${balanced ? 'bg-black text-white border-black' : 'bg-red-500 text-white border-red-500'}`}>
+              {balanced
+                ? '✓ Баланс сходится'
+                : `⚠ Баланс не сходится (разница: ${diff.toLocaleString('ru-RU')})`
+              }
+            </div>
+          )
+        })()}
       </div>
     </div>
   );

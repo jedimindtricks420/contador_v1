@@ -26,7 +26,10 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ошибка входа");
 
-      router.push("/");
+      // Если API вернул redirect (например, для онбординга) — используем его
+      // Иначе идём на дашборд
+      const target = data.redirect || "/dashboard";
+      router.push(target);
       router.refresh();
     } catch (err: any) {
       setError(err.message);

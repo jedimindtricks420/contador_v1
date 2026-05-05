@@ -21,6 +21,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const accountCode = searchParams.get('account')
 
+    const period = searchParams.get('period')
+
     const transactions = await prisma.transaction.findMany({
       where: {
         organization_id: organizationId,
@@ -30,7 +32,9 @@ export async function GET(request: Request) {
             { debit: { code: accountCode } },
             { credit: { code: accountCode } }
           ]
-        } : {})
+        } : {}),
+        // Фильтр по периоду MM.YYYY, если указан
+        ...(period ? { period } : {})
       },
       include: {
         debit: true,
