@@ -35,17 +35,13 @@ export default function SearchableSelect({ options, value, onChange, placeholder
 
   const selectedOption = useMemo(() => options.find((opt: Option) => opt.id === value), [options, value]);
 
-  // Sync search input with selected option when not open
-  useEffect(() => {
-    if (!isOpen) {
-      if (selectedOption) {
-        // Show only the code if it exists, otherwise the name
-        setSearch(selectedOption.code || selectedOption.name);
-      } else {
-        setSearch("");
-      }
-    }
-  }, [selectedOption, isOpen]);
+  const [prevValue, setPrevValue] = useState<string>(value);
+
+  // Sync search input with selected option when value prop changes and not open
+  if (value !== prevValue && !isOpen) {
+    setPrevValue(value);
+    setSearch(selectedOption ? (selectedOption.code || selectedOption.name) : "");
+  }
 
   const filteredOptions = useMemo(() => {
     if (!search || (selectedOption && search === (selectedOption.code || selectedOption.name))) {

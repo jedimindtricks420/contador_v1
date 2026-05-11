@@ -1,7 +1,7 @@
 "use client";
 
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import { Plus, Trash2, Loader2, ArrowRightLeft, Lock as LockIcon, Bot } from "lucide-react";
 import SearchableSelect from "@/components/SearchableSelect";
 import { useUI } from "@/lib/ui-context";
@@ -106,7 +106,7 @@ export default function JournalPage() {
         <div className="bg-white border-2 border-dashed border-gray-100 p-6 rounded-lg mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-4">
             <div className="flex items-center space-x-3">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${Math.abs(obStatus.difference) < 0.01 ? 'bg-green-500' : 'bg-amber-500'}`} />
+              <div className="w-2 h-2 rounded-full bg-gray-300" />
               <h3 className="text-sm font-bold uppercase tracking-widest text-gray-900 border-b-2 border-black inline-block pb-0.5">
                 Баланс ввода остатков (0000)
               </h3>
@@ -124,13 +124,13 @@ export default function JournalPage() {
               <div className="col-span-2">
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Разница</p>
                 <div className="flex items-center space-x-2">
-                  <p className={`text-sm font-bold tabular-nums ${Math.abs(obStatus.difference) < 0.01 ? 'text-green-600' : 'text-amber-600'}`}>
-                    {obStatus.difference?.toLocaleString()}
+                  <p className="text-sm font-bold tabular-nums text-gray-900">
+                    {Number(obStatus.difference).toLocaleString('ru-RU')}
                   </p>
                   {Math.abs(obStatus.difference) < 0.01 ? (
-                    <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded font-bold uppercase tracking-tighter">✅ Баланс ок</span>
+                    <span className="text-[9px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-bold uppercase tracking-widest">Баланс ок</span>
                   ) : (
-                    <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-bold uppercase tracking-tighter">⚠️ Не сбалансировано</span>
+                    <span className="text-[9px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded font-bold uppercase tracking-widest">Не сбалансировано</span>
                   )}
                 </div>
               </div>
@@ -264,34 +264,53 @@ export default function JournalPage() {
             {isLoading ? (
               <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-gray-300" /></td></tr>
             ) : transactions?.map((tx) => (
-              <tr key={tx.id} className={`${tx.is_deleted ? 'opacity-30' : ''} hover:bg-gray-50 transition-colors group`}>
-                <td className="px-6 py-3">
-                  <div className="font-bold text-gray-700">{new Date(tx.date).toLocaleDateString('ru-RU')}</div>
-                  <div className="text-[8px] text-gray-400 font-mono tracking-tighter">{tx.period}</div>
-                </td>
-                <td className="px-6 py-3 font-bold">
-                   <div className="flex items-center space-x-2 text-gray-900 tracking-tighter uppercase">
-                      <span>{tx.debit.code}</span>
-                      <ArrowRightLeft size={10} className="text-gray-300" />
-                      <span>{tx.credit.code}</span>
-                   </div>
-                </td>
-                <td className="px-6 py-3 text-right font-bold text-gray-900 tabular-nums">{tx.amount.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}</td>
-                <td className="px-6 py-3">
-                  <div className="font-bold text-sm tracking-tight text-gray-800">{tx.description}</div>
-                  <div className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">{tx.counterparty?.name}</div>
-                </td>
-                <td className="px-6 py-3 text-center">
-                  {!tx.is_deleted && (
-                    <button 
-                      onClick={() => { if(confirm('Удалить операцию?')) deleteTransaction.mutate(tx.id) }} 
-                      className="text-gray-300 hover:text-red-500 transition-colors p-1"
-                    >
-                       <Trash2 size={14} />
-                    </button>
-                  )}
-                </td>
-              </tr>
+              <React.Fragment key={tx.id}>
+                <tr className={`${tx.is_deleted ? 'opacity-30' : ''} hover:bg-gray-50 transition-colors group border-t border-gray-100`}>
+                  <td className="px-6 py-4 align-top">
+                    <div className="font-bold text-gray-700">{new Date(tx.date).toLocaleDateString('ru-RU')}</div>
+                  </td>
+                  <td className="px-6 py-4 align-top">
+                     <div className="flex items-center space-x-2 text-gray-900 tracking-tighter font-bold uppercase">
+                        <span>{tx.debit.code}</span>
+                        <ArrowRightLeft size={10} className="text-gray-300" />
+                        <span>{tx.credit.code}</span>
+                     </div>
+                  </td>
+                  <td className="px-6 py-4 text-right font-bold text-gray-900 tabular-nums align-top">
+                    {Number(tx.amount).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).replace(/,/g, '.').replace(/\xa0/g, ' ')}
+                  </td>
+                  <td className="px-6 py-4 align-top">
+                    <div className="font-bold text-sm tracking-tight text-gray-800">{tx.description}</div>
+                    <div className="text-[9px] text-gray-400 uppercase tracking-wide font-medium">{tx.counterparty?.name}</div>
+                  </td>
+                  <td className="px-6 py-4 text-center align-top">
+                    {!tx.is_deleted && (
+                      <button 
+                        onClick={() => { if(confirm('Удалить операцию?')) deleteTransaction.mutate(tx.id) }} 
+                        className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                      >
+                         <Trash2 size={14} />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {/* Secondary Row for Account Names */}
+                <tr className={`${tx.is_deleted ? 'opacity-30' : ''} bg-gray-50/30 border-b border-gray-100`}>
+                  <td className="px-6 py-1"></td>
+                  <td colSpan={4} className="px-6 py-3">
+                    <div className="space-y-1">
+                      <div className="text-sm text-gray-500 font-medium flex items-center space-x-2">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-300 w-8">Дт:</span>
+                        <span>{tx.debit.code} — {tx.debit.name}</span>
+                      </div>
+                      <div className="text-sm text-gray-500 font-medium flex items-center space-x-2">
+                        <span className="text-[9px] font-bold uppercase tracking-widest text-gray-300 w-8">Кт:</span>
+                        <span>{tx.credit.code} — {tx.credit.name}</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </React.Fragment>
             ))}
           </tbody>
         </table>

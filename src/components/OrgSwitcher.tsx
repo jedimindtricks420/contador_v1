@@ -11,12 +11,18 @@ export function OrgSwitcher() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { data: organizations } = useQuery({
+  interface Organization {
+    id: string;
+    name: string;
+    is_active: boolean;
+  }
+
+  const { data: organizations } = useQuery<Organization[]>({
     queryKey: ["organizations"],
     queryFn: () => fetch("/api/organizations").then((res) => res.json()),
   });
 
-  const activeOrg = organizations?.find((o: any) => o.is_active);
+  const activeOrg = organizations?.find((o) => o.is_active);
 
   const switchMutation = useMutation({
     mutationFn: (org_id: string) =>

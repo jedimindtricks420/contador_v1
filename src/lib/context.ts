@@ -7,7 +7,7 @@ export async function getActiveOrganizationId(): Promise<string> {
   const sessionToken = (await cookies()).get("session")?.value;
   if (!sessionToken) throw new Error("Unauthorized");
 
-  const payload = await decrypt(sessionToken);
+  const payload = await decrypt(sessionToken) as { user?: { id: string, email: string } };
   const userId = payload.user?.id;
   if (!userId) throw new Error("Invalid session");
 
@@ -28,7 +28,7 @@ export async function getUser(): Promise<{ id: string, email: string }> {
   if (!sessionToken) throw new Error("Unauthorized");
 
   try {
-    const payload = await decrypt(sessionToken);
+    const payload = await decrypt(sessionToken) as { user: { id: string, email: string } };
     return payload.user;
   } catch (err) {
     throw new Error("Invalid session");

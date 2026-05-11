@@ -49,7 +49,7 @@ async function handleRequest(request: NextRequest) {
   }
 
   try {
-    const parsed = await decrypt(session)
+    const parsed = await decrypt(session) as { expires: string | number | Date }
     const expires = new Date(parsed.expires)
 
     if (expires < new Date()) {

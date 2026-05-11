@@ -91,8 +91,9 @@ export default function AIChat() {
       };
 
       setMessages(prev => [...prev, aiMessage]);
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Неизвестная ошибка";
+      showToast(msg, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -116,8 +117,9 @@ export default function AIChat() {
       ));
 
       showToast("Транзакция создана, план счетов обновлен!");
-    } catch (err: any) {
-      showToast(err.message, 'error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Ошибка записи";
+      showToast(msg, 'error');
     }
   };
 
@@ -206,7 +208,7 @@ export default function AIChat() {
                       <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5 rounded-full">{msg.action.data.amount.toLocaleString()} UZS</span>
                     </div>
                     
-                    <p className="text-xs text-gray-600 mb-4 italic font-medium">"{msg.action.data.description}"</p>
+                    <p className="text-xs text-gray-600 mb-4 italic font-medium">&quot;{msg.action.data.description}&quot;</p>
                     
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       {/* Debit */}

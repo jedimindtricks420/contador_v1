@@ -432,7 +432,7 @@ router.delete("/organizations/:orgId", async (req: Request, res: Response) => {
 
 // Payment Settings
 router.get("/payment-settings", async (_req: Request, res: Response) => {
-  let config = await getPaymentConfig();
+  const config = await getPaymentConfig();
   if (!config) {
     res.json({ payme_merchant_id: "", payme_env: "test", click_merchant_id: "", click_service_id: "", click_env: "test", pro_price_yearly: 299000 });
   } else {

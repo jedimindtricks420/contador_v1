@@ -29,8 +29,9 @@ export default function SubscriptionPage() {
       alert(`Ваучер успешно активирован! План PRO до ${new Date(data.valid_until).toLocaleDateString()}`);
       setVoucherCode("");
     },
-    onError: (error: any) => {
-      alert(error.message);
+    onError: (error: unknown) => {
+      const msg = error instanceof Error ? error.message : "Ошибка активации";
+      alert(msg);
     }
   });
 

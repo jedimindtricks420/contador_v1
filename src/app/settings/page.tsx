@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const subscription = settings?.organization?.subscription;
   const isPro = subscription?.plan === "PRO";
 
+  // Sync state with query data
   useEffect(() => {
     if (settings?.closed_period_date) {
       setClosedDate(new Date(settings.closed_period_date).toISOString().split("T")[0]);
@@ -65,7 +66,7 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       if (data.url) {
-        window.location.href = data.url;
+        window.location.assign(data.url);
       } else {
         alert("Ошибка инициации платежа: " + (data.error || "Неизвестная ошибка"));
       }
