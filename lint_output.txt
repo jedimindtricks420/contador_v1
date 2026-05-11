@@ -1,0 +1,216 @@
+
+> contador@0.1.0 lint
+> eslint
+
+
+/home/admin1/contador/admin/server.ts
+   54:65   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   62:34   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   70:73   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   78:68   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  141:29   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  231:17   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  321:138  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  323:181  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  425:100  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  430:107  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  439:39   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/ai/prompts.ts
+  3:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/prisma/seed.js
+  1:26  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  2:1   error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+/home/admin1/contador/prisma/seed.ts
+  2:24  warning  'AccountType' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/admin1/contador/src/app/api/accounts/[id]/toggle/route.ts
+  70:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/accounts/all/route.ts
+  16:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/accounts/master/route.ts
+  28:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/accounts/route.ts
+  15:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  26:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  74:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/ai/chat/route.ts
+   10:7   warning  'FREE_MONTHLY_LIMIT' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  141:19  error    Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/ai/execute/route.ts
+  16:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  78:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/auth/register/route.ts
+  52:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/auth/switch-org/route.ts
+  41:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/billing/usage/route.ts
+  30:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  30:19  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/billing/voucher/activate/route.ts
+  78:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/counterparties/[id]/route.ts
+  28:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/counterparties/route.ts
+  14:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  37:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/onboarding/apply-template/route.ts
+   8:17  warning  'userId' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  94:19  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/onboarding/org/route.ts
+  29:24  error  Optional chain expressions can return undefined by design - using a non-null assertion is unsafe and wrong  @typescript-eslint/no-non-null-asserted-optional-chain
+  69:19  error  Unexpected any. Specify a different type                                                                    @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/organizations/[id]/route.ts
+  37:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  91:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/organizations/route.ts
+  32:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  61:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/reports/balance/route.ts
+  151:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/reports/dashboard/route.ts
+  101:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  101:19  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/reports/opening-balance/route.ts
+  23:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  23:19  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/reports/osv/route.ts
+  130:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/reports/pnl/route.ts
+  106:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/settings/route.ts
+  19:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  19:19  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  56:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+  56:19  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/templates/route.ts
+  19:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/transactions/[id]/route.ts
+  36:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/api/transactions/route.ts
+  47:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  73:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  95:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/counterparties/page.tsx
+  24:24  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  48:22  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/journal/page.tsx
+   5:67  warning  'Bot' is defined but never used                  @typescript-eslint/no-unused-vars
+  35:11  warning  'isChatOpen' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  68:24  error    Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+  84:22  error    Unexpected any. Specify a different type         @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/login/page.tsx
+   5:31  warning  'ShieldCheck' is defined but never used                                                                                                                                                                                                                                                  @typescript-eslint/no-unused-vars
+  34:19  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+  44:11  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/admin1/contador/src/app/onboarding/step-1/page.tsx
+  30:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/onboarding/step-3/page.tsx
+   40:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  113:36  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/page.tsx
+   12:3   warning  'Globe' is defined but never used                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+   22:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  153:14  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/admin1/contador/src/app/register/page.tsx
+  32:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/settings/accounts/page.tsx
+    5:58  warning  'X' is defined but never used             @typescript-eslint/no-unused-vars
+   64:18  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   84:18  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   89:9   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   94:56  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   94:73  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  102:9   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  159:38  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  225:42  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/settings/organizations/page.tsx
+  13:3   warning  'History' is defined but never used       @typescript-eslint/no-unused-vars
+  48:20  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  61:20  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/settings/page.tsx
+    5:49  warning  'CreditCard' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+   16:10  warning  'isFixed' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+   18:27  warning  'isLoading' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  @typescript-eslint/no-unused-vars
+   34:7   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/home/admin1/contador/src/app/settings/page.tsx:34:7
+  32 |   useEffect(() => {
+  33 |     if (settings?.closed_period_date) {
+> 34 |       setClosedDate(new Date(settings.closed_period_date).toISOString().split("T")[0]);
+     |       ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  35 |     }
+  36 |     if (settings?.opening_balance_date) {
+  37 |       setOpeningDate(new Date(settings.opening_balance_date).toISOString().split("T")[0]);  react-hooks/set-state-in-effect
+   73:14  warning  'e' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+  117:41  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @next/next/no-img-element
+  229:83  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/app/settings/subscription/page.tsx
+  5:10  warning  'CreditCard' is defined but never used  @typescript-eslint/no-unused-vars
+  5:22  warning  'Zap' is defined but never used         @typescript-eslint/no-unused-vars
+
+/home/admin1/contador/src/components/Layout/Sidebar.tsx
+  37:9  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/admin1/contador/src/components/OrgSwitcher.tsx
+   4:40  warning  'Loader2' is defined but never used               @typescript-eslint/no-unused-vars
+   9:9   warning  'queryClient' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  74:39  error    Unexpected any. Specify a different type          @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/components/SearchableSelect.tsx
+  4:23  warning  'Search' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/admin1/contador/src/lib/auth.ts
+  14:40  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/admin1/contador/src/lib/context.ts
+  33:12  warning  'err' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/admin1/contador/src/middleware.ts
+  25:12  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 102 problems (70 errors, 32 warnings)
+

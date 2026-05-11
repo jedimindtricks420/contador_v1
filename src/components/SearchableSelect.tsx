@@ -58,11 +58,13 @@ export default function SearchableSelect({ options, value, onChange, placeholder
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
+        // Sync search back to selected option on close
+        setSearch(selectedOption ? (selectedOption.code || selectedOption.name) : "");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [selectedOption]);
 
   return (
     <div className="relative w-full" ref={containerRef}>

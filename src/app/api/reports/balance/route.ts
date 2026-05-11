@@ -56,19 +56,21 @@ export async function GET() {
         for (const acc of targetAccounts) {
             const net = await getAccountBalance(acc)
 
-            if (acc.type === 'ACTIVE_PASSIVE' || acc.type === 'TRANSIT') {
-                // ACTIVE_PASSIVE: если сальдо дебетовое — в активы, кредитовое — в пассивы
+            if (acc.type === 'ACTIVE' || acc.type === 'CONTRA_PASSIVE') {
+                if (net.isPositive()) {
+                    assets = assets.plus(net)
+                }
+            } else if (acc.type === 'PASSIVE' || acc.type === 'CONTRA_ACTIVE') {
+                if (net.isPositive()) {
+                    liabilities = liabilities.plus(net)
+                }
+            } else {
+                // ACTIVE_PASSIVE, TRANSIT
                 if (net.isPositive()) {
                     assets = assets.plus(net)
                 } else if (net.isNegative()) {
                     liabilities = liabilities.plus(net.abs())
                 }
-            } else {
-                // Все остальные типы: net уже имеет правильный знак для своей стороны
-                if (net.isPositive()) {
-                    assets = assets.plus(net)
-                }
-                // Отрицательное сальдо = ошибка данных, игнорируем (не добавляем в другую сторону)
             }
         }
 
@@ -89,7 +91,15 @@ export async function GET() {
     const social       = await getGroupBalance(['65'])
     const salary       = await getGroupBalance(['67'])
     const equity       = await getGroupBalance(['80', '81', '83', '84', '85'])
-    const retained     = await getGroupBalance(['87', '99'])
+    
+    // Прибыль текущего периода (счета 90-98) + Нераспределенная прибыль прошлых лет (87, 99)
+    const retainedPrev = await getGroupBalance(['87', '99'])
+    const currentProfit = await getGroupBalance(['90', '91', '92', '93', '94', '95', '96', '97', '98'])
+    
+    const retained = {
+        assets: retainedPrev.assets.plus(currentProfit.assets),
+        liabilities: retainedPrev.liabilities.plus(currentProfit.liabilities)
+    }
 
     // Для активных групп берём assets сторону, для пассивных — liabilities
     const assetItems = {

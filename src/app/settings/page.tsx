@@ -30,6 +30,7 @@ export default function SettingsPage() {
 
   // Sync state with query data
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     if (settings?.closed_period_date) {
       setClosedDate(new Date(settings.closed_period_date).toISOString().split("T")[0]);
     }

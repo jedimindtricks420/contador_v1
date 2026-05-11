@@ -276,18 +276,18 @@ export const defaultAccounts = [
   { code: '8890', name: 'Прочие целевые поступления', type: AccountType.PASSIVE },
   { code: '8900', name: 'СЧЕТА УЧЁТА РЕЗЕРВОВ ПРЕДСТОЯЩИХ РАСХОДОВ И ПЛАТЕЖЕЙ', type: AccountType.PASSIVE },
   { code: '8910', name: 'Резервы предстоящих расходов и платежей', type: AccountType.PASSIVE },
-  { code: '9000', name: 'СЧЕТА УЧЁТА ДОХОДОВ ОТ ОСНОВНОЙ (ОПЕРАЦИОННОЙ) ДЕЯТЕЛЬНОСТИ', type: AccountType.ACTIVE },
-  { code: '9010', name: 'Доходы от реализации готовой продукции', type: AccountType.ACTIVE },
-  { code: '9020', name: 'Доходы от реализации товаров', type: AccountType.ACTIVE },
-  { code: '9030', name: 'Доходы от выполнения работ и оказания услуг', type: AccountType.ACTIVE },
-  { code: '9040', name: 'Возврат проданных товаров', type: AccountType.ACTIVE },
-  { code: '9050', name: 'Скидки, предоставленные покупателям и заказчикам', type: AccountType.ACTIVE },
-  { code: '9100', name: 'СЧЕТА УЧЁТА СЕБЕСТОИМОСТИ РЕАЛИЗОВАННОЙ ПРОДУКЦИИ (ТОВАРОВ, РАБОТ, УСЛУГ)', type: AccountType.ACTIVE },
-  { code: '9110', name: 'Себестоимость реализованной готовой продукции', type: AccountType.ACTIVE },
-  { code: '9120', name: 'Себестоимость реализованных товаров', type: AccountType.ACTIVE },
-  { code: '9130', name: 'Себестоимость выполненных работ и оказанных услуг', type: AccountType.ACTIVE },
-  { code: '9140', name: 'Приобретение/покупка ТМЗ при периодическом учёте', type: AccountType.ACTIVE },
-  { code: '9150', name: 'Корректировки по ТМЗ при периодическом учёте', type: AccountType.ACTIVE },
+  { code: '9000', name: 'СЧЕТА УЧЁТА ДОХОДОВ ОТ ОСНОВНОЙ (ОПЕРАЦИОННОЙ) ДЕЯТЕЛЬНОСТИ', type: AccountType.TRANSIT },
+  { code: '9010', name: 'Доходы от реализации готовой продукции', type: AccountType.TRANSIT },
+  { code: '9020', name: 'Доходы от реализации товаров', type: AccountType.TRANSIT },
+  { code: '9030', name: 'Доходы от выполнения работ и оказания услуг', type: AccountType.TRANSIT },
+  { code: '9040', name: 'Возврат проданных товаров', type: AccountType.CONTRA_PASSIVE },
+  { code: '9050', name: 'Скидки, предоставленные покупателям и заказчикам', type: AccountType.CONTRA_PASSIVE },
+  { code: '9100', name: 'СЧЕТА УЧЁТА СЕБЕСТОИМОСТИ РЕАЛИЗОВАННОЙ ПРОДУКЦИИ (ТОВАРОВ, РАБОТ, УСЛУГ)', type: AccountType.TRANSIT },
+  { code: '9110', name: 'Себестоимость реализованной готовой продукции', type: AccountType.TRANSIT },
+  { code: '9120', name: 'Себестоимость реализованных товаров', type: AccountType.TRANSIT },
+  { code: '9130', name: 'Себестоимость выполненных работ и оказанных услуг', type: AccountType.TRANSIT },
+  { code: '9140', name: 'Приобретение/покупка ТМЗ при периодическом учёте', type: AccountType.TRANSIT },
+  { code: '9150', name: 'Корректировки по ТМЗ при периодическом учёте', type: AccountType.TRANSIT },
   { code: '9200', name: 'СЧЕТА УЧЁТА ВЫБЫТИЯ ОСНОВНЫХ СРЕДСТВ И ДРУГИХ АКТИВОВ', type: AccountType.ACTIVE },
   { code: '9210', name: 'Выбытие основных средств', type: AccountType.ACTIVE },
   { code: '9220', name: 'Выбытие прочих активов', type: AccountType.ACTIVE },
@@ -301,11 +301,11 @@ export const defaultAccounts = [
   { code: '9370', name: 'Доходы обслуживающих хозяйств', type: AccountType.PASSIVE },
   { code: '9380', name: 'Безвозмездная финансовая помощь', type: AccountType.PASSIVE },
   { code: '9390', name: 'Прочие операционные доходы', type: AccountType.PASSIVE },
-  { code: '9400', name: 'СЧЕТА УЧЁТА РАСХОДОВ ПЕРИОДА', type: AccountType.ACTIVE },
-  { code: '9410', name: 'Расходы по реализации', type: AccountType.ACTIVE },
-  { code: '9420', name: 'Административные расходы', type: AccountType.ACTIVE },
-  { code: '9430', name: 'Прочие операционные расходы', type: AccountType.ACTIVE },
-  { code: '9440', name: 'Расходы отчётного периода, исключаемые из налогооблагаемой базы в будущем', type: AccountType.ACTIVE },
+  { code: '9400', name: 'СЧЕТА УЧЁТА РАСХОДОВ ПЕРИОДА', type: AccountType.TRANSIT },
+  { code: '9410', name: 'Расходы по реализации', type: AccountType.TRANSIT },
+  { code: '9420', name: 'Административные расходы', type: AccountType.TRANSIT },
+  { code: '9430', name: 'Прочие операционные расходы', type: AccountType.TRANSIT },
+  { code: '9440', name: 'Расходы отчётного периода, исключаемые из налогооблагаемой базы в будущем', type: AccountType.TRANSIT },
   { code: '9500', name: 'СЧЕТА УЧЁТА ДОХОДОВ ОТ ФИНАНСОВОЙ ДЕЯТЕЛЬНОСТИ', type: AccountType.PASSIVE },
   { code: '9510', name: 'Доходы в виде роялти', type: AccountType.PASSIVE },
   { code: '9520', name: 'Доходы в виде дивидендов', type: AccountType.PASSIVE },
@@ -372,12 +372,18 @@ export async function seedDefaultDataForOrg(organizationId: string) {
     })
   }
 
+  const now = new Date();
+  const openingBalanceDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const closedPeriodDate = new Date(openingBalanceDate);
+  closedPeriodDate.setDate(closedPeriodDate.getDate() - 1);
+
   // 2. Initial system settings
   await prisma.systemSettings.upsert({
     where: { organization_id: organizationId },
     update: {},
     create: {
-      closed_period_date: new Date('2024-01-01'),
+      opening_balance_date: openingBalanceDate,
+      closed_period_date: closedPeriodDate,
       organization_id: organizationId
     },
   })

@@ -48,11 +48,16 @@ export async function POST(request: Request) {
         }
       })
 
+      const now = new Date();
+      const openingBalanceDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      const closedPeriodDate = new Date(openingBalanceDate);
+      closedPeriodDate.setDate(closedPeriodDate.getDate() - 1);
+
       await tx.systemSettings.create({
         data: {
           organization_id: organization.id,
-          opening_balance_date: new Date('2025-01-01'),
-          closed_period_date: new Date('2024-12-31'),
+          opening_balance_date: openingBalanceDate,
+          closed_period_date: closedPeriodDate,
           is_initial_balance_fixed: false,
         }
       })

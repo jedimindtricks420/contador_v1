@@ -7,90 +7,91 @@ export async function GET() {
   try {
     const orgId = await getActiveOrganizationId();
     
-    // Revenue (Sum of Creditor turnover of 9010)
-    const revenueRes = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { organization_id: orgId, credit: { code: '9010' }, is_deleted: false }
-    })
-    const revenue = revenueRes._sum.amount || new Decimal(0)
+    // 1. Revenue (Credit turnover of 9010, 9020, 9030 - Debit 9040, 9050)
+    const getTurnover = async (prefixes: string[], side: 'debit' | 'credit', period?: string) => {
+        const dr = await prisma.transaction.aggregate({
+            _sum: { amount: true },
+            where: { 
+                organization_id: orgId, 
+                debit: { code: { in: prefixes.flatMap(p => accounts_all.filter(a => a.code.startsWith(p)).map(a => a.code)) } },
+                is_deleted: false,
+                ...(period ? { period } : {})
+            }
+        })
+        const cr = await prisma.transaction.aggregate({
+            _sum: { amount: true },
+            where: { 
+                organization_id: orgId, 
+                credit: { code: { in: prefixes.flatMap(p => accounts_all.filter(a => a.code.startsWith(p)).map(a => a.code)) } },
+                is_deleted: false,
+                ...(period ? { period } : {})
+            }
+        })
+        const totalDr = dr._sum.amount || new Decimal(0)
+        const totalCr = cr._sum.amount || new Decimal(0)
+        return side === 'debit' ? totalDr.minus(totalCr) : totalCr.minus(totalDr)
+    }
 
-    // Expenses (Sum of Debit turnover of 94*)
-    const expensesRes = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { organization_id: orgId, debit: { code: { startsWith: '94' } }, is_deleted: false }
-    })
-    const expenses = expensesRes._sum.amount || new Decimal(0)
+    const accounts_all = await prisma.account.findMany({ where: { organization_id: orgId } })
 
-    // Bank (Dr 5110 - Cr 5110)
-    const bankDr = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { organization_id: orgId, debit: { code: '5110' }, is_deleted: false }
-    })
-    const bankCr = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { organization_id: orgId, credit: { code: '5110' }, is_deleted: false }
-    })
-    const bank = (bankDr._sum.amount || new Decimal(0)).minus(bankCr._sum.amount || new Decimal(0))
+    const revenue = await getTurnover(['901', '902', '903'], 'credit')
+    const returns = await getTurnover(['904', '905'], 'debit')
+    const netRevenue = revenue.minus(returns)
+    
+    const expenses = await getTurnover(['91', '94'], 'debit')
 
-    // AR (Dr 4010 - Cr 4010)
-    const arDr = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { organization_id: orgId, debit: { code: '4010' }, is_deleted: false }
-    })
-    const arCr = await prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { organization_id: orgId, credit: { code: '4010' }, is_deleted: false }
-    })
-    const ar = (arDr._sum.amount || new Decimal(0)).minus(arCr._sum.amount || new Decimal(0))
+    // Bank (Net balance of 50-58)
+    const bank = await getTurnover(['50', '51', '52', '55', '56', '57', '58'], 'debit')
+
+    // AR (Net balance of 40-48)
+    const ar = await getTurnover(['40', '41', '42', '45', '46', '47', '48'], 'debit')
 
     // Margin
-    const margin = revenue.isZero() ? 0 : Number(revenue.minus(expenses).div(revenue).mul(100))
+    const margin = netRevenue.isZero() ? 0 : Number(netRevenue.minus(expenses).div(netRevenue).mul(100))
 
     // Expenses By Account (94*)
-    const accounts = await prisma.account.findMany({
-        where: { organization_id: orgId, code: { startsWith: '94' } }
-    })
-    const expensesByAccount = await Promise.all(accounts.map(async (acc) => {
-        const aggr = await prisma.transaction.aggregate({
+    const expensesByAccount = await Promise.all(accounts_all.filter(a => a.code.startsWith('94')).map(async (acc) => {
+        const aggrDr = await prisma.transaction.aggregate({
             _sum: { amount: true },
             where: { organization_id: orgId, debit_id: acc.id, is_deleted: false }
+        })
+        const aggrCr = await prisma.transaction.aggregate({
+            _sum: { amount: true },
+            where: { organization_id: orgId, credit_id: acc.id, is_deleted: false }
         })
         return {
             code: acc.code,
             name: acc.name,
-            amount: Number(aggr._sum.amount || 0)
+            amount: Number((aggrDr._sum.amount || new Decimal(0)).minus(aggrCr._sum.amount || 0))
         }
     }))
 
     // Chart Data (Last 6 months)
     const months = []
+    const d = new Date()
+    d.setDate(1) // Avoid month-end overflow bugs
     for (let i = 5; i >= 0; i--) {
-        const d = new Date()
-        d.setMonth(d.getMonth() - i)
-        months.push(`${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`)
+        const target = new Date(d)
+        target.setMonth(d.getMonth() - i)
+        months.push(`${String(target.getMonth() + 1).padStart(2, '0')}.${target.getFullYear()}`)
     }
 
     const chartData = await Promise.all(months.map(async (m) => {
-        const rev = await prisma.transaction.aggregate({
-            _sum: { amount: true },
-            where: { organization_id: orgId, period: m, credit: { code: '9010' }, is_deleted: false }
-        })
-        const exp = await prisma.transaction.aggregate({
-            _sum: { amount: true },
-            where: { organization_id: orgId, period: m, debit: { code: { startsWith: '94' } }, is_deleted: false }
-        })
+        const revBase = await getTurnover(['901', '902', '903'], 'credit', m)
+        const revRet  = await getTurnover(['904', '905'], 'debit', m)
+        const exp = await getTurnover(['91', '94'], 'debit', m)
         return {
             period: m,
-            revenue: Number(rev._sum.amount || 0),
-            expenses: Number(exp._sum.amount || 0)
+            revenue: Number(revBase.minus(revRet)),
+            expenses: Number(exp)
         }
     }))
 
     return NextResponse.json({
       metrics: {
-        revenue: Number(revenue),
+        revenue: Number(netRevenue),
         expenses: Number(expenses),
-        profit: Number(revenue.minus(expenses)),
+        profit: Number(netRevenue.minus(expenses)),
         margin: Number(margin),
         bank: Number(bank),
         ar: Number(ar),
