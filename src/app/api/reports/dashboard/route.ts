@@ -40,8 +40,15 @@ export async function GET() {
     
     const expenses = await getTurnover(['91', '94'], 'debit')
 
-    // Bank (Net balance of 50-58)
-    const bank = await getTurnover(['50', '51', '52', '55', '56', '57', '58'], 'debit')
+    // Bank: только реальный остаток расчетного счета 5110
+    // Счета 5010 (нацвалюта-касса) и 5710 (переводы в пути) — транзитные, не показывают банк
+    const acc5110 = accounts_all.find(a => a.code === '5110')
+    let bank = new Decimal(0)
+    if (acc5110) {
+      const b_dr = await prisma.transaction.aggregate({ _sum: { amount: true }, where: { organization_id: orgId, debit_id: acc5110.id, is_deleted: false } })
+      const b_cr = await prisma.transaction.aggregate({ _sum: { amount: true }, where: { organization_id: orgId, credit_id: acc5110.id, is_deleted: false } })
+      bank = (b_dr._sum.amount || new Decimal(0)).minus(b_cr._sum.amount || new Decimal(0))
+    }
 
     // AR (Net balance of 40-48)
     const ar = await getTurnover(['40', '41', '42', '45', '46', '47', '48'], 'debit')

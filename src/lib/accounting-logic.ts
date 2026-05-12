@@ -56,12 +56,16 @@ export async function validateTransaction(
       throw new Error('Дата начала учета не установлена');
     }
 
-    // Compare only dates (not times)
-    const txDate = new Date(data.date).toISOString().split('T')[0];
-    const openingDate = new Date(settings.opening_balance_date).toISOString().split('T')[0];
+    const txDateObj = new Date(data.date);
+    const openingDateObj = new Date(settings.opening_balance_date);
+    
+    // Сбрасываем время для честного сравнения дат
+    txDateObj.setHours(0, 0, 0, 0);
+    openingDateObj.setHours(0, 0, 0, 0);
 
-    if (txDate !== openingDate) {
-      throw new Error(`Счет 0000 (Ввод остатков) можно использовать только на дату начала учета (${openingDate}). Если вы вводите начальные остатки, исправьте дату операции на ${openingDate}.`);
+    if (txDateObj > openingDateObj) {
+      const openingDateStr = openingDateObj.toISOString().split('T')[0];
+      throw new Error(`Счет 0000 (Ввод остатков) нельзя использовать после даты начала учета (${openingDateStr}).`);
     }
 
     if (settings.is_initial_balance_fixed) {
@@ -70,8 +74,22 @@ export async function validateTransaction(
   }
 
   // 3. Block regular transactions before opening date (optional but good for consistency)
-  if (settings?.opening_balance_date && new Date(data.date) < new Date(settings.opening_balance_date)) {
-    throw new Error('Нельзя вводить операции до даты начала учета');
+  if (!isDebit0000 && !isCredit0000 && settings?.opening_balance_date) {
+    const txDateObj = new Date(data.date);
+    const openingDateObj = new Date(settings.opening_balance_date);
+    
+    txDateObj.setHours(0, 0, 0, 0);
+    openingDateObj.setHours(0, 0, 0, 0);
+
+    // Разрешаем вводить обычные операции начиная с 1 числа месяца начала учета, 
+    // но если пользователь вводит на пару дней раньше, не блокируем жестко, чтобы избежать путаницы с 31/1 числом.
+    // Оставим проверку только если дата совсем старая (например, меньше на 30 дней)
+    const thirtyDaysBefore = new Date(openingDateObj);
+    thirtyDaysBefore.setDate(thirtyDaysBefore.getDate() - 30);
+
+    if (txDateObj < thirtyDaysBefore) {
+      throw new Error('Нельзя вводить обычные операции так далеко до даты начала учета. Для старых долгов используйте счет 0000.');
+    }
   }
 
   return true;

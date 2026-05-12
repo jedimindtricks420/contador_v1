@@ -77,8 +77,15 @@ export async function GET(request: Request) {
         const s1TotalCredit = s1_cr._sum.amount || new Decimal(0)
 
         // Начальное сальдо (S1)
-        const { balanceDebit: balanceStartDebit, balanceCredit: balanceStartCredit } =
+        let { balanceDebit: balanceStartDebit, balanceCredit: balanceStartCredit } =
           calcBalance(s1TotalDebit, s1TotalCredit, acc.type)
+
+        // Исправление: Счета 90-99 (доходы и расходы) всегда закрываются ежемесячно.
+        // Поэтому их сальдо на начало месяца всегда должно быть равно 0 в ОСВ.
+        if (acc.code.startsWith('9')) {
+          balanceStartDebit = new Decimal(0)
+          balanceStartCredit = new Decimal(0)
+        }
 
         // 2. Обороты за период
         const dr = await prisma.transaction.aggregate({

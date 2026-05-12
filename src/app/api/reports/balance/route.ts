@@ -81,24 +81,26 @@ export async function GET() {
     const fixed        = await getGroupBalance(['01', '02', '03', '04', '07', '08'])
     const inventory    = await getGroupBalance(['10', '11', '15', '16', '20', '21', '23', '25', '26', '29'])
     const receivables  = await getGroupBalance(['40', '41', '42', '45', '46', '47', '48'])
-    const advances     = await getGroupBalance(['43'])
-    const cash         = await getGroupBalance(['50', '51', '52', '55', '56', '57', '58'])
+    const advances     = await getGroupBalance(['43', '31', '32', '33']) // + Предоплаты (31-33)
+    const cash         = await getGroupBalance(['51', '52', '55', '56', '57', '58']) // Только реальные банк. счета (без 50xx транзитных)
     const finished     = await getGroupBalance(['28'])
 
     // === ПАССИВЫ ===
-    const payables     = await getGroupBalance(['60', '61', '63', '66', '68', '69', '70', '78', '79'])
+    const payables     = await getGroupBalance(['60', '61', '63', '66', '68', '69', '70', '78', '79', '88']) // + Краткосрочные кредиты банка (88)
     const taxes        = await getGroupBalance(['64'])
     const social       = await getGroupBalance(['65'])
     const salary       = await getGroupBalance(['67'])
     const equity       = await getGroupBalance(['80', '81', '83', '84', '85'])
     
     // Прибыль текущего периода (счета 90-98) + Нераспределенная прибыль прошлых лет (87, 99)
-    const retainedPrev = await getGroupBalance(['87', '99'])
-    const currentProfit = await getGroupBalance(['90', '91', '92', '93', '94', '95', '96', '97', '98'])
+    const reGroup = await getGroupBalance(['87', '90', '91', '92', '93', '94', '95', '96', '97', '98', '99'])
+    
+    // Чистая прибыль = Кредит (liabilities) - Дебет (assets)
+    const netRetained = reGroup.liabilities.minus(reGroup.assets)
     
     const retained = {
-        assets: retainedPrev.assets.plus(currentProfit.assets),
-        liabilities: retainedPrev.liabilities.plus(currentProfit.liabilities)
+        assets: new Decimal(0),
+        liabilities: netRetained
     }
 
     // Для активных групп берём assets сторону, для пассивных — liabilities
