@@ -41,13 +41,21 @@ export async function GET() {
     const expenses = await getTurnover(['91', '94'], 'debit')
 
     // Bank: только реальный остаток расчетного счета 5110
-    // Счета 5010 (нацвалюта-касса) и 5710 (переводы в пути) — транзитные, не показывают банк
     const acc5110 = accounts_all.find(a => a.code === '5110')
     let bank = new Decimal(0)
     if (acc5110) {
       const b_dr = await prisma.transaction.aggregate({ _sum: { amount: true }, where: { organization_id: orgId, debit_id: acc5110.id, is_deleted: false } })
       const b_cr = await prisma.transaction.aggregate({ _sum: { amount: true }, where: { organization_id: orgId, credit_id: acc5110.id, is_deleted: false } })
       bank = (b_dr._sum.amount || new Decimal(0)).minus(b_cr._sum.amount || new Decimal(0))
+    }
+
+    // Cash: остаток кассы 5010 (нацвалюта)
+    const acc5010 = accounts_all.find(a => a.code === '5010')
+    let cash = new Decimal(0)
+    if (acc5010) {
+      const c_dr = await prisma.transaction.aggregate({ _sum: { amount: true }, where: { organization_id: orgId, debit_id: acc5010.id, is_deleted: false } })
+      const c_cr = await prisma.transaction.aggregate({ _sum: { amount: true }, where: { organization_id: orgId, credit_id: acc5010.id, is_deleted: false } })
+      cash = (c_dr._sum.amount || new Decimal(0)).minus(c_cr._sum.amount || new Decimal(0))
     }
 
     // AR (Net balance of 40-48)
@@ -101,6 +109,7 @@ export async function GET() {
         profit: Number(netRevenue.minus(expenses)),
         margin: Number(margin),
         bank: Number(bank),
+        cash: Number(cash),
         ar: Number(ar),
       },
       expensesByAccount: expensesByAccount.filter(e => e.amount > 0).sort((a,b) => b.amount - a.amount),

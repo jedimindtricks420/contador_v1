@@ -59,10 +59,14 @@ export async function GET() {
             if (acc.type === 'ACTIVE' || acc.type === 'CONTRA_PASSIVE') {
                 if (net.isPositive()) {
                     assets = assets.plus(net)
+                } else if (net.isNegative()) {
+                    liabilities = liabilities.plus(net.abs())
                 }
             } else if (acc.type === 'PASSIVE' || acc.type === 'CONTRA_ACTIVE') {
                 if (net.isPositive()) {
                     liabilities = liabilities.plus(net)
+                } else if (net.isNegative()) {
+                    assets = assets.plus(net.abs())
                 }
             } else {
                 // ACTIVE_PASSIVE, TRANSIT
@@ -78,19 +82,19 @@ export async function GET() {
     }
 
     // === АКТИВЫ ===
-    const fixed        = await getGroupBalance(['01', '02', '03', '04', '07', '08'])
-    const inventory    = await getGroupBalance(['10', '11', '15', '16', '20', '21', '23', '25', '26', '29'])
-    const receivables  = await getGroupBalance(['40', '41', '42', '45', '46', '47', '48'])
+    const fixed        = await getGroupBalance(['01', '02', '03', '04', '05', '06', '07', '08', '09'])
+    const inventory    = await getGroupBalance(['10', '11', '12', '13', '14', '15', '16', '20', '21', '23', '25', '26', '27', '29'])
+    const receivables  = await getGroupBalance(['40', '41', '42', '44', '45', '46', '47', '48', '49', '57'])
     const advances     = await getGroupBalance(['43', '31', '32', '33']) // + Предоплаты (31-33)
-    const cash         = await getGroupBalance(['51', '52', '55', '56', '57', '58']) // Только реальные банк. счета (без 50xx транзитных)
+    const cash         = await getGroupBalance(['50', '51', '52', '55', '56', '58']) // + 50 (Cash), - 57 (Transitory)
     const finished     = await getGroupBalance(['28'])
 
     // === ПАССИВЫ ===
-    const payables     = await getGroupBalance(['60', '61', '63', '66', '68', '69', '70', '78', '79', '88']) // + Краткосрочные кредиты банка (88)
+    const payables     = await getGroupBalance(['60', '61', '62', '63', '66', '68', '69', '70', '71', '72', '78', '79']) // + 62, 71, 72
     const taxes        = await getGroupBalance(['64'])
     const social       = await getGroupBalance(['65'])
     const salary       = await getGroupBalance(['67'])
-    const equity       = await getGroupBalance(['80', '81', '83', '84', '85'])
+    const equity       = await getGroupBalance(['80', '81', '82', '83', '84', '85', '86', '88']) // + 82, 86, 88
     
     // Прибыль текущего периода (счета 90-98) + Нераспределенная прибыль прошлых лет (87, 99)
     const reGroup = await getGroupBalance(['87', '90', '91', '92', '93', '94', '95', '96', '97', '98', '99'])
@@ -103,58 +107,48 @@ export async function GET() {
         liabilities: netRetained
     }
 
-    // Для активных групп берём assets сторону, для пассивных — liabilities
-    const assetItems = {
-        fixed:       fixed.assets,
-        inventory:   inventory.assets,
-        receivables: receivables.assets,
-        advances:    advances.assets,
-        cash:        cash.assets,
-        finished:    finished.assets,
+    // Вспомогательная функция для распределения группы в итоговый объект
+    const distributeGroup = (group: { assets: Decimal; liabilities: Decimal }, key: string) => {
+        const net = group.assets.minus(group.liabilities)
+        if (net.isPositive()) {
+            assetItems[key] = net
+            passiveItems[key] = new Decimal(0)
+        } else if (net.isNegative()) {
+            assetItems[key] = new Decimal(0)
+            passiveItems[key] = net.abs()
+        } else {
+            assetItems[key] = new Decimal(0)
+            passiveItems[key] = new Decimal(0)
+        }
     }
 
-    const passiveItems = {
-        payables:  payables.liabilities,
-        taxes:     taxes.liabilities,
-        social:    social.liabilities,
-        salary:    salary.liabilities,
-        equity:    equity.liabilities,
-        retained:  retained.liabilities,
-    }
+    const assetItems: Record<string, Decimal> = {}
+    const passiveItems: Record<string, Decimal> = {}
 
-    // Добавляем кредитовые остатки ACTIVE_PASSIVE счетов из групп активов в пассивы
-    const activeSidePassives = new Decimal(0)
-      .plus(fixed.liabilities)
-      .plus(inventory.liabilities)
-      .plus(receivables.liabilities)
-      .plus(advances.liabilities)
-      .plus(cash.liabilities)
-      .plus(finished.liabilities)
+    // Распределяем все группы
+    distributeGroup(fixed, 'fixed')
+    distributeGroup(inventory, 'inventory')
+    distributeGroup(receivables, 'receivables')
+    distributeGroup(advances, 'advances')
+    distributeGroup(cash, 'cash')
+    distributeGroup(finished, 'finished')
+    distributeGroup(payables, 'payables')
+    distributeGroup(taxes, 'taxes')
+    distributeGroup(social, 'social')
+    distributeGroup(salary, 'salary')
+    distributeGroup(equity, 'equity')
+    distributeGroup(retained, 'retained')
 
-    // Добавляем дебетовые остатки ACTIVE_PASSIVE счетов из групп пассивов в активы
-    const passiveSideAssets = new Decimal(0)
-      .plus(payables.assets)
-      .plus(taxes.assets)
-      .plus(social.assets)
-      .plus(salary.assets)
-      .plus(equity.assets)
-      .plus(retained.assets)
-
-    const totalAssets = Object.values(assetItems)
-      .reduce((a, b) => a.plus(b), new Decimal(0))
-      .plus(passiveSideAssets)
-
-    const totalPassives = Object.values(passiveItems)
-      .reduce((a, b) => a.plus(b), new Decimal(0))
-      .plus(activeSidePassives)
+    const totalAssets = Object.values(assetItems).reduce((a, b) => a.plus(b), new Decimal(0))
+    const totalPassives = Object.values(passiveItems).reduce((a, b) => a.plus(b), new Decimal(0))
 
     return NextResponse.json({
         assets: {
-            items: Object.fromEntries(Object.entries(assetItems).map(([k, v]) => [k, Number(v)])),
+            items: Object.fromEntries(Object.entries(assetItems).filter(([_, v]) => !v.isZero()).map(([k, v]) => [k, Number(v)])),
             total: Number(totalAssets)
         },
         passives: {
-            items: Object.fromEntries(Object.entries(passiveItems).map(([k, v]) => [k, Number(v)])),
+            items: Object.fromEntries(Object.entries(passiveItems).filter(([_, v]) => !v.isZero()).map(([k, v]) => [k, Number(v)])),
             total: Number(totalPassives)
         }
     })

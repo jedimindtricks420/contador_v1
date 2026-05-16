@@ -120,7 +120,10 @@ export async function GET(request: Request) {
     const otherIncome = await getGroupTurnover(['93', '95'], 'credit')
     const otherExpenses = await getGroupTurnover(['96'], 'debit')
 
-    const netProfit = netRevenue.minus(costOfSales).minus(periodExpenses).plus(otherIncome).minus(otherExpenses)
+    // 5. Налог на прибыль (9810)
+    const incomeTax = await getGroupTurnover(['981'], 'debit')
+
+    const netProfit = netRevenue.minus(costOfSales).minus(periodExpenses).plus(otherIncome).minus(otherExpenses).minus(incomeTax)
 
     const expenseMap = {
         costOfSales: costOfSales,
@@ -128,9 +131,10 @@ export async function GET(request: Request) {
         admin: admin,
         otherOper: otherOperExpenses,
         otherFin: otherExpenses,
+        incomeTax: incomeTax,
     }
 
-    const totalExpenses = costOfSales.plus(periodExpenses).plus(otherExpenses)
+    const totalExpenses = costOfSales.plus(periodExpenses).plus(otherExpenses).plus(incomeTax)
 
     return NextResponse.json({
         year,

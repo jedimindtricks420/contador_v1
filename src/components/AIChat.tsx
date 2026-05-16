@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { MessageSquare, X, Send, Bot, Plus, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
+import { MessageSquare, X, Send, Bot, Plus, CheckCircle2, Loader2, AlertCircle, Edit3 } from "lucide-react";
 import { useUI } from "@/lib/ui-context";
 
-interface TransactionData {
+interface TransactionItem {
+  step?: number;
+  step_label?: string;
   description: string;
   amount: number;
   date: string;
+  period?: string;
   debit: { code: string; name: string; is_missing: boolean };
   credit: { code: string; name: string; is_missing: boolean };
 }
@@ -15,13 +18,15 @@ interface TransactionData {
 interface Message {
   id: string;
   explanation?: string;
-  text?: string; // Fallback for simple messages
+  text?: string;
   sender: "user" | "ai";
   action?: {
-    type: 'CREATE_TRANSACTION';
-    data: TransactionData;
-  };
+    type: 'CREATE_TRANSACTION' | 'CREATE_TRANSACTIONS';
+    data?: TransactionItem;           // legacy single
+    transactions?: TransactionItem[]; // new multi
+  } | null;
   isExecuted?: boolean;
+  isPendingConfirm?: boolean; // BUG-9: шаг подтверждения
   error?: string;
 }
 
@@ -32,11 +37,13 @@ export default function AIChat() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       id: "1", 
-      text: "Здравствуйте! Я ваш **финансовый ассистент**. Чем могу помочь с анализом журнала операций или созданием проводок?", 
+      text: "Здравствуйте! Я ваш **финансовый ассистент**. Опишите операцию (например: «Заплатили налог с оборота 500 000»), и я создам все нужные проводки. Или задайте вопрос по бухгалтерии.", 
       sender: "ai" 
     },
   ]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  // BUG-9: редактируемые суммы в карточках подтверждения
+  const [editableAmounts, setEditableAmounts] = useState<Record<string, number[]>>({});
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -67,19 +74,26 @@ export default function AIChat() {
     setIsLoading(true);
 
     try {
+      // ── BUG-8: Обогащённая история чата ────────────────────────────
+      const history = messages.map(m => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.sender === "ai" && m.action && m.action.transactions
+          ? `${m.explanation || ""}\n[Предложенные проводки: ${JSON.stringify(m.action.transactions)}]`
+          : m.sender === "ai" && m.action && m.action.data
+          ? `${m.explanation || ""}\n[Предложенная проводка: ${JSON.stringify(m.action.data)}]`
+          : m.explanation || m.text || ""
+      }));
+
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          message: input,
-          history: messages.map(m => ({
-            role: m.sender === "user" ? "user" : "assistant",
-            content: m.explanation || m.text || ""
-          }))
-        })
+        body: JSON.stringify({ message: input, history })
       });
 
-      if (!response.ok) throw new Error("Ошибка связи с ИИ");
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || "Ошибка связи с ИИ");
+      }
 
       const data = await response.json();
       
@@ -87,8 +101,16 @@ export default function AIChat() {
         id: (Date.now() + 1).toString(),
         explanation: data.explanation,
         sender: "ai",
-        action: data.action
+        action: data.action || null
       };
+
+      // Инициализируем редактируемые суммы для карточки
+      if (data.action?.transactions?.length) {
+        setEditableAmounts(prev => ({
+          ...prev,
+          [aiMessage.id]: data.action.transactions.map((t: TransactionItem) => t.amount)
+        }));
+      }
 
       setMessages(prev => [...prev, aiMessage]);
     } catch (err: unknown) {
@@ -99,12 +121,30 @@ export default function AIChat() {
     }
   };
 
-  const executeTransaction = async (messageId: string, actionData: TransactionData) => {
+  // ── BUG-9: Двухшаговое подтверждение ─────────────────────────────
+  const requestConfirm = (messageId: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === messageId ? { ...m, isPendingConfirm: true } : m
+    ));
+  };
+
+  const executeTransaction = async (messageId: string, msg: Message) => {
     try {
+      const baseTxList: TransactionItem[] =
+        msg.action?.transactions ||
+        (msg.action?.data ? [msg.action.data] : []);
+
+      // Применяем отредактированные суммы если есть
+      const amounts = editableAmounts[messageId];
+      const transactions = baseTxList.map((item, idx) => ({
+        ...item,
+        amount: amounts?.[idx] ?? item.amount
+      }));
+
       const response = await fetch("/api/ai/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: actionData })
+        body: JSON.stringify({ transactions })
       });
 
       if (!response.ok) {
@@ -112,14 +152,30 @@ export default function AIChat() {
         throw new Error(errorData.error || "Ошибка записи");
       }
 
-      setMessages(prev => prev.map(m => 
-        m.id === messageId ? { ...m, isExecuted: true } : m
+      const result = await response.json();
+      setMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, isExecuted: true, isPendingConfirm: false } : m
       ));
 
-      showToast("Транзакция создана, план счетов обновлен!");
+      showToast(`Записано ${result.count || 1} проводок!`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Ошибка записи";
-      showToast(msg, 'error');
+      const errMsg = err instanceof Error ? err.message : "Ошибка записи";
+      showToast(errMsg, 'error');
+      // Сбрасываем pendingConfirm при ошибке чтобы пользователь мог попробовать снова
+      setMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, isPendingConfirm: false } : m
+      ));
+    }
+  };
+
+  const updateAmount = (messageId: string, idx: number, value: string) => {
+    const num = parseFloat(value.replace(/\s/g, ''));
+    if (!isNaN(num)) {
+      setEditableAmounts(prev => {
+        const cur = [...(prev[messageId] || [])];
+        cur[idx] = num;
+        return { ...prev, [messageId]: cur };
+      });
     }
   };
 
@@ -178,7 +234,7 @@ export default function AIChat() {
               className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[90%] space-y-3 ${
+                className={`max-w-[92%] space-y-3 ${
                   msg.sender === "user" ? "text-right" : "text-left"
                 }`}
               >
@@ -200,58 +256,129 @@ export default function AIChat() {
                   </div>
                 </div>
 
-                {/* Transaction Card */}
-                {msg.action?.type === 'CREATE_TRANSACTION' && (
-                  <div className={`mt-2 rounded-2xl border ${msg.isExecuted ? 'border-green-100 bg-green-50/30' : 'border-gray-100 bg-white shadow-lg'} p-4 transition-all duration-500 overflow-hidden`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">Новая транзакция</span>
-                      <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5 rounded-full">{msg.action.data.amount.toLocaleString()} UZS</span>
-                    </div>
-                    
-                    <p className="text-xs text-gray-600 mb-4 italic font-medium">&quot;{msg.action.data.description}&quot;</p>
-                    
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      {/* Debit */}
-                      <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 relative group">
-                        <span className="absolute -top-2 left-3 px-1 text-[8px] bg-white border border-gray-100 text-gray-400 font-bold uppercase rounded">Дебет</span>
-                        <div className="flex items-start justify-between">
-                          <div className="min-w-0">
-                            <p className="font-mono text-sm font-bold text-gray-900">{msg.action.data.debit.code}</p>
-                            <p className="text-[10px] text-gray-500 truncate">{msg.action.data.debit.name}</p>
-                          </div>
-                          {msg.action.data.debit.is_missing && <Plus size={12} className="text-blue-500 flex-shrink-0 mt-1" />}
-                        </div>
-                      </div>
-                      
-                      {/* Credit */}
-                      <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 relative group">
-                        <span className="absolute -top-2 left-3 px-1 text-[8px] bg-white border border-gray-100 text-gray-400 font-bold uppercase rounded">Кредит</span>
-                        <div className="flex items-start justify-between">
-                          <div className="min-w-0">
-                            <p className="font-mono text-sm font-bold text-gray-900">{msg.action.data.credit.code}</p>
-                            <p className="text-[10px] text-gray-500 truncate">{msg.action.data.credit.name}</p>
-                          </div>
-                          {msg.action.data.credit.is_missing && <Plus size={12} className="text-blue-500 flex-shrink-0 mt-1" />}
-                        </div>
-                      </div>
-                    </div>
+                {/* Transaction Cards (single or multi) */}
+                {msg.action && (msg.action.type === 'CREATE_TRANSACTION' || msg.action.type === 'CREATE_TRANSACTIONS') && (() => {
+                  const txList: TransactionItem[] =
+                    msg.action.transactions ||
+                    (msg.action.data ? [msg.action.data] : []);
+                  const amounts = editableAmounts[msg.id] || txList.map(t => t.amount);
+                  const isConfirming = msg.isPendingConfirm;
 
-                    {!msg.isExecuted ? (
-                      <button
-                        onClick={() => executeTransaction(msg.id, msg.action!.data)}
-                        className="w-full py-3 bg-black text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 shadow-xl"
-                      >
-                        <CheckCircle2 size={14} />
-                        <span>Записать операцию</span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center justify-center py-2 space-x-2 text-green-600">
-                        <CheckCircle2 size={16} />
-                        <span className="text-xs font-bold uppercase tracking-wider">Записано</span>
+                  return (
+                    <div className={`mt-2 rounded-2xl border transition-all duration-300 ${
+                      msg.isExecuted
+                        ? 'border-green-100 bg-green-50/40'
+                        : isConfirming
+                        ? 'border-black bg-white shadow-xl'
+                        : 'border-gray-100 bg-white shadow-lg'
+                    } p-4`}>
+                      {/* Заголовок карточки */}
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400">
+                          {isConfirming
+                            ? '⚠️ Подтвердите запись'
+                            : txList.length > 1
+                            ? `${txList.length} проводки`
+                            : 'Новая проводка'}
+                        </span>
+                        {isConfirming && (
+                          <span className="text-[9px] bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full uppercase">
+                            Проверьте суммы
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {/* Карточки проводок */}
+                      <div className="space-y-3 mb-4">
+                        {txList.map((item, idx) => (
+                          <div key={idx} className={`rounded-xl p-3 border ${isConfirming ? 'border-gray-200 bg-gray-50' : 'bg-gray-50 border-gray-100'}`}>
+                            {item.step_label && (
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-[9px] font-bold bg-black text-white rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+                                  {item.step || idx + 1}
+                                </span>
+                                <span className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">{item.step_label}</span>
+                              </div>
+                            )}
+                            <p className="text-[10px] text-gray-500 italic mb-2">{item.description}</p>
+                            <div className="flex gap-2 items-center">
+                              {/* Дебет */}
+                              <div className="flex-1 bg-white rounded-lg p-2 border border-gray-100 relative">
+                                <span className="absolute -top-1.5 left-2 px-0.5 text-[7px] bg-white text-gray-400 font-bold uppercase">Дт</span>
+                                <p className="font-mono text-xs font-bold">{item.debit.code}</p>
+                                <p className="text-[9px] text-gray-400 truncate">{item.debit.name}</p>
+                                {item.debit.is_missing && <Plus size={10} className="text-blue-400 absolute top-1 right-1" />}
+                              </div>
+                              {/* Кредит */}
+                              <div className="flex-1 bg-white rounded-lg p-2 border border-gray-100 relative">
+                                <span className="absolute -top-1.5 left-2 px-0.5 text-[7px] bg-white text-gray-400 font-bold uppercase">Кт</span>
+                                <p className="font-mono text-xs font-bold">{item.credit.code}</p>
+                                <p className="text-[9px] text-gray-400 truncate">{item.credit.name}</p>
+                                {item.credit.is_missing && <Plus size={10} className="text-blue-400 absolute top-1 right-1" />}
+                              </div>
+                              {/* Сумма — редактируемая в режиме подтверждения */}
+                              <div className="flex flex-col items-end justify-center pl-1 min-w-[80px]">
+                                {isConfirming ? (
+                                  <div className="relative">
+                                    <Edit3 size={8} className="absolute -top-1 -left-1 text-gray-400" />
+                                    <input
+                                      type="number"
+                                      value={amounts[idx]}
+                                      onChange={e => updateAmount(msg.id, idx, e.target.value)}
+                                      className="w-full text-xs font-mono font-bold bg-white border border-black rounded px-2 py-1 text-right outline-none"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="text-xs font-mono font-bold bg-black text-white px-2 py-0.5 rounded-full whitespace-nowrap">
+                                    {Number(amounts[idx]).toLocaleString('ru-RU')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Кнопки действий */}
+                      {!msg.isExecuted ? (
+                        isConfirming ? (
+                          <div className="space-y-2">
+                            {/* Шаг 2: Финальное подтверждение */}
+                            <button
+                              onClick={() => executeTransaction(msg.id, msg)}
+                              className="w-full py-3 bg-black text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 shadow-xl"
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>Да, записать {txList.length > 1 ? `все ${txList.length} проводки` : 'операцию'}</span>
+                            </button>
+                            <button
+                              onClick={() => setMessages(prev => prev.map(m =>
+                                m.id === msg.id ? { ...m, isPendingConfirm: false } : m
+                              ))}
+                              className="w-full py-2 bg-gray-100 text-gray-600 rounded-xl text-xs font-bold hover:bg-gray-200 transition-all"
+                            >
+                              Отменить
+                            </button>
+                          </div>
+                        ) : (
+                          /* Шаг 1: Запрос подтверждения */
+                          <button
+                            onClick={() => requestConfirm(msg.id)}
+                            className="w-full py-3 bg-black text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition-all active:scale-[0.98] flex items-center justify-center space-x-2 shadow-xl"
+                          >
+                            <CheckCircle2 size={14} />
+                            <span>{txList.length > 1 ? `Записать все ${txList.length} проводки` : 'Записать операцию'}</span>
+                          </button>
+                        )
+                      ) : (
+                        <div className="flex items-center justify-center py-2 space-x-2 text-green-600">
+                          <CheckCircle2 size={16} />
+                          <span className="text-xs font-bold uppercase tracking-wider">Записано</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}
@@ -274,7 +401,7 @@ export default function AIChat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              placeholder="Введите запрос (например: 'Оплатил аренду 500к из кассы')..."
+              placeholder="Опишите операцию или задайте вопрос..."
               className="flex-1 bg-transparent border-none outline-none text-sm py-3 placeholder:text-gray-400"
               disabled={isLoading}
             />
@@ -287,7 +414,7 @@ export default function AIChat() {
             </button>
           </div>
           <p className="text-[10px] text-gray-400 mt-4 text-center font-medium leading-tight">
-            ИИ может ошибаться. Пожалуйста, всегда проверяйте счета и суммы перед записью.
+            ИИ может ошибаться. Проверяйте счета и суммы перед записью.
           </p>
         </footer>
       </div>

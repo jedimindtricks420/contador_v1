@@ -71,6 +71,28 @@ export async function validateTransaction(
     if (settings.is_initial_balance_fixed) {
       throw new Error('Ввод начальных остатков зафиксирован и закрыт для редактирования');
     }
+
+    // Защита от "зеркальных" дублей:
+    // Если уже есть проводка 5110→0000, нельзя добавить 0000→5110 с тем же счётом.
+    // Это предотвращает задвоение начального остатка.
+    const mirrorDebitId  = isDebit0000 ? data.credit_id : data.debit_id;
+    const mirrorCreditId = isDebit0000 ? data.debit_id  : data.credit_id;
+
+    const mirrorExists = await prisma.transaction.findFirst({
+      where: {
+        organization_id: data.organization_id,
+        debit_id:  mirrorDebitId,
+        credit_id: mirrorCreditId,
+        is_deleted: false,
+      }
+    });
+
+    if (mirrorExists) {
+      throw new Error(
+        `Ошибка: обратная проводка через счёт 0000 с этим счётом уже существует («${mirrorExists.description}»). ` +
+        `Это создаст дублирование начального остатка. Удалите старую проводку перед созданием новой.`
+      );
+    }
   }
 
   // 3. Block regular transactions before opening date (optional but good for consistency)

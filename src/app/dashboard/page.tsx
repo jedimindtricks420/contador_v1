@@ -18,6 +18,7 @@ interface DashboardData {
     profit: number;
     margin: number;
     bank: number;
+    cash: number;
     ar: number;
   };
   expensesByAccount: Array<{
@@ -31,6 +32,24 @@ interface DashboardData {
     expenses: number;
   }>;
 }
+
+const fmt = (v: number) =>
+  v?.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: '6px', padding: '10px 14px', fontSize: '12px', fontWeight: 'bold', color: '#111' }}>
+      <p style={{ margin: '0 0 6px 0', color: '#111' }}>{label}</p>
+      {payload.map((entry: any) => (
+        <div key={entry.dataKey} style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', color: '#111', paddingBottom: '3px' }}>
+          <span>{entry.dataKey === 'revenue' ? 'Выручка' : 'Расходы'}</span>
+          <span>{fmt(entry.value)}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export default function DashboardPage() {
   const { data, isLoading } = useQuery<DashboardData>({
@@ -55,6 +74,7 @@ export default function DashboardPage() {
     { name: "Чистая прибыль", value: metrics?.profit, sub: "Выручка - Расходы", icon: metrics?.profit && metrics.profit >= 0 ? TrendingUp : TrendingDown },
     { name: "Маржинальность", value: metrics?.margin, unit: "%", sub: "Рентабельность продаж", icon: Minus },
     { name: "Деньги в банке", value: metrics?.bank, sub: "Сальдо счета 5110", icon: Wallet },
+    { name: "Касса", value: metrics?.cash, sub: "Наличные (5010)", icon: Wallet },
     { name: "Дебиторка", value: metrics?.ar, sub: "Задолженность клиентов (4010)", icon: Users },
   ];
 
@@ -112,9 +132,9 @@ export default function DashboardPage() {
               <BarChart data={data?.chartData}>
                 <XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#D1D5DB' }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#D1D5DB' }} />
-                <Tooltip cursor={{ fill: '#F9FAFB' }} contentStyle={{ border: '1px solid #E5E7EB', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }} />
-                <Bar dataKey="revenue" fill="#000000" radius={[2, 2, 0, 0]} barSize={24} />
-                <Bar dataKey="expenses" fill="#E5E7EB" radius={[2, 2, 0, 0]} barSize={24} />
+                <Tooltip cursor={{ fill: '#F9FAFB' }} content={<CustomTooltip />} />
+                <Bar dataKey="revenue" name="Выручка" fill="#000000" radius={[2, 2, 0, 0]} barSize={24} />
+                <Bar dataKey="expenses" name="Расходы" fill="#E5E7EB" radius={[2, 2, 0, 0]} barSize={24} />
               </BarChart>
             </ResponsiveContainer>
           </div>
