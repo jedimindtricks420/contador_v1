@@ -65,7 +65,7 @@ export async function DELETE(
       await tx.account.deleteMany({ where: { organization_id: id } })
       await tx.counterparty.deleteMany({ where: { organization_id: id } })
       await tx.systemSettings.deleteMany({ where: { organization_id: id } })
-      
+
       // 2. Delete the organization itself
       await tx.organization.delete({ where: { id } })
 

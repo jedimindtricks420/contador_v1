@@ -23,13 +23,30 @@ export async function DELETE(
             where: { organization_id: orgId }
         })
         if (settings && transaction.date <= settings.closed_period_date) {
-            throw Object.assign(new Error('Период закрыт для редактирования'), { status: 403 })
+            throw Object.assign(new Error('Период закрыт для редактирования (закрыт до ' + settings.closed_period_date.toLocaleDateString() + ')'), { status: 403 })
         }
 
-        return await tx.transaction.update({
+        const updated = await tx.transaction.update({
             where: { id },
             data: { is_deleted: true }
         })
+
+        await tx.auditLog.create({
+            data: {
+                organization_id: orgId,
+                user_id: "user", // В идеале тут должен быть реальный ID пользователя
+                action: "TRANSACTION_DELETE",
+                entity_type: "Transaction",
+                entity_id: id,
+                payload: {
+                    description: transaction.description,
+                    amount: transaction.amount.toString(),
+                    date: transaction.date
+                }
+            }
+        })
+
+        return updated
     })
 
     return NextResponse.json(result)

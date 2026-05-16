@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,10 +15,18 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
-        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(10px);
+        }
     </style>
 </head>
+
 <body>
     <div id="root"></div>
 
@@ -54,16 +63,16 @@
             };
 
             const apiFetch = async (endpoint, method = 'GET', body = null) => {
-                const headers = { 
+                const headers = {
                     'x-admin-password': password,
                     'Content-Type': 'application/json'
                 };
                 const config = { method, headers };
                 if (body) config.body = JSON.stringify(body);
-                
+
                 // Префикс для API админки
                 const fullPath = endpoint.startsWith('/api') ? `/admin${endpoint}` : `/admin/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
-                
+
                 const res = await fetch(fullPath, config);
                 if (res.status === 401) {
                     setIsAuthed(false);
@@ -173,9 +182,8 @@
                 <div className="flex h-screen overflow-hidden relative">
                     {/* Notifications */}
                     {notification && (
-                        <div className={`fixed top-6 right-6 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-5 duration-300 ${
-                            notification.type === 'success' ? 'bg-black text-white' : 'bg-red-600 text-white'
-                        }`}>
+                        <div className={`fixed top-6 right-6 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-5 duration-300 ${notification.type === 'success' ? 'bg-black text-white' : 'bg-red-600 text-white'
+                            }`}>
                             <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-emerald-400' : 'bg-white'}`}></div>
                             <span className="text-sm font-bold">{notification.msg}</span>
                         </div>
@@ -198,16 +206,15 @@
                                 <button
                                     key={item.id}
                                     onClick={() => setTab(item.id)}
-                                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
-                                        tab === item.id ? 'bg-black text-white shadow-lg' : 'text-gray-600 hover:bg-gray-50'
-                                    }`}
+                                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${tab === item.id ? 'bg-black text-white shadow-lg' : 'text-gray-600 hover:bg-gray-50'
+                                        }`}
                                 >
                                     <LucideIcon name={item.icon} size={18} />
                                     <span>{item.label}</span>
                                 </button>
                             ))}
                         </nav>
-                        <button 
+                        <button
                             onClick={() => setIsAuthed(false)}
                             className="flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-500 hover:bg-red-50 transition-all"
                         >
@@ -228,9 +235,9 @@
                                             { label: 'Организации', val: stats.organizations },
                                             { label: 'Выручка (USD)', val: `$${Number(stats.total_payments_usd).toFixed(0)}` },
                                             { label: 'ИИ Транзакций', val: stats.ai_transactions },
-                                            { 
-                                                label: 'AI Latency', 
-                                                val: `${(stats.avg_latency_ms / 1000).toFixed(1)}s`, 
+                                            {
+                                                label: 'AI Latency',
+                                                val: `${(stats.avg_latency_ms / 1000).toFixed(1)}s`,
                                                 sub: stats.avg_latency_ms < 10000 ? 'Stable' : stats.avg_latency_ms < 20000 ? 'Slow' : 'Critical'
                                             }
                                         ].map((item, i) => (
@@ -250,7 +257,7 @@
                                         </div>
                                         <div className="flex items-center space-x-2 h-40">
                                             {funnel.map((item, i) => {
-                                                const next = funnel[i+1];
+                                                const next = funnel[i + 1];
                                                 const cr = next ? ((next.count / item.count) * 100 || 0).toFixed(1) : null;
                                                 const height = funnel[0].count > 0 ? (item.count / funnel[0].count) * 100 : 0;
                                                 return (
@@ -287,17 +294,17 @@
                                     <div className="flex justify-between items-center">
                                         <h2 className="text-2xl font-bold">Клиенты</h2>
                                         <div className="flex items-center space-x-4">
-                                            <button 
+                                            <button
                                                 onClick={() => setShowAddUser(true)}
-                                                className="flex items-center space-x-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all shadow-md text-sm font-bold"
+                                                className="flex items-center space-x-2 px-4 py-2 bg-black text-white rounded shadow-lg hover:bg-gray-800 transition-all text-xs font-bold"
                                             >
-                                                <LucideIcon name="Plus" size={16} />
+                                                <LucideIcon name="Plus" size={14} />
                                                 <span>Добавить клиента</span>
                                             </button>
                                             <div className="relative">
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="Поиск по Email..." 
+                                                <input
+                                                    type="text"
+                                                    placeholder="Поиск по Email..."
                                                     className="px-4 py-2 border rounded-xl w-72 focus:ring-2 focus:ring-black outline-none shadow-sm transition-all pl-10"
                                                     value={search}
                                                     onChange={(e) => setSearch(e.target.value)}
@@ -318,20 +325,20 @@
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100 bg-white">
-                                                {users.flatMap(u => (u.organizations || []).map(o => ({ 
-                                                    ...o, 
-                                                    userEmail: u.email, 
+                                                {users.flatMap(u => (u.organizations || []).map(o => ({
+                                                    ...o,
+                                                    userEmail: u.email,
                                                     userCreatedAt: u.createdAt,
                                                     userId: u.id,
-                                                    lastPaymentDate: o.lastPayment?.created_at 
+                                                    lastPaymentDate: o.lastPayment?.created_at
                                                 }))).map(item => {
                                                     const now = new Date();
                                                     const validUntil = item.subscription?.valid_until ? new Date(item.subscription.valid_until) : null;
                                                     const plan = item.subscription?.plan || 'FREE';
-                                                    
+
                                                     let statusText = 'Бессрочно';
                                                     let statusColor = 'text-gray-400 bg-gray-50';
-                                                    
+
                                                     if (plan === 'PRO') {
                                                         if (validUntil && validUntil > now) {
                                                             const diff = Math.ceil((validUntil - now) / (1000 * 60 * 60 * 24));
@@ -347,26 +354,25 @@
                                                     }
 
                                                     return (
-                                                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
-                                                            <td className="px-6 py-4 align-middle">
+                                                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors text-right">
+                                                            <td className="px-6 py-4 align-middle text-left">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-mono text-xs font-bold text-gray-900 truncate max-w-[180px]" title={item.userEmail}>{item.userEmail}</span>
                                                                     <span className="text-[10px] text-gray-400 mt-1 whitespace-nowrap">Рег: {new Date(item.userCreatedAt).toLocaleDateString()}</span>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 align-middle">
+                                                            <td className="px-6 py-4 align-middle text-left">
                                                                 <div className="flex flex-col">
                                                                     <span className="font-bold text-sm text-gray-800 truncate max-w-[180px]">{item.name}</span>
                                                                     <span className="text-[10px] text-gray-400">ИНН: {item.inn || '—'}</span>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 align-middle">
+                                                            <td className="px-6 py-4 align-middle text-left">
                                                                 <div className="flex flex-col space-y-1.5">
-                                                                    <select 
-                                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${
-                                                                            plan === 'PRO' ? 'bg-black text-white border-black shadow-sm' : 
+                                                                    <select
+                                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${plan === 'PRO' ? 'bg-black text-white border-black shadow-sm' :
                                                                             plan === 'MYAPI' ? 'bg-white text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'
-                                                                        }`}
+                                                                            }`}
                                                                         value={plan}
                                                                         onChange={async (e) => {
                                                                             const newPlan = e.target.value;
@@ -385,96 +391,102 @@
                                                                     )}
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 align-middle">
+                                                            <td className="px-6 py-4 align-middle text-left">
                                                                 <div className="flex flex-col space-y-1">
                                                                     <span className={`inline-flex items-center justify-center px-2 py-1.5 rounded text-[10px] font-black uppercase tracking-widest ${statusColor}`}>
                                                                         {statusText}
                                                                     </span>
                                                                     {validUntil && plan === 'PRO' && (
-                                                                         <span className="text-[9px] text-gray-400 text-center font-medium">{validUntil.toLocaleDateString()}</span>
+                                                                        <span className="text-[9px] text-gray-400 text-center font-medium">{validUntil.toLocaleDateString()}</span>
                                                                     )}
                                                                 </div>
                                                             </td>
                                                             <td className="px-6 py-4 align-middle">
-                                                                <div className="flex items-center justify-end gap-2">
-                                                                    <div className="grid grid-cols-2 gap-1.5">
-                                                                        <button 
-                                                                            onClick={async () => {
-                                                                                const days = prompt("На сколько дней продлить PRO?", "30");
-                                                                                if(days) {
-                                                                                    await apiFetch(`/api/users/${item.id}/upgrade`, 'POST', { days });
-                                                                                    loadUsers();
-                                                                                }
-                                                                            }}
-                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-all text-[9px] font-bold uppercase tracking-tight"
-                                                                        >
-                                                                            <LucideIcon name="Zap" size={10} />
-                                                                            <span>Продлить PRO</span>
-                                                                        </button>
+                                                                <div className="flex flex-col gap-2 min-w-[160px] items-end">
+                                                                    <button
+                                                                        onClick={async () => {
+                                                                            const days = prompt("На сколько дней продлить PRO?", "30");
+                                                                            if (days) {
+                                                                                await apiFetch(`/api/users/${item.id}/upgrade`, 'POST', { days });
+                                                                                loadUsers();
+                                                                                notify('Подписка продлена!');
+                                                                            }
+                                                                        }}
+                                                                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-black text-white rounded shadow-lg hover:bg-gray-800 transition-all text-[10px] font-bold uppercase tracking-widest"
+                                                                    >
+                                                                        <LucideIcon name="Zap" size={12} />
+                                                                        <span>Продлить PRO</span>
+                                                                    </button>
 
-                                                                        <button 
+                                                                    <div className="grid grid-cols-2 gap-2 w-full">
+                                                                        <button
                                                                             onClick={async () => {
-                                                                                if(confirm(`Сбросить лимит ИИ для "${item.name}"?`)) {
+                                                                                if (confirm(`Сбросить лимит ИИ для "${item.name}"?`)) {
                                                                                     await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
                                                                                     notify('Лимит сброшен!');
                                                                                 }
                                                                             }}
-                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all text-[9px] font-bold uppercase tracking-tight"
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded hover:bg-gray-50 transition-all text-[9px] font-bold uppercase"
                                                                         >
                                                                             <LucideIcon name="History" size={10} />
-                                                                            <span>Сброс ИИ</span>
+                                                                            <span>Лимит ИИ</span>
                                                                         </button>
 
-                                                                        <button 
+                                                                        <button
                                                                             onClick={() => setEditUser({ id: item.userId, email: item.userEmail })}
-                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-gray-50 text-gray-700 border border-gray-100 rounded-lg hover:bg-gray-100 transition-all text-[9px] font-bold uppercase tracking-tight"
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded hover:bg-gray-50 transition-all text-[9px] font-bold uppercase"
                                                                         >
                                                                             <LucideIcon name="Edit" size={10} />
-                                                                            <span>Изменить вход</span>
-                                                                        </button>
-
-                                                                        <button 
-                                                                            onClick={async () => {
-                                                                                if(confirm(`УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ "${item.userEmail}" И ВСЕ ЕГО ОРГАНИЗАЦИИ? Это действие необратимо!`)) {
-                                                                                    await apiFetch(`/api/users/${item.userId}`, 'DELETE');
-                                                                                    loadUsers();
-                                                                                }
-                                                                            }}
-                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-100 rounded-lg hover:bg-rose-100 transition-all text-[9px] font-bold uppercase tracking-tight"
-                                                                        >
-                                                                            <LucideIcon name="UserX" size={10} />
-                                                                            <span>Удалить юзера</span>
-                                                                        </button>
-
-                                                                        <button 
-                                                                            onClick={async () => {
-                                                                                if(confirm(`УДАЛИТЬ ОРГАНИЗАЦИЮ "${item.name}"? Все данные будут стерты!`)) {
-                                                                                    await apiFetch(`/api/organizations/${item.id}`, 'DELETE');
-                                                                                    loadUsers();
-                                                                                }
-                                                                            }}
-                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 col-span-2 bg-white text-gray-400 border border-gray-100 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all text-[9px] font-bold uppercase tracking-tight"
-                                                                        >
-                                                                            <LucideIcon name="Trash2" size={10} />
-                                                                            <span>Удалить орг</span>
+                                                                            <span>Доступ</span>
                                                                         </button>
                                                                     </div>
-                                                                    
+
+                                                                    <div className="grid grid-cols-2 gap-2 w-full">
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                if (confirm(`УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ "${item.userEmail}" И ВСЕ ЕГО ОРГАНИЗАЦИИ? Это действие необратимо!`)) {
+                                                                                    await apiFetch(`/api/users/${item.userId}`, 'DELETE');
+                                                                                    loadUsers();
+                                                                                    notify('Пользователь удален', 'error');
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-red-600 border border-red-100 rounded hover:bg-red-50 transition-all text-[9px] font-bold uppercase"
+                                                                        >
+                                                                            <LucideIcon name="UserX" size={10} />
+                                                                            <span>Удалить</span>
+                                                                        </button>
+
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                if (confirm(`УДАЛИТЬ ОРГАНИЗАЦИЮ "${item.name}"? Все данные будут стерты!`)) {
+                                                                                    await apiFetch(`/api/organizations/${item.id}`, 'DELETE');
+                                                                                    loadUsers();
+                                                                                    notify('Организация удалена', 'error');
+                                                                                }
+                                                                            }}
+                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-red-400 border border-gray-100 rounded hover:text-red-600 hover:border-red-200 transition-all text-[9px] font-bold uppercase"
+                                                                        >
+                                                                            <LucideIcon name="Trash2" size={10} />
+                                                                            <span>Удалить орг.</span>
+                                                                        </button>
+                                                                    </div>
+
                                                                     {plan === 'MYAPI' && (
-                                                                        <div className="flex items-center space-x-2 bg-gray-50 px-2 py-2 rounded-lg border border-gray-100 h-[38px]">
-                                                                            <input 
+                                                                        <div className="w-full flex items-center space-x-2 bg-gray-50 px-2 py-2 rounded border border-gray-100 h-[32px] mt-1">
+                                                                            <input
                                                                                 type="password"
                                                                                 placeholder="API KEY"
                                                                                 defaultValue={item.subscription?.custom_api_key || ''}
-                                                                                className="text-[10px] font-mono border-none bg-transparent w-16 outline-none focus:ring-0"
+                                                                                className="text-[10px] font-mono border-none bg-transparent w-full outline-none focus:ring-0 px-0"
                                                                                 onBlur={async (e) => {
                                                                                     if (e.target.value !== item.subscription?.custom_api_key) {
                                                                                         await apiFetch(`/api/users/${item.id}/api-key`, 'PATCH', { apiKey: e.target.value });
                                                                                         loadUsers();
+                                                                                        notify('API Key сохранен');
                                                                                     }
                                                                                 }}
                                                                             />
-                                                                            <span className="text-[8px] font-black text-gray-400 uppercase">KEY</span>
+                                                                            <span className="text-[8px] font-black text-gray-400 uppercase pr-1">KEY</span>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -502,7 +514,7 @@
                                                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 block">Срок (дней)</label>
                                                 <input id="v_days" type="number" defaultValue="30" className="px-4 py-3 border rounded-xl w-32 focus:ring-2 focus:ring-black outline-none" />
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={async () => {
                                                     const count = document.getElementById('v_count').value;
                                                     const days = document.getElementById('v_days').value;
@@ -519,9 +531,8 @@
                                         <h3 className="text-xl font-bold text-gray-400">Последние ваучеры</h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                             {vouchers.map(v => (
-                                                <div key={v.id} className={`p-4 rounded-xl border border-dashed text-center font-mono ${
-                                                    v.is_used ? 'bg-gray-50 text-gray-300 border-gray-200' : 'bg-white border-black text-black shadow-sm'
-                                                }`}>
+                                                <div key={v.id} className={`p-4 rounded-xl border border-dashed text-center font-mono ${v.is_used ? 'bg-gray-50 text-gray-300 border-gray-200' : 'bg-white border-black text-black shadow-sm'
+                                                    }`}>
                                                     <div className="text-lg font-bold">{v.code}</div>
                                                     <div className="text-[10px] uppercase font-bold tracking-widest">{v.days_granted} дней | {v.is_used ? 'ИСПОЛЬЗОВАН' : 'АКТИВЕН'}</div>
                                                 </div>
@@ -551,9 +562,8 @@
                                                             <td className="px-6 py-4"><span className="text-[10px] font-bold px-2 py-1 bg-gray-100 rounded-md border">{p.provider}</span></td>
                                                             <td className="px-6 py-4 font-bold text-green-600">{p.amount}</td>
                                                             <td className="px-6 py-4">
-                                                                <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${
-                                                                    p.status === 'SUCCESS' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                                                }`}>{p.status}</span>
+                                                                <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${p.status === 'SUCCESS' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                                                                    }`}>{p.status}</span>
                                                             </td>
                                                         </tr>
                                                     ))}
@@ -585,28 +595,25 @@
                                             <tbody className="divide-y divide-gray-100">
                                                 {payments_log.map(p => (
                                                     <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
-                                                        <td className="px-6 py-4 font-mono text-[10px] text-gray-500">{p.external_id || p.id.substring(0,18)}</td>
+                                                        <td className="px-6 py-4 font-mono text-[10px] text-gray-500">{p.external_id || p.id.substring(0, 18)}</td>
                                                         <td className="px-6 py-4 font-bold text-sm text-gray-800">{p.org_name}</td>
                                                         <td className="px-6 py-4">
                                                             <div className="font-black text-gray-900">{Number(p.amount).toLocaleString()} UZS</div>
                                                         </td>
                                                         <td className="px-6 py-4">
-                                                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded inline-block border ${
-                                                                p.provider === 'PAYME' ? 'bg-cyan-50 text-cyan-600 border-cyan-100' :
-                                                                p.provider === 'CLICK' ? 'bg-blue-50 text-blue-600 border-blue-100' : 
-                                                                p.provider === 'VOUCHER' ? 'bg-black text-white border-black' : 'bg-gray-50 text-gray-400 border-gray-200'
-                                                            }`}>{p.provider}</span>
+                                                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded inline-block border ${p.provider === 'PAYME' ? 'bg-cyan-50 text-cyan-600 border-cyan-100' :
+                                                                p.provider === 'CLICK' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                                                    p.provider === 'VOUCHER' ? 'bg-black text-white border-black' : 'bg-gray-50 text-gray-400 border-gray-200'
+                                                                }`}>{p.provider}</span>
                                                         </td>
                                                         <td className="px-6 py-4 text-xs text-gray-400 font-medium">{new Date(p.created_at).toLocaleString()}</td>
                                                         <td className="px-6 py-4">
-                                                            <span className={`text-[10px] font-black uppercase inline-flex items-center space-x-1 ${
-                                                                p.status === 'SUCCESS' ? 'text-emerald-500' : 
+                                                            <span className={`text-[10px] font-black uppercase inline-flex items-center space-x-1 ${p.status === 'SUCCESS' ? 'text-emerald-500' :
                                                                 p.status === 'PENDING' ? 'text-amber-500' : 'text-rose-500'
-                                                            }`}>
-                                                                <div className={`w-1.5 h-1.5 rounded-full ${
-                                                                    p.status === 'SUCCESS' ? 'bg-emerald-500' : 
+                                                                }`}>
+                                                                <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'SUCCESS' ? 'bg-emerald-500' :
                                                                     p.status === 'PENDING' ? 'bg-amber-500' : 'bg-rose-500'
-                                                                }`}></div>
+                                                                    }`}></div>
                                                                 <span>{p.status}</span>
                                                             </span>
                                                         </td>
@@ -665,15 +672,15 @@
                                         <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
                                             <div className="flex items-center space-x-3 mb-2">
                                                 <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                                                     <LucideIcon name="Zap" className="text-emerald-600" />
+                                                    <LucideIcon name="Zap" className="text-emerald-600" />
                                                 </div>
                                                 <h3 className="text-lg font-bold">Тариф PRO</h3>
                                             </div>
-                                            
+
                                             <div className="space-y-4">
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Стоимость (UZS / Год)</label>
-                                                    <input type="number" value={config.pro_price_yearly || 0} onChange={e => setConfig({...config, pro_price_yearly: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-bold text-lg" />
+                                                    <input type="number" value={config.pro_price_yearly || 0} onChange={e => setConfig({ ...config, pro_price_yearly: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-bold text-lg" />
                                                 </div>
                                                 <div className="bg-emerald-50/50 p-4 rounded-xl">
                                                     <p className="text-[10px] text-emerald-800 font-medium leading-relaxed italic">
@@ -687,27 +694,27 @@
                                         <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
                                             <div className="flex items-center space-x-3 mb-2">
                                                 <div className="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center">
-                                                     <LucideIcon name="CreditCard" className="text-cyan-600" />
+                                                    <LucideIcon name="CreditCard" className="text-cyan-600" />
                                                 </div>
                                                 <h3 className="text-lg font-bold">Payme Бизнес</h3>
                                             </div>
-                                            
+
                                             <div className="space-y-4">
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Merchant ID</label>
-                                                    <input type="text" value={config.payme_merchant_id || ''} onChange={e => setConfig({...config, payme_merchant_id: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <input type="text" value={config.payme_merchant_id || ''} onChange={e => setConfig({ ...config, payme_merchant_id: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key (Production)</label>
-                                                    <input type="password" value={config.payme_key || ''} onChange={e => setConfig({...config, payme_key: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <input type="password" value={config.payme_key || ''} onChange={e => setConfig({ ...config, payme_key: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key (Test)</label>
-                                                    <input type="password" value={config.payme_test_key || ''} onChange={e => setConfig({...config, payme_test_key: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <input type="password" value={config.payme_test_key || ''} onChange={e => setConfig({ ...config, payme_test_key: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Окружение</label>
-                                                    <select value={config.payme_env} onChange={e => setConfig({...config, payme_env: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
+                                                    <select value={config.payme_env} onChange={e => setConfig({ ...config, payme_env: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
                                                         <option value="test">TEST MODE</option>
                                                         <option value="prod">PRODUCTION</option>
                                                     </select>
@@ -719,29 +726,29 @@
                                         <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
                                             <div className="flex items-center space-x-3 mb-2">
                                                 <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                                                     <LucideIcon name="CreditCard" className="text-blue-600" />
+                                                    <LucideIcon name="CreditCard" className="text-blue-600" />
                                                 </div>
                                                 <h3 className="text-lg font-bold">Click Evolution</h3>
                                             </div>
-                                            
+
                                             <div className="space-y-4">
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div>
                                                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Merchant ID</label>
-                                                        <input type="text" value={config.click_merchant_id || ''} onChange={e => setConfig({...config, click_merchant_id: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                        <input type="text" value={config.click_merchant_id || ''} onChange={e => setConfig({ ...config, click_merchant_id: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
                                                     </div>
                                                     <div>
                                                         <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Service ID</label>
-                                                        <input type="text" value={config.click_service_id || ''} onChange={e => setConfig({...config, click_service_id: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                        <input type="text" value={config.click_service_id || ''} onChange={e => setConfig({ ...config, click_service_id: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
                                                     </div>
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key</label>
-                                                    <input type="password" value={config.click_secret_key || ''} onChange={e => setConfig({...config, click_secret_key: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <input type="password" value={config.click_secret_key || ''} onChange={e => setConfig({ ...config, click_secret_key: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
                                                 </div>
                                                 <div>
                                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Окружение</label>
-                                                    <select value={config.click_env} onChange={e => setConfig({...config, click_env: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
+                                                    <select value={config.click_env} onChange={e => setConfig({ ...config, click_env: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
                                                         <option value="test">TEST MODE</option>
                                                         <option value="prod">PRODUCTION</option>
                                                     </select>
@@ -771,35 +778,35 @@
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Email (Логин)</label>
                                                 <div className="relative">
-                                                    <input type="email" placeholder="email@example.com" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                                                    <input type="email" placeholder="email@example.com" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} />
                                                     <LucideIcon name="Mail" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                                                 </div>
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Пароль</label>
                                                 <div className="relative">
-                                                    <input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                                                    <input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
                                                     <LucideIcon name="Lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                                                 </div>
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Имя клиента</label>
                                                 <div className="relative">
-                                                    <input type="text" placeholder="Иван Иванов" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                                                    <input type="text" placeholder="Иван Иванов" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} />
                                                     <LucideIcon name="User" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                                                 </div>
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Название организации</label>
                                                 <div className="relative">
-                                                    <input type="text" placeholder="ООО 'Моя компания'" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.orgName} onChange={e => setNewUser({...newUser, orgName: e.target.value})} />
+                                                    <input type="text" placeholder="ООО 'Моя компания'" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.orgName} onChange={e => setNewUser({ ...newUser, orgName: e.target.value })} />
                                                     <LucideIcon name="Building" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="p-6 bg-gray-50 flex gap-3">
                                             <button onClick={() => setShowAddUser(false)} className="flex-1 py-3 border rounded-xl font-bold hover:bg-gray-100 transition-all">Отмена</button>
-                                            <button 
+                                            <button
                                                 onClick={async () => {
                                                     if (!newUser.email.includes('@')) return notify('Некорректный Email', 'error');
                                                     if (newUser.password.length < 6) return notify('Пароль слишком короткий (мин. 6)', 'error');
@@ -808,8 +815,8 @@
                                                     setLoading(true);
                                                     const r = await apiFetch('/api/users', 'POST', newUser);
                                                     setLoading(false);
-                                                    if(r?.success) { setShowAddUser(false); setNewUser({ email: '', password: '', name: '', orgName: '' }); loadUsers(); notify('Клиент создан!'); }
-                                                    else if(r?.error) notify(r.error, 'error');
+                                                    if (r?.success) { setShowAddUser(false); setNewUser({ email: '', password: '', name: '', orgName: '' }); loadUsers(); notify('Клиент создан!'); }
+                                                    else if (r?.error) notify(r.error, 'error');
                                                 }}
                                                 className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50"
                                                 disabled={loading || !newUser.email || !newUser.password}
@@ -829,22 +836,22 @@
                                         <div className="p-6 space-y-4">
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Новый Email</label>
-                                                <input type="email" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.email} onChange={e => setEditUser({...editUser, email: e.target.value})} />
+                                                <input type="email" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.email} onChange={e => setEditUser({ ...editUser, email: e.target.value })} />
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Новый Пароль (оставьте пустым для сохранения)</label>
-                                                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.password || ''} onChange={e => setEditUser({...editUser, password: e.target.value})} />
+                                                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.password || ''} onChange={e => setEditUser({ ...editUser, password: e.target.value })} />
                                             </div>
                                         </div>
                                         <div className="p-6 bg-gray-50 flex gap-3">
                                             <button onClick={() => setEditUser(null)} className="flex-1 py-3 border rounded-xl font-bold hover:bg-gray-100 transition-all">Отмена</button>
-                                            <button 
+                                            <button
                                                 onClick={async () => {
                                                     setLoading(true);
                                                     const r = await apiFetch(`/api/users/${editUser.id}/credentials`, 'PATCH', editUser);
                                                     setLoading(false);
-                                                    if(r?.success) { setEditUser(null); loadUsers(); notify('Данные обновлены ✓'); }
-                                                    else if(r?.error) notify(r.error, 'error');
+                                                    if (r?.success) { setEditUser(null); loadUsers(); notify('Данные обновлены ✓'); }
+                                                    else if (r?.error) notify(r.error, 'error');
                                                 }}
                                                 className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
                                                 disabled={loading}
@@ -863,4 +870,5 @@
         root.render(<App />);
     </script>
 </body>
+
 </html>

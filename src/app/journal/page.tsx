@@ -86,8 +86,15 @@ export default function JournalPage() {
 
   const deleteTransaction = useMutation({
     mutationFn: (id: string) =>
-      fetch(`/api/transactions/${id}`, { method: "DELETE" }).then((res) => res.json()),
+      fetch(`/api/transactions/${id}`, { method: "DELETE" }).then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Ошибка при удалении");
+        }
+        return res.json();
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["transactions"] }),
+    onError: (error: any) => alert(error.message),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

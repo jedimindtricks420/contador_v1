@@ -28,6 +28,7 @@ interface Message {
   isExecuted?: boolean;
   isPendingConfirm?: boolean; // BUG-9: шаг подтверждения
   error?: string;
+  executedTransactionIds?: string[]; // IDs created in DB
 }
 
 export default function AIChat() {
@@ -162,7 +163,12 @@ export default function AIChat() {
 
       const result = await response.json();
       setMessages(prev => prev.map(m =>
-        m.id === messageId ? { ...m, isExecuted: true, isPendingConfirm: false } : m
+        m.id === messageId ? { 
+          ...m, 
+          isExecuted: true, 
+          isPendingConfirm: false,
+          executedTransactionIds: result.transactions?.map((tx: any) => tx.id) || []
+        } : m
       ));
 
       showToast(`Записано ${result.count || 1} проводок!`);
@@ -173,6 +179,33 @@ export default function AIChat() {
       setMessages(prev => prev.map(m =>
         m.id === messageId ? { ...m, isPendingConfirm: false } : m
       ));
+    }
+  };
+
+  const undoTransaction = async (messageId: string, ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    
+    if (!confirm(`Удалить записанны${ids.length > 1 ? 'е' : 'ю'} проводк${ids.length > 1 ? 'и' : 'у'}?`)) return;
+
+    try {
+      setIsLoading(true);
+      for (const id of ids) {
+        const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Ошибка удаления");
+        }
+      }
+      
+      setMessages(prev => prev.map(m =>
+        m.id === messageId ? { ...m, isExecuted: false, executedTransactionIds: [] } : m
+      ));
+      
+      showToast("Операция отменена");
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -379,9 +412,17 @@ export default function AIChat() {
                           </button>
                         )
                       ) : (
-                        <div className="flex items-center justify-center py-2 space-x-2 text-green-600">
-                          <CheckCircle2 size={16} />
-                          <span className="text-xs font-bold uppercase tracking-wider">Записано</span>
+                        <div className="flex flex-col items-center space-y-2 py-2">
+                          <div className="flex items-center space-x-2 text-green-600">
+                            <CheckCircle2 size={16} />
+                            <span className="text-xs font-bold uppercase tracking-wider">Записано</span>
+                          </div>
+                          <button 
+                            onClick={() => undoTransaction(msg.id, msg.executedTransactionIds || [])}
+                            className="text-[10px] text-gray-400 hover:text-red-500 underline font-bold uppercase tracking-widest transition-colors"
+                          >
+                            Отменить запись
+                          </button>
                         </div>
                       )}
                     </div>
