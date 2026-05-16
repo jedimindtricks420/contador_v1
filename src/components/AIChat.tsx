@@ -42,6 +42,7 @@ export default function AIChat() {
     },
   ]);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   // BUG-9: редактируемые суммы в карточках подтверждения
   const [editableAmounts, setEditableAmounts] = useState<Record<string, number[]>>({});
   
@@ -59,6 +60,13 @@ export default function AIChat() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
+    }
+  }, [input]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -396,14 +404,21 @@ export default function AIChat() {
         {/* Footer Area */}
         <footer className="p-5 border-t border-gray-50 bg-white">
           <div className="relative flex items-center bg-gray-50 border border-gray-200 rounded-2xl px-4 py-2 focus-within:border-black transition-all group shadow-sm">
-            <input
-              type="text"
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              placeholder="Опишите операцию или задайте вопрос..."
-              className="flex-1 bg-transparent border-none outline-none text-sm py-3 placeholder:text-gray-400"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              placeholder="Опишите операцию (например: Продажа товара)..."
+              className="flex-1 bg-transparent border-none outline-none text-sm py-3 placeholder:text-gray-400 resize-none overflow-y-auto"
               disabled={isLoading}
+              rows={1}
+              style={{ minHeight: '44px' }}
             />
             <button 
               onClick={handleSendMessage}

@@ -84,6 +84,26 @@ export default function AccountsSettingsPage() {
     onError: (e: any) => showToast(e.message),
   });
 
+  const addAllMutation = useMutation({
+    mutationFn: (master_account_ids: string[]) =>
+      fetch("/api/accounts/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ master_account_ids }),
+      }).then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        return data;
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["accounts-all"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["master-accounts"] });
+      showToast(`Успешно добавлено ${data.count} счета(ов)`);
+    },
+    onError: (e: any) => showToast(e.message),
+  });
+
   // Group accounts by section
   const filtered = accounts.filter(
     (a: any) =>
@@ -204,15 +224,32 @@ export default function AccountsSettingsPage() {
               Счета НСБУ №21, которые ещё не добавлены в вашу организацию.
             </p>
           </div>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Поиск"
-              value={masterSearch}
-              onChange={(e) => setMasterSearch(e.target.value)}
-              className="pl-8 pr-4 py-2 border border-gray-200 rounded text-xs font-medium outline-none focus:ring-1 focus:ring-black w-64"
-            />
+          <div className="flex items-center space-x-4">
+            {filteredMaster.length > 0 && (
+              <button
+                onClick={() => {
+                  const ids = filteredMaster.map((m: any) => m.id);
+                  if (confirm(`Добавить все доступные счета (${ids.length} шт.)?`)) {
+                    addAllMutation.mutate(ids);
+                  }
+                }}
+                disabled={addAllMutation.isPending}
+                className="flex items-center space-x-2 text-xs font-bold bg-black text-white px-4 py-2 rounded shadow-lg hover:bg-gray-800 transition-all disabled:opacity-50"
+              >
+                {addAllMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                <span>Добавить все ({filteredMaster.length})</span>
+              </button>
+            )}
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Поиск"
+                value={masterSearch}
+                onChange={(e) => setMasterSearch(e.target.value)}
+                className="pl-8 pr-4 py-2 border border-gray-200 rounded text-xs font-medium outline-none focus:ring-1 focus:ring-black w-64"
+              />
+            </div>
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { randomBytes } from "crypto";
 import path from "path";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 
@@ -428,6 +429,54 @@ router.delete("/users/:userId", async (req: Request, res: Response) => {
 router.delete("/organizations/:orgId", async (req: Request, res: Response) => {
   const { orgId } = req.params;
   try { await prisma.organization.delete({ where: { id: orgId } }); res.json({ success: true }); } catch (error) { res.status(500).json({ error: "Failed to delete organization" }); }
+});
+
+// Create User
+router.post("/users", async (req: Request, res: Response) => {
+  const { email, password, name, orgName } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+
+  try {
+    const password_hash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password_hash,
+        name: name || null,
+        organizations: orgName ? {
+          create: {
+            name: orgName,
+            onboarding_state: 'COMPLETED'
+          }
+        } : undefined
+      }
+    });
+    res.json({ success: true, user });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to create user" });
+  }
+});
+
+// Update User Credentials
+router.patch("/users/:userId/credentials", async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const { email, password } = req.body;
+  
+  const updateData: any = {};
+  if (email) updateData.email = email;
+  if (password) {
+    updateData.password_hash = await bcrypt.hash(password, 10);
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: updateData
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to update user" });
+  }
 });
 
 // Payment Settings

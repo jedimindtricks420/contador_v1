@@ -10,7 +10,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide-static@0.223.0/lib/lucide.min.js"></script>
     <script>
-        window.lucideIcons = { Layout: 'layout', Users: 'users', CreditCard: 'credit-card', Zap: 'zap', History: 'history', ArrowRight: 'arrow-right', Settings: 'settings', Trash2: 'trash-2', UserX: 'user-x', LogOut: 'log-out' };
+        window.lucideIcons = { Layout: 'layout', Users: 'users', CreditCard: 'credit-card', Zap: 'zap', History: 'history', ArrowRight: 'arrow-right', Settings: 'settings', Trash2: 'trash-2', UserX: 'user-x', LogOut: 'log-out', Plus: 'plus', Edit: 'edit', Mail: 'mail', Lock: 'lock', Building: 'building', User: 'user' };
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -38,6 +38,15 @@
             const [isAuthed, setIsAuthed] = useState(false);
             const [loading, setLoading] = useState(false);
             const [search, setSearch] = useState('');
+            const [showAddUser, setShowAddUser] = useState(false);
+            const [newUser, setNewUser] = useState({ email: '', password: '', name: '', orgName: '' });
+            const [editUser, setEditUser] = useState(null);
+            const [notification, setNotification] = useState(null);
+
+            const notify = (msg, type = 'success') => {
+                setNotification({ msg, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
 
             const LucideIcon = ({ name, size = 16, className = "" }) => {
                 const iconName = window.lucideIcons[name] || name.toLowerCase();
@@ -161,7 +170,17 @@
             }
 
             return (
-                <div className="flex h-screen overflow-hidden">
+                <div className="flex h-screen overflow-hidden relative">
+                    {/* Notifications */}
+                    {notification && (
+                        <div className={`fixed top-6 right-6 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-5 duration-300 ${
+                            notification.type === 'success' ? 'bg-black text-white' : 'bg-red-600 text-white'
+                        }`}>
+                            <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-emerald-400' : 'bg-white'}`}></div>
+                            <span className="text-sm font-bold">{notification.msg}</span>
+                        </div>
+                    )}
+
                     {/* Sidebar */}
                     <div className="w-72 bg-white border-r border-gray-100 flex flex-col p-6 space-y-8 shadow-sm z-10">
                         <div>
@@ -267,13 +286,25 @@
                                 <div className="space-y-6">
                                     <div className="flex justify-between items-center">
                                         <h2 className="text-2xl font-bold">Клиенты</h2>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Поиск по Email..." 
-                                            className="px-4 py-2 border rounded-xl w-72 focus:ring-2 focus:ring-black outline-none shadow-sm transition-all"
-                                            value={search}
-                                            onChange={(e) => setSearch(e.target.value)}
-                                        />
+                                        <div className="flex items-center space-x-4">
+                                            <button 
+                                                onClick={() => setShowAddUser(true)}
+                                                className="flex items-center space-x-2 px-4 py-2 bg-black text-white rounded-xl hover:bg-gray-800 transition-all shadow-md text-sm font-bold"
+                                            >
+                                                <LucideIcon name="Plus" size={16} />
+                                                <span>Добавить клиента</span>
+                                            </button>
+                                            <div className="relative">
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Поиск по Email..." 
+                                                    className="px-4 py-2 border rounded-xl w-72 focus:ring-2 focus:ring-black outline-none shadow-sm transition-all pl-10"
+                                                    value={search}
+                                                    onChange={(e) => setSearch(e.target.value)}
+                                                />
+                                                <LucideIcon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
                                         <table className="w-full text-left">
@@ -366,7 +397,7 @@
                                                             </td>
                                                             <td className="px-6 py-4 align-middle">
                                                                 <div className="flex items-center justify-end gap-2">
-                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                    <div className="grid grid-cols-2 gap-1.5">
                                                                         <button 
                                                                             onClick={async () => {
                                                                                 const days = prompt("На сколько дней продлить PRO?", "30");
@@ -375,9 +406,9 @@
                                                                                     loadUsers();
                                                                                 }
                                                                             }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-all text-[9px] font-bold uppercase tracking-tight"
                                                                         >
-                                                                            <LucideIcon name="ArrowRight" size={12} />
+                                                                            <LucideIcon name="Zap" size={10} />
                                                                             <span>Продлить PRO</span>
                                                                         </button>
 
@@ -385,13 +416,21 @@
                                                                             onClick={async () => {
                                                                                 if(confirm(`Сбросить лимит ИИ для "${item.name}"?`)) {
                                                                                     await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
-                                                                                    alert('Лимит сброшен!');
+                                                                                    notify('Лимит сброшен!');
                                                                                 }
                                                                             }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg hover:bg-blue-100 transition-all text-[9px] font-bold uppercase tracking-tight"
                                                                         >
-                                                                            <LucideIcon name="Zap" size={12} />
+                                                                            <LucideIcon name="History" size={10} />
                                                                             <span>Сброс ИИ</span>
+                                                                        </button>
+
+                                                                        <button 
+                                                                            onClick={() => setEditUser({ id: item.userId, email: item.userEmail })}
+                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-gray-50 text-gray-700 border border-gray-100 rounded-lg hover:bg-gray-100 transition-all text-[9px] font-bold uppercase tracking-tight"
+                                                                        >
+                                                                            <LucideIcon name="Edit" size={10} />
+                                                                            <span>Изменить вход</span>
                                                                         </button>
 
                                                                         <button 
@@ -401,9 +440,9 @@
                                                                                     loadUsers();
                                                                                 }
                                                                             }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-400 border border-gray-200 rounded-lg hover:text-black hover:border-black transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-100 rounded-lg hover:bg-rose-100 transition-all text-[9px] font-bold uppercase tracking-tight"
                                                                         >
-                                                                            <LucideIcon name="UserX" size={12} />
+                                                                            <LucideIcon name="UserX" size={10} />
                                                                             <span>Удалить юзера</span>
                                                                         </button>
 
@@ -414,9 +453,9 @@
                                                                                     loadUsers();
                                                                                 }
                                                                             }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-400 border border-gray-200 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm text-[10px] font-bold uppercase tracking-tight whitespace-nowrap min-w-[120px]"
+                                                                            className="flex items-center justify-center space-x-1.5 px-3 py-1.5 col-span-2 bg-white text-gray-400 border border-gray-100 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all text-[9px] font-bold uppercase tracking-tight"
                                                                         >
-                                                                            <LucideIcon name="Trash2" size={12} />
+                                                                            <LucideIcon name="Trash2" size={10} />
                                                                             <span>Удалить орг</span>
                                                                         </button>
                                                                     </div>
@@ -715,6 +754,101 @@
                                         <div>
                                             <h3 className="text-amber-900 font-bold">Безопасность данных</h3>
                                             <p className="text-amber-700 text-sm mt-1">Ключи хранятся в зашифрованном виде в базе данных. В целях безопасности они скрыты звездочками. Если вы не вводите новый ключ, старый останется без изменений.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Modals */}
+                            {showAddUser && (
+                                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                                        <div className="p-6 border-b flex justify-between items-center">
+                                            <h3 className="text-xl font-bold">Новый клиент</h3>
+                                            <button onClick={() => setShowAddUser(false)} className="p-2 hover:bg-gray-100 rounded-full"><LucideIcon name="X" /></button>
+                                        </div>
+                                        <div className="p-6 space-y-4">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Email (Логин)</label>
+                                                <div className="relative">
+                                                    <input type="email" placeholder="email@example.com" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                                                    <LucideIcon name="Mail" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Пароль</label>
+                                                <div className="relative">
+                                                    <input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                                                    <LucideIcon name="Lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Имя клиента</label>
+                                                <div className="relative">
+                                                    <input type="text" placeholder="Иван Иванов" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                                                    <LucideIcon name="User" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Название организации</label>
+                                                <div className="relative">
+                                                    <input type="text" placeholder="ООО 'Моя компания'" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.orgName} onChange={e => setNewUser({...newUser, orgName: e.target.value})} />
+                                                    <LucideIcon name="Building" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="p-6 bg-gray-50 flex gap-3">
+                                            <button onClick={() => setShowAddUser(false)} className="flex-1 py-3 border rounded-xl font-bold hover:bg-gray-100 transition-all">Отмена</button>
+                                            <button 
+                                                onClick={async () => {
+                                                    if (!newUser.email.includes('@')) return notify('Некорректный Email', 'error');
+                                                    if (newUser.password.length < 6) return notify('Пароль слишком короткий (мин. 6)', 'error');
+                                                    if (!newUser.orgName) return notify('Укажите организацию', 'error');
+
+                                                    setLoading(true);
+                                                    const r = await apiFetch('/api/users', 'POST', newUser);
+                                                    setLoading(false);
+                                                    if(r?.success) { setShowAddUser(false); setNewUser({ email: '', password: '', name: '', orgName: '' }); loadUsers(); notify('Клиент создан!'); }
+                                                    else if(r?.error) notify(r.error, 'error');
+                                                }}
+                                                className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50"
+                                                disabled={loading || !newUser.email || !newUser.password}
+                                            >Создать</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {editUser && (
+                                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                                        <div className="p-6 border-b flex justify-between items-center">
+                                            <h3 className="text-xl font-bold">Изменение данных</h3>
+                                            <button onClick={() => setEditUser(null)} className="p-2 hover:bg-gray-100 rounded-full"><LucideIcon name="X" /></button>
+                                        </div>
+                                        <div className="p-6 space-y-4">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Новый Email</label>
+                                                <input type="email" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.email} onChange={e => setEditUser({...editUser, email: e.target.value})} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Новый Пароль (оставьте пустым для сохранения)</label>
+                                                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.password || ''} onChange={e => setEditUser({...editUser, password: e.target.value})} />
+                                            </div>
+                                        </div>
+                                        <div className="p-6 bg-gray-50 flex gap-3">
+                                            <button onClick={() => setEditUser(null)} className="flex-1 py-3 border rounded-xl font-bold hover:bg-gray-100 transition-all">Отмена</button>
+                                            <button 
+                                                onClick={async () => {
+                                                    setLoading(true);
+                                                    const r = await apiFetch(`/api/users/${editUser.id}/credentials`, 'PATCH', editUser);
+                                                    setLoading(false);
+                                                    if(r?.success) { setEditUser(null); loadUsers(); notify('Данные обновлены ✓'); }
+                                                    else if(r?.error) notify(r.error, 'error');
+                                                }}
+                                                className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
+                                                disabled={loading}
+                                            >Сохранить</button>
                                         </div>
                                     </div>
                                 </div>
