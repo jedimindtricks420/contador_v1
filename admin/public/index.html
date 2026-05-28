@@ -4,38 +4,388 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CONTADOR | Admin Portal</title>
+    <title>CONTADOR | Панель Администратора</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide-static@0.223.0/lib/lucide.min.js"></script>
-    <script>
-        window.lucideIcons = { Layout: 'layout', Users: 'users', CreditCard: 'credit-card', Zap: 'zap', History: 'history', ArrowRight: 'arrow-right', Settings: 'settings', Trash2: 'trash-2', UserX: 'user-x', LogOut: 'log-out', Plus: 'plus', Edit: 'edit', Mail: 'mail', Lock: 'lock', Building: 'building', User: 'user' };
-    </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f9fafb;
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338CA;
+            --primary-light: rgba(79, 70, 229, 0.06);
+            --bg-page: #f8fafc;
+            --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 2px 8px -1px rgba(0, 0, 0, 0.02);
+            --card-shadow-hover: 0 16px 32px -4px rgba(79, 70, 229, 0.08), 0 4px 12px -2px rgba(0, 0, 0, 0.02);
         }
 
-        .glass {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(10px);
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-page);
+            color: #1e293b;
+            overflow-x: hidden;
+        }
+
+        .premium-card {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            border-radius: 20px;
+            box-shadow: var(--card-shadow);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .premium-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--card-shadow-hover);
+            border-color: rgba(79, 70, 229, 0.2);
+        }
+
+        .btn-premium {
+            background-color: var(--primary);
+            color: white;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-premium:hover {
+            background-color: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(79, 70, 229, 0.3);
+        }
+
+        .btn-premium:active {
+            transform: translateY(0);
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary) !important;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15) !important;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(6px);
+            }
+            to {
+                opacity: 1;
+                transform: none;
+            }
+        }
+
+        .glass-sidebar {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(16px);
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            animation: fadeInOverlay 0.2s ease-out;
+        }
+
+        @keyframes fadeInOverlay {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-box {
+            background: white;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 480px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            overflow: hidden;
+            animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes scaleIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
         }
     </style>
 </head>
 
-<body>
+<body class="antialiased">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useCallback } = React;
 
+        // ─── SVG Inline Icons lookup ──────────────────────────────────────────
+        const SVGIcons = {
+            Layout: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <rect width="7" height="9" x="3" y="3" rx="1.5" />
+                    <rect width="7" height="5" x="14" y="3" rx="1" />
+                    <rect width="7" height="9" x="14" y="12" rx="1.5" />
+                    <rect width="7" height="5" x="3" y="16" rx="1" />
+                </svg>
+            ),
+            Users: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.386 11.386 0 0 1 10.089 20M3 11.625a3 3 0 1 1 6 0 3 3 0 0 1-6 0Z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.105 18.879A11.306 11.306 0 0 1 10.089 16c2.81 0 5.372.973 7.378 2.597M18 11.625a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+            ),
+            CreditCard: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <rect width="20" height="14" x="2" y="5" rx="3" />
+                    <line x1="2" x2="22" y1="10" y2="10" />
+                </svg>
+            ),
+            Zap: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+            ),
+            History: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+            ),
+            Settings: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827a1.125 1.125 0 0 1 .26 1.43l-1.297 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.43l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            ),
+            LogOut: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+                </svg>
+            ),
+            Plus: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+            ),
+            Trash2: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+            ),
+            UserX: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M22 10.5h-6m-2.25-1.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM4 19.25A5.25 5.25 0 0 1 9.25 14h1.5A5.25 5.25 0 0 1 16 19.25V20H4v-.75Z" />
+                </svg>
+            ),
+            Edit: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                </svg>
+            ),
+            X: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+            ),
+            Search: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.637 10.637Z" />
+                </svg>
+            ),
+            AlertTriangle: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+            ),
+            CheckCircle: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+            ),
+            Building: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.36 48.36 0 0 0 12 9.75c-2.683 0-5.176.368-7.5 1.058V21M3 21h18M12 11.25v.008H12v-.008Zm0 3v.008H12v-.008Zm0 3v.008H12v-.008Zm-3.75-3v.008h-.008v-.008Zm0 3v.008h-.008v-.008Zm7.5-3v.008h-.008v-.008Zm0 3v.008h-.008v-.008Z" />
+                </svg>
+            ),
+            User: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                </svg>
+            ),
+            Mail: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+                </svg>
+            ),
+            Lock: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <rect width="18" height="12" x="3" y="11" rx="2" ry="2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+            ),
+            ArrowRight: (props) => (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.2" stroke="currentColor" {...props}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                </svg>
+            )
+        };
+
+        const LucideIcon = ({ name, size = 16, className = "" }) => {
+            const Component = SVGIcons[name] || SVGIcons.Layout;
+            return <Component className={className} style={{ width: size, height: size }} />;
+        };
+
+        // ─── Toast component ──────────────────────────────────────────────────
+        const Toast = ({ msg, type, onClose }) => {
+            useEffect(() => {
+                const t = setTimeout(onClose, 3000);
+                return () => clearTimeout(t);
+            }, [onClose]);
+
+            const bg = type === 'error' ? 'bg-rose-600' : 'bg-slate-900';
+            const icon = type === 'error' ? 'AlertTriangle' : 'CheckCircle';
+
+            return (
+                <div className={`fixed bottom-6 right-6 z-[200] ${bg} text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center space-x-3 text-sm font-semibold fade-in`}>
+                    <LucideIcon name={icon} size={18} className="text-white" />
+                    <span>{msg}</span>
+                </div>
+            );
+        };
+
+        // ─── Custom Modal container ───────────────────────────────────────────
+        const Modal = ({ title, children, onClose }) => (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+                <div className="modal-box p-8">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h3>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-full transition-all">
+                            <LucideIcon name="X" size={18} />
+                        </button>
+                    </div>
+                    {children}
+                </div>
+            </div>
+        );
+
+        // ─── Confirm modal ───────────────────────────────────────────────────
+        const ConfirmModal = ({ show, title, message, onConfirm, onCancel }) => {
+            if (!show) return null;
+            return (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+                    <div className="modal-box p-8 border-red-50">
+                        <div className="flex items-center space-x-3 mb-4 text-rose-600">
+                            <LucideIcon name="AlertTriangle" size={24} />
+                            <h3 className="text-xl font-bold tracking-tight">{title}</h3>
+                        </div>
+                        <p className="text-slate-500 text-sm leading-relaxed mb-8">{message}</p>
+                        <div className="flex space-x-3">
+                            <button
+                                onClick={onConfirm}
+                                className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-all text-sm shadow-md shadow-rose-100"
+                            >
+                                Подтвердить
+                            </button>
+                            <button
+                                onClick={onCancel}
+                                className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ─── Upgrade Days modal ────────────────────────────────────────────────
+        const UpgradeDaysModal = ({ show, orgName, onConfirm, onCancel }) => {
+            const [days, setDays] = useState('30');
+            if (!show) return null;
+
+            return (
+                <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onCancel()}>
+                    <div className="modal-box p-8">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-900 tracking-tight">Продлить PRO тариф</h3>
+                            <button onClick={onCancel} className="p-2 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-full transition-all">
+                                <LucideIcon name="X" size={18} />
+                            </button>
+                        </div>
+                        <p className="text-slate-500 text-sm leading-relaxed mb-6">
+                            Продление тарифа PRO для организации <strong className="text-slate-800">"{orgName}"</strong>. Укажите количество дней:
+                        </p>
+                        <div className="space-y-4 mb-8">
+                            <input
+                                type="number"
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                value={days}
+                                min="1"
+                                onChange={e => setDays(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex space-x-3">
+                            <button
+                                onClick={() => onConfirm(days)}
+                                className="flex-1 py-3 btn-premium rounded-xl font-bold text-sm shadow-md"
+                            >
+                                Продлить
+                            </button>
+                            <button
+                                onClick={onCancel}
+                                className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm"
+                            >
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ─── Stat Card component ──────────────────────────────────────────────
+        const StatCard = ({ label, value, sub, accent }) => (
+            <div className={`premium-card p-6 ${accent ? 'bg-indigo-50/20 border-indigo-100' : ''}`}>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{label}</p>
+                <p className={`text-4xl font-extrabold tracking-tight ${accent ? 'text-indigo-600' : 'text-slate-900'}`}>{value}</p>
+                {sub && <p className="text-[10px] font-bold text-slate-400 mt-2.5 uppercase tracking-wide">{sub}</p>}
+            </div>
+        );
+
+        // ─── Main App Component ───────────────────────────────────────────────
         const App = () => {
             const [tab, setTab] = useState('dashboard');
-            const [stats, setStats] = useState({ users: 0, organizations: 0, total_payments_usd: 0, ai_transactions: 0 });
+            const [stats, setStats] = useState({ users: 0, organizations: 0, total_payments_usd: 0, ai_transactions: 0, avg_latency_ms: 0 });
             const [users, setUsers] = useState([]);
             const [payments, setPayments] = useState([]);
             const [vouchers, setVouchers] = useState([]);
@@ -52,14 +402,24 @@
             const [editUser, setEditUser] = useState(null);
             const [notification, setNotification] = useState(null);
 
+            // Modals states
+            const [confirmState, setConfirmState] = useState({ show: false, title: '', message: '', onConfirm: null });
+            const [upgradeState, setUpgradeState] = useState({ show: false, orgId: '', orgName: '' });
+
             const notify = (msg, type = 'success') => {
                 setNotification({ msg, type });
-                setTimeout(() => setNotification(null), 3000);
             };
 
-            const LucideIcon = ({ name, size = 16, className = "" }) => {
-                const iconName = window.lucideIcons[name] || name.toLowerCase();
-                return <i data-lucide={iconName} style={{ width: size, height: size }} className={`inline-block ${className}`}></i>;
+            const triggerConfirm = (title, message, onConfirm) => {
+                setConfirmState({
+                    show: true,
+                    title,
+                    message,
+                    onConfirm: () => {
+                        onConfirm();
+                        setConfirmState({ show: false, title: '', message: '', onConfirm: null });
+                    }
+                });
             };
 
             const apiFetch = async (endpoint, method = 'GET', body = null) => {
@@ -70,20 +430,30 @@
                 const config = { method, headers };
                 if (body) config.body = JSON.stringify(body);
 
-                // Префикс для API админки
-                const fullPath = endpoint.startsWith('/api') ? `/admin${endpoint}` : `/admin/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+                const fullPath = endpoint.startsWith('/api') 
+                    ? `/admin${endpoint}` 
+                    : `/admin/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
 
-                const res = await fetch(fullPath, config);
-                if (res.status === 401) {
-                    setIsAuthed(false);
+                try {
+                    const res = await fetch(fullPath, config);
+                    if (res.status === 401) {
+                        setIsAuthed(false);
+                        return null;
+                    }
+                    return await res.json();
+                } catch (e) {
+                    console.error("Fetch error:", e);
+                    notify('Ошибка запроса к серверу', 'error');
                     return null;
                 }
-                return res.json();
             };
 
             const loadDashboard = async () => {
                 const data = await apiFetch('/api/dashboard');
-                if (data) { setStats(data); setIsAuthed(true); }
+                if (data) { 
+                    setStats(data); 
+                    setIsAuthed(true); 
+                }
             };
 
             const loadUsers = async () => {
@@ -124,7 +494,7 @@
                 setLoading(true);
                 const r = await apiFetch('/api/payment-settings', 'POST', config);
                 setLoading(false);
-                if (r?.success) alert('Настройки сохранены ✓');
+                if (r?.success) notify('Настройки сохранены ✓');
             };
 
             useEffect(() => {
@@ -138,12 +508,6 @@
                 }
             }, [tab, isAuthed, search]);
 
-            useEffect(() => {
-                if (window.lucide) {
-                    setTimeout(() => window.lucide.createIcons(), 100);
-                }
-            }, [tab, isAuthed, users, stats, funnel, payments_log]);
-
             const login = () => {
                 localStorage.setItem('admin_pass', password);
                 loadDashboard();
@@ -151,24 +515,31 @@
 
             if (!isAuthed) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-                        <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-2xl shadow-xl border border-gray-100">
+                    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 px-4">
+                        <div className="max-w-md w-full space-y-8 bg-white/95 backdrop-blur-md p-10 rounded-3xl shadow-2xl border border-white/10 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
                             <div className="text-center">
-                                <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">ADMIN PORTAL</h2>
-                                <p className="mt-2 text-sm text-gray-500 italic">Contador Accounting Engine v1.0</p>
+                                <div className="inline-flex p-3.5 bg-indigo-50 rounded-2xl mb-4">
+                                    <LucideIcon name="Zap" size={28} className="text-indigo-600 animate-pulse" />
+                                </div>
+                                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">CONTADOR</h2>
+                                <p className="mt-2 text-xs font-bold text-slate-400 uppercase tracking-widest">accounting engine admin</p>
                             </div>
                             <div className="mt-8 space-y-6">
-                                <input
-                                    type="password"
-                                    placeholder="Введите пароль доступа"
-                                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-black focus:border-black outline-none transition-all"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && login()}
-                                />
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Пароль доступа</label>
+                                    <input
+                                        type="password"
+                                        placeholder="Введите пароль"
+                                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && login()}
+                                    />
+                                </div>
                                 <button
                                     onClick={login}
-                                    className="w-full py-4 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-[0.98]"
+                                    className="w-full py-4 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-[0.98] text-sm"
                                 >
                                     Войти в систему
                                 </button>
@@ -182,17 +553,20 @@
                 <div className="flex h-screen overflow-hidden relative">
                     {/* Notifications */}
                     {notification && (
-                        <div className={`fixed top-6 right-6 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center space-x-3 animate-in fade-in slide-in-from-top-5 duration-300 ${notification.type === 'success' ? 'bg-black text-white' : 'bg-red-600 text-white'
-                            }`}>
-                            <div className={`w-2 h-2 rounded-full ${notification.type === 'success' ? 'bg-emerald-400' : 'bg-white'}`}></div>
-                            <span className="text-sm font-bold">{notification.msg}</span>
-                        </div>
+                        <Toast
+                            msg={notification.msg}
+                            type={notification.type}
+                            onClose={() => setNotification(null)}
+                        />
                     )}
 
                     {/* Sidebar */}
-                    <div className="w-72 bg-white border-r border-gray-100 flex flex-col p-6 space-y-8 shadow-sm z-10">
-                        <div>
-                            <h1 className="text-xl font-black tracking-tighter">CONTADOR<span className="text-gray-400">ADMIN</span></h1>
+                    <div className="w-80 glass-sidebar border-r border-slate-100 flex flex-col p-8 space-y-8 z-10">
+                        <div className="flex items-center space-x-3 px-2">
+                            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-sm">C</div>
+                            <h1 className="text-lg font-black tracking-tight text-slate-800">
+                                CONTADOR<span className="text-indigo-600 font-medium">ADMIN</span>
+                            </h1>
                         </div>
                         <nav className="flex-1 space-y-1">
                             {[
@@ -206,8 +580,11 @@
                                 <button
                                     key={item.id}
                                     onClick={() => setTab(item.id)}
-                                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${tab === item.id ? 'bg-black text-white shadow-lg' : 'text-gray-600 hover:bg-gray-50'
-                                        }`}
+                                    className={`w-full flex items-center space-x-3.5 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all ${
+                                        tab === item.id 
+                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                                            : 'text-slate-600 hover:bg-slate-50'
+                                    }`}
                                 >
                                     <LucideIcon name={item.icon} size={18} />
                                     <span>{item.label}</span>
@@ -216,63 +593,69 @@
                         </nav>
                         <button
                             onClick={() => setIsAuthed(false)}
-                            className="flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold text-red-500 hover:bg-red-50 transition-all"
+                            className="flex items-center space-x-3 px-4 py-3.5 rounded-2xl text-sm font-semibold text-rose-500 hover:bg-rose-50/50 transition-all border border-transparent hover:border-rose-100"
                         >
-                            <LucideIcon name="LogOut" size={18} className="text-red-500" />
+                            <LucideIcon name="LogOut" size={18} className="text-rose-500" />
                             <span>Выход</span>
                         </button>
                     </div>
 
                     {/* Main Content */}
-                    <div className="flex-1 overflow-auto bg-[#fafafa]">
-                        <div className="p-10 max-w-7xl mx-auto">
+                    <div className="flex-1 overflow-auto bg-slate-50/40">
+                        <div className="p-10 max-w-7xl mx-auto space-y-8">
                             {tab === 'dashboard' && (
-                                <div className="space-y-8">
-                                    <h2 className="text-3xl font-bold tracking-tight">Обзор системы</h2>
+                                <div className="space-y-8 fade-in">
+                                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Обзор системы</h2>
+                                    
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                                        {[
-                                            { label: 'Пользователи', val: stats.users },
-                                            { label: 'Организации', val: stats.organizations },
-                                            { label: 'Выручка (USD)', val: `$${Number(stats.total_payments_usd).toFixed(0)}` },
-                                            { label: 'ИИ Транзакций', val: stats.ai_transactions },
-                                            {
-                                                label: 'AI Latency',
-                                                val: `${(stats.avg_latency_ms / 1000).toFixed(1)}s`,
-                                                sub: stats.avg_latency_ms < 10000 ? 'Stable' : stats.avg_latency_ms < 20000 ? 'Slow' : 'Critical'
-                                            }
-                                        ].map((item, i) => (
-                                            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm transition-all hover:shadow-md">
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">{item.label}</p>
-                                                <p className="text-4xl font-black text-gray-900">{item.val}</p>
-                                                {item.sub && <p className="text-[10px] font-bold text-gray-400 mt-2 uppercase">{item.sub}</p>}
-                                            </div>
-                                        ))}
+                                        <StatCard label="Пользователи" value={stats.users} />
+                                        <StatCard label="Организации" value={stats.organizations} />
+                                        <StatCard label="Выручка (USD)" value={`$${Number(stats.total_payments_usd).toFixed(0)}`} accent />
+                                        <StatCard label="ИИ Транзакций" value={stats.ai_transactions} />
+                                        <StatCard 
+                                            label="AI Latency" 
+                                            value={`${(stats.avg_latency_ms / 1000).toFixed(1)}s`} 
+                                            sub={stats.avg_latency_ms < 10000 ? 'Стабильно' : stats.avg_latency_ms < 20000 ? 'Замедление' : 'Критично'} 
+                                        />
                                     </div>
 
                                     {/* Funnel Section */}
-                                    <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-8">
+                                    <div className="premium-card p-8 space-y-6">
                                         <div className="flex justify-between items-center">
-                                            <h3 className="text-lg font-bold tracking-tight">Воронка конверсии</h3>
-                                            <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">Analytics v3.0</span>
+                                            <div>
+                                                <h3 className="text-lg font-bold text-slate-800">Воронка конверсии</h3>
+                                                <p className="text-xs text-slate-400 mt-0.5">Аналитика прохождения по этапам в реальном времени</p>
+                                            </div>
+                                            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full uppercase tracking-wider">Analytics v3.0</span>
                                         </div>
-                                        <div className="flex items-center space-x-2 h-40">
+                                        
+                                        <div className="flex items-center space-x-2 h-56 bg-slate-50/50 p-6 rounded-2xl border border-slate-100/50">
                                             {funnel.map((item, i) => {
                                                 const next = funnel[i + 1];
                                                 const cr = next ? ((next.count / item.count) * 100 || 0).toFixed(1) : null;
-                                                const height = funnel[0].count > 0 ? (item.count / funnel[0].count) * 100 : 0;
+                                                const height = funnel[0]?.count > 0 ? (item.count / funnel[0].count) * 100 : 0;
                                                 return (
                                                     <React.Fragment key={i}>
-                                                        <div className="flex-1 h-full flex flex-col justify-end group cursor-help">
-                                                            <div className="bg-gray-200 rounded-t-xl w-full transition-all duration-700 group-hover:bg-gray-400" style={{ height: `${Math.max(height, 5)}%` }}></div>
-                                                            <div className="mt-4 text-center">
-                                                                <p className="text-[9px] font-bold text-gray-400 uppercase truncate px-1">{item.label}</p>
-                                                                <p className="text-xl font-black text-gray-900">{item.count}</p>
+                                                        <div className="flex-1 h-full flex flex-col justify-end group cursor-help relative">
+                                                            <div className="flex flex-col items-center justify-end h-full">
+                                                                <div 
+                                                                    className="bg-gradient-to-t from-indigo-500 to-indigo-400 hover:from-indigo-600 hover:to-indigo-500 rounded-2xl w-full transition-all duration-500 shadow-sm group-hover:shadow-lg flex items-start justify-center pt-2 relative overflow-hidden" 
+                                                                    style={{ height: `${Math.max(height, 8)}%` }}
+                                                                >
+                                                                    <span className="text-[9px] font-black text-white/95 bg-black/20 px-2 py-0.5 rounded-full select-none">{Math.round(height)}%</span>
+                                                                </div>
+                                                                <div className="mt-4 text-center">
+                                                                    <p className="text-[9px] font-bold text-slate-400 uppercase truncate px-1 tracking-wider">{item.label}</p>
+                                                                    <p className="text-2xl font-black text-slate-800 mt-1">{item.count.toLocaleString()}</p>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         {cr && (
-                                                            <div className="flex flex-col items-center justify-center px-4 text-gray-200">
-                                                                <div className="h-[1px] w-6 bg-gray-100"></div>
-                                                                <span className="text-[10px] font-black mt-2 text-gray-400">{cr}%</span>
+                                                            <div className="flex flex-col items-center justify-center px-2 text-slate-300">
+                                                                <div className="w-8 h-8 rounded-full bg-white border border-slate-100 flex items-center justify-center shadow-sm">
+                                                                    <LucideIcon name="ArrowRight" size={14} className="text-indigo-500 animate-pulse" />
+                                                                </div>
+                                                                <span className="text-[11px] font-extrabold mt-2 text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">{cr}%</span>
                                                             </div>
                                                         )}
                                                     </React.Fragment>
@@ -280,239 +663,263 @@
                                             })}
                                         </div>
                                     </div>
-                                    <div className="bg-gray-50 border border-gray-100 p-6 rounded-2xl flex items-center justify-between">
+
+                                    <div className="bg-indigo-50/30 border border-indigo-100/50 p-6 rounded-2xl flex items-center justify-between">
                                         <div>
-                                            <h3 className="text-gray-900 font-bold">Справочная информация</h3>
-                                            <p className="text-gray-500 text-sm mt-1">Все финансовые данные обновляются в реальном времени. Стоимость ИИ рассчитана на базе API GPT-4o.</p>
+                                            <h3 className="text-indigo-950 font-bold text-sm">Справочная информация</h3>
+                                            <p className="text-indigo-700/70 text-xs mt-1">Все финансовые данные и ИИ транзакции обновляются мгновенно. Расчеты стоимости производятся на основе тарифов OpenAI API.</p>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
                             {tab === 'users' && (
-                                <div className="space-y-6">
-                                    <div className="flex justify-between items-center">
-                                        <h2 className="text-2xl font-bold">Клиенты</h2>
-                                        <div className="flex items-center space-x-4">
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Клиенты</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">Управление организациями и тарифами пользователей</p>
+                                        </div>
+                                        <div className="flex items-center space-x-3 w-full sm:w-auto">
                                             <button
                                                 onClick={() => setShowAddUser(true)}
-                                                className="flex items-center space-x-2 px-4 py-2 bg-black text-white rounded shadow-lg hover:bg-gray-800 transition-all text-xs font-bold"
+                                                className="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all text-xs font-bold shrink-0"
                                             >
                                                 <LucideIcon name="Plus" size={14} />
                                                 <span>Добавить клиента</span>
                                             </button>
-                                            <div className="relative">
+                                            <div className="relative w-full sm:w-72">
                                                 <input
                                                     type="text"
                                                     placeholder="Поиск по Email..."
-                                                    className="px-4 py-2 border rounded-xl w-72 focus:ring-2 focus:ring-black outline-none shadow-sm transition-all pl-10"
+                                                    className="px-4 py-2.5 border border-slate-200 rounded-xl w-full focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all pl-10 text-xs"
                                                     value={search}
                                                     onChange={(e) => setSearch(e.target.value)}
                                                 />
-                                                <LucideIcon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                                                <LucideIcon name="Search" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-[#fbfbfb] border-b">
-                                                <tr>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Пользователь</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Организация</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Тариф</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Статус</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest text-right">Действия</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100 bg-white">
-                                                {users.flatMap(u => (u.organizations || []).map(o => ({
-                                                    ...o,
-                                                    userEmail: u.email,
-                                                    userCreatedAt: u.createdAt,
-                                                    userId: u.id,
-                                                    lastPaymentDate: o.lastPayment?.created_at
-                                                }))).map(item => {
-                                                    const now = new Date();
-                                                    const validUntil = item.subscription?.valid_until ? new Date(item.subscription.valid_until) : null;
-                                                    const plan = item.subscription?.plan || 'FREE';
 
-                                                    let statusText = 'Бессрочно';
-                                                    let statusColor = 'text-gray-400 bg-gray-50';
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Пользователь</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Тариф</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Действия</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {users.flatMap(u => (u.organizations || []).map(o => ({
+                                                        ...o,
+                                                        userEmail: u.email,
+                                                        userCreatedAt: u.createdAt,
+                                                        userId: u.id,
+                                                        lastPaymentDate: o.lastPayment?.created_at
+                                                    }))).map(item => {
+                                                        const now = new Date();
+                                                        const validUntil = item.subscription?.valid_until ? new Date(item.subscription.valid_until) : null;
+                                                        const plan = item.subscription?.plan || 'FREE';
 
-                                                    if (plan === 'PRO') {
-                                                        if (validUntil && validUntil > now) {
-                                                            const diff = Math.ceil((validUntil - now) / (1000 * 60 * 60 * 24));
-                                                            statusText = `Активен (${diff} дн.)`;
-                                                            statusColor = 'text-emerald-600 bg-emerald-50';
-                                                        } else {
-                                                            statusText = 'Истек';
-                                                            statusColor = 'text-rose-600 bg-rose-50';
+                                                        let statusText = 'Бессрочно';
+                                                        let statusColor = 'text-slate-400 bg-slate-100/60';
+
+                                                        if (plan === 'PRO') {
+                                                            if (validUntil && validUntil > now) {
+                                                                const diff = Math.ceil((validUntil - now) / (1000 * 60 * 60 * 24));
+                                                                statusText = `Активен (${diff} дн.)`;
+                                                                statusColor = 'text-emerald-700 bg-emerald-50 border border-emerald-100';
+                                                            } else {
+                                                                statusText = 'Истек';
+                                                                statusColor = 'text-rose-700 bg-rose-50 border border-rose-100';
+                                                            }
+                                                        } else if (plan === 'MYAPI') {
+                                                            statusText = 'Manual API';
+                                                            statusColor = 'text-blue-700 bg-blue-50 border border-blue-100';
                                                         }
-                                                    } else if (plan === 'MYAPI') {
-                                                        statusText = 'Manual API';
-                                                        statusColor = 'text-blue-600 bg-blue-50';
-                                                    }
 
-                                                    return (
-                                                        <tr key={item.id} className="hover:bg-gray-50/50 transition-colors text-right">
-                                                            <td className="px-6 py-4 align-middle text-left">
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-mono text-xs font-bold text-gray-900 truncate max-w-[180px]" title={item.userEmail}>{item.userEmail}</span>
-                                                                    <span className="text-[10px] text-gray-400 mt-1 whitespace-nowrap">Рег: {new Date(item.userCreatedAt).toLocaleDateString()}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 align-middle text-left">
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-bold text-sm text-gray-800 truncate max-w-[180px]">{item.name}</span>
-                                                                    <span className="text-[10px] text-gray-400">ИНН: {item.inn || '—'}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 align-middle text-left">
-                                                                <div className="flex flex-col space-y-1.5">
-                                                                    <select
-                                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${plan === 'PRO' ? 'bg-black text-white border-black shadow-sm' :
-                                                                            plan === 'MYAPI' ? 'bg-white text-blue-600 border-blue-200' : 'bg-white text-gray-500 border-gray-200'
+                                                        return (
+                                                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-6 py-4.5 align-middle">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-mono text-xs font-bold text-slate-900 truncate max-w-[180px]" title={item.userEmail}>{item.userEmail}</span>
+                                                                        <span className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">Рег: {new Date(item.userCreatedAt).toLocaleDateString()}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4.5 align-middle">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-bold text-sm text-slate-800 truncate max-w-[180px]">{item.name}</span>
+                                                                        <span className="text-[10px] text-slate-400 mt-0.5">ИНН: {item.inn || '—'}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4.5 align-middle">
+                                                                    <div className="flex flex-col space-y-1.5 min-w-[110px]">
+                                                                        <select
+                                                                            className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${
+                                                                                plan === 'PRO' 
+                                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                                                                                    : plan === 'MYAPI' 
+                                                                                        ? 'bg-white text-blue-600 border-blue-200' 
+                                                                                        : 'bg-white text-slate-500 border-slate-200'
                                                                             }`}
-                                                                        value={plan}
-                                                                        onChange={async (e) => {
-                                                                            const newPlan = e.target.value;
-                                                                            await apiFetch(`/api/users/${item.id}/plan`, 'PATCH', { plan: newPlan });
-                                                                            loadUsers();
-                                                                        }}
-                                                                    >
-                                                                        <option value="FREE">FREE</option>
-                                                                        <option value="PRO">PRO</option>
-                                                                        <option value="MYAPI">MYAPI</option>
-                                                                    </select>
-                                                                    {item.lastPaymentDate && (
-                                                                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter text-center">
-                                                                            {new Date(item.lastPaymentDate).toLocaleDateString()}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 align-middle text-left">
-                                                                <div className="flex flex-col space-y-1">
-                                                                    <span className={`inline-flex items-center justify-center px-2 py-1.5 rounded text-[10px] font-black uppercase tracking-widest ${statusColor}`}>
-                                                                        {statusText}
-                                                                    </span>
-                                                                    {validUntil && plan === 'PRO' && (
-                                                                        <span className="text-[9px] text-gray-400 text-center font-medium">{validUntil.toLocaleDateString()}</span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4 align-middle">
-                                                                <div className="flex flex-col gap-2 min-w-[160px] items-end">
-                                                                    <button
-                                                                        onClick={async () => {
-                                                                            const days = prompt("На сколько дней продлить PRO?", "30");
-                                                                            if (days) {
-                                                                                await apiFetch(`/api/users/${item.id}/upgrade`, 'POST', { days });
+                                                                            value={plan}
+                                                                            onChange={async (e) => {
+                                                                                const newPlan = e.target.value;
+                                                                                await apiFetch(`/api/users/${item.id}/plan`, 'PATCH', { plan: newPlan });
                                                                                 loadUsers();
-                                                                                notify('Подписка продлена!');
-                                                                            }
-                                                                        }}
-                                                                        className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-black text-white rounded shadow-lg hover:bg-gray-800 transition-all text-[10px] font-bold uppercase tracking-widest"
-                                                                    >
-                                                                        <LucideIcon name="Zap" size={12} />
-                                                                        <span>Продлить PRO</span>
-                                                                    </button>
-
-                                                                    <div className="grid grid-cols-2 gap-2 w-full">
-                                                                        <button
-                                                                            onClick={async () => {
-                                                                                if (confirm(`Сбросить лимит ИИ для "${item.name}"?`)) {
-                                                                                    await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
-                                                                                    notify('Лимит сброшен!');
-                                                                                }
+                                                                                notify(`Тариф изменен на ${newPlan}`);
                                                                             }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded hover:bg-gray-50 transition-all text-[9px] font-bold uppercase"
                                                                         >
-                                                                            <LucideIcon name="History" size={10} />
-                                                                            <span>Лимит ИИ</span>
-                                                                        </button>
-
-                                                                        <button
-                                                                            onClick={() => setEditUser({ id: item.userId, email: item.userEmail })}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-gray-900 border border-gray-200 rounded hover:bg-gray-50 transition-all text-[9px] font-bold uppercase"
-                                                                        >
-                                                                            <LucideIcon name="Edit" size={10} />
-                                                                            <span>Доступ</span>
-                                                                        </button>
+                                                                            <option value="FREE">FREE</option>
+                                                                            <option value="PRO">PRO</option>
+                                                                            <option value="MYAPI">MYAPI</option>
+                                                                        </select>
+                                                                        {item.lastPaymentDate && (
+                                                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider text-center block">
+                                                                                {new Date(item.lastPaymentDate).toLocaleDateString()}
+                                                                            </span>
+                                                                        )}
                                                                     </div>
-
-                                                                    <div className="grid grid-cols-2 gap-2 w-full">
-                                                                        <button
-                                                                            onClick={async () => {
-                                                                                if (confirm(`УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ "${item.userEmail}" И ВСЕ ЕГО ОРГАНИЗАЦИИ? Это действие необратимо!`)) {
-                                                                                    await apiFetch(`/api/users/${item.userId}`, 'DELETE');
-                                                                                    loadUsers();
-                                                                                    notify('Пользователь удален', 'error');
-                                                                                }
-                                                                            }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-red-600 border border-red-100 rounded hover:bg-red-50 transition-all text-[9px] font-bold uppercase"
-                                                                        >
-                                                                            <LucideIcon name="UserX" size={10} />
-                                                                            <span>Удалить</span>
-                                                                        </button>
-
-                                                                        <button
-                                                                            onClick={async () => {
-                                                                                if (confirm(`УДАЛИТЬ ОРГАНИЗАЦИЮ "${item.name}"? Все данные будут стерты!`)) {
-                                                                                    await apiFetch(`/api/organizations/${item.id}`, 'DELETE');
-                                                                                    loadUsers();
-                                                                                    notify('Организация удалена', 'error');
-                                                                                }
-                                                                            }}
-                                                                            className="flex items-center justify-center space-x-2 px-3 py-2 bg-white text-red-400 border border-gray-100 rounded hover:text-red-600 hover:border-red-200 transition-all text-[9px] font-bold uppercase"
-                                                                        >
-                                                                            <LucideIcon name="Trash2" size={10} />
-                                                                            <span>Удалить орг.</span>
-                                                                        </button>
+                                                                </td>
+                                                                <td className="px-6 py-4.5 align-middle">
+                                                                    <div className="flex flex-col space-y-1">
+                                                                        <span className={`inline-flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${statusColor}`}>
+                                                                            {statusText}
+                                                                        </span>
+                                                                        {validUntil && plan === 'PRO' && (
+                                                                            <span className="text-[9px] text-slate-400 text-center font-semibold mt-0.5">{validUntil.toLocaleDateString()}</span>
+                                                                        )}
                                                                     </div>
+                                                                </td>
+                                                                <td className="px-6 py-4.5 align-middle">
+                                                                    <div className="flex flex-col gap-1.5 min-w-[200px] items-end">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setUpgradeState({ show: true, orgId: item.id, orgName: item.name });
+                                                                            }}
+                                                                            className="w-full flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-[10px] font-extrabold uppercase tracking-wider shadow-sm shadow-indigo-100"
+                                                                        >
+                                                                            <LucideIcon name="Zap" size={11} />
+                                                                            <span>Продлить PRO</span>
+                                                                        </button>
 
-                                                                    {plan === 'MYAPI' && (
-                                                                        <div className="w-full flex items-center space-x-2 bg-gray-50 px-2 py-2 rounded border border-gray-100 h-[32px] mt-1">
-                                                                            <input
-                                                                                type="password"
-                                                                                placeholder="API KEY"
-                                                                                defaultValue={item.subscription?.custom_api_key || ''}
-                                                                                className="text-[10px] font-mono border-none bg-transparent w-full outline-none focus:ring-0 px-0"
-                                                                                onBlur={async (e) => {
-                                                                                    if (e.target.value !== item.subscription?.custom_api_key) {
-                                                                                        await apiFetch(`/api/users/${item.id}/api-key`, 'PATCH', { apiKey: e.target.value });
-                                                                                        loadUsers();
-                                                                                        notify('API Key сохранен');
-                                                                                    }
+                                                                        <div className="grid grid-cols-2 gap-1.5 w-full">
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    triggerConfirm(
+                                                                                        'Сбросить лимит ИИ',
+                                                                                        `Вы действительно хотите сбросить использованный лимит ИИ ресурсов для организации "${item.name}"?`,
+                                                                                        async () => {
+                                                                                            await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
+                                                                                            notify('Лимит ИИ успешно сброшен');
+                                                                                        }
+                                                                                    );
                                                                                 }}
-                                                                            />
-                                                                            <span className="text-[8px] font-black text-gray-400 uppercase pr-1">KEY</span>
+                                                                                className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="History" size={10} />
+                                                                                <span>Лимит ИИ</span>
+                                                                            </button>
+
+                                                                            <button
+                                                                                onClick={() => setEditUser({ id: item.userId, email: item.userEmail })}
+                                                                                className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="Edit" size={10} />
+                                                                                <span>Доступ</span>
+                                                                            </button>
                                                                         </div>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
+
+                                                                        <div className="grid grid-cols-2 gap-1.5 w-full">
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    triggerConfirm(
+                                                                                        'УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ',
+                                                                                        `ВНИМАНИЕ! Вы хотите безвозвратно удалить пользователя "${item.userEmail}" и ВСЕ его связанные организации? Данное действие невозможно отменить!`,
+                                                                                        async () => {
+                                                                                            await apiFetch(`/api/users/${item.userId}`, 'DELETE');
+                                                                                            loadUsers();
+                                                                                            notify('Пользователь и его орг. удалены', 'error');
+                                                                                        }
+                                                                                    );
+                                                                                }}
+                                                                                className="flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-rose-600 border border-rose-100 rounded-lg hover:bg-rose-50 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="UserX" size={10} />
+                                                                                <span>Удалить</span>
+                                                                            </button>
+
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    triggerConfirm(
+                                                                                        'УДАЛИТЬ ОРГАНИЗАЦИЮ',
+                                                                                        `ВНИМАНИЕ! Вы хотите удалить организацию "${item.name}"? Все сохраненные данные организации будут полностью стерты!`,
+                                                                                        async () => {
+                                                                                            await apiFetch(`/api/organizations/${item.id}`, 'DELETE');
+                                                                                            loadUsers();
+                                                                                            notify('Организация удалена', 'error');
+                                                                                        }
+                                                                                    );
+                                                                                }}
+                                                                                className="flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-rose-400 border border-slate-200 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="Trash2" size={10} />
+                                                                                <span>Удалить орг.</span>
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {plan === 'MYAPI' && (
+                                                                            <div className="w-full flex items-center space-x-1.5 bg-slate-50/50 px-2 py-1 rounded-lg border border-slate-100 h-[30px] mt-0.5">
+                                                                                <input
+                                                                                    type="password"
+                                                                                    placeholder="Введите API KEY"
+                                                                                    defaultValue={item.subscription?.custom_api_key || ''}
+                                                                                    className="text-[10px] font-mono border-none bg-transparent w-full outline-none focus:ring-0 px-0 py-0"
+                                                                                    onBlur={async (e) => {
+                                                                                        if (e.target.value !== item.subscription?.custom_api_key) {
+                                                                                            await apiFetch(`/api/users/${item.id}/api-key`, 'PATCH', { apiKey: e.target.value });
+                                                                                            loadUsers();
+                                                                                            notify('Custom API Key успешно сохранен');
+                                                                                        }
+                                                                                    }}
+                                                                                />
+                                                                                <span className="text-[8px] font-black text-indigo-500 bg-indigo-50 px-1 rounded uppercase select-none">KEY</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {users.length === 0 && (
+                                            <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
+                                                Клиенты не найдены
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
 
                             {tab === 'billing' && (
-                                <div className="space-y-12">
+                                <div className="space-y-10 fade-in">
                                     {/* Voucher Generator */}
-                                    <div className="space-y-6">
-                                        <h2 className="text-2xl font-bold">Генерация ваучеров</h2>
-                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm flex items-end space-x-6">
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 block">Количество</label>
-                                                <input id="v_count" type="number" defaultValue="5" className="px-4 py-3 border rounded-xl w-32 focus:ring-2 focus:ring-black outline-none" />
+                                    <div className="space-y-4">
+                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Генерация ваучеров</h2>
+                                        <div className="premium-card p-8 flex flex-col md:flex-row items-end gap-6">
+                                            <div className="w-full md:w-36">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Количество</label>
+                                                <input id="v_count" type="number" defaultValue="5" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2" />
                                             </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 block">Срок (дней)</label>
-                                                <input id="v_days" type="number" defaultValue="30" className="px-4 py-3 border rounded-xl w-32 focus:ring-2 focus:ring-black outline-none" />
+                                            <div className="w-full md:w-36">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Срок (дней)</label>
+                                                <input id="v_days" type="number" defaultValue="30" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2" />
                                             </div>
                                             <button
                                                 onClick={async () => {
@@ -520,201 +927,284 @@
                                                     const days = document.getElementById('v_days').value;
                                                     await apiFetch('/api/vouchers/generate', 'POST', { count, days });
                                                     loadBilling();
+                                                    notify(`Пакет из ${count} ваучеров сгенерирован`);
                                                 }}
-                                                className="px-8 py-4 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-95"
-                                            >Создать пакет ваучеров</button>
+                                                className="w-full md:w-auto px-8 py-3.5 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95 text-sm"
+                                            >
+                                                Создать пакет ваучеров
+                                            </button>
                                         </div>
                                     </div>
 
                                     {/* Voucher List */}
-                                    <div className="space-y-6">
-                                        <h3 className="text-xl font-bold text-gray-400">Последние ваучеры</h3>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-bold text-slate-500">Последние сгенерированные ваучеры</h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                             {vouchers.map(v => (
-                                                <div key={v.id} className={`p-4 rounded-xl border border-dashed text-center font-mono ${v.is_used ? 'bg-gray-50 text-gray-300 border-gray-200' : 'bg-white border-black text-black shadow-sm'
-                                                    }`}>
-                                                    <div className="text-lg font-bold">{v.code}</div>
-                                                    <div className="text-[10px] uppercase font-bold tracking-widest">{v.days_granted} дней | {v.is_used ? 'ИСПОЛЬЗОВАН' : 'АКТИВЕН'}</div>
+                                                <div 
+                                                    key={v.id} 
+                                                    className={`p-5 rounded-2xl border transition-all text-center ${
+                                                        v.is_used 
+                                                            ? 'bg-slate-50 text-slate-300 border-slate-200' 
+                                                            : 'bg-white border-indigo-200/60 text-slate-800 shadow-sm hover:shadow-md border-dashed border-2'
+                                                    }`}
+                                                >
+                                                    <div className="text-md font-mono font-bold tracking-wide select-all">{v.code}</div>
+                                                    <div className="text-[10px] uppercase font-extrabold tracking-wider mt-2 text-slate-400">
+                                                        {v.days_granted} дней · {v.is_used ? 'Использован' : 'Активен'}
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
+                                        {vouchers.length === 0 && (
+                                            <div className="text-center text-slate-400 uppercase tracking-widest py-8 font-bold text-xs bg-white rounded-2xl border border-dashed">
+                                                Ваучеров пока нет
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Payments Table */}
-                                    <div className="space-y-6">
-                                        <h2 className="text-2xl font-bold">История оплат (Payme / Click)</h2>
-                                        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-                                            <table className="w-full text-left">
-                                                <thead className="bg-[#fbfbfb] border-b">
-                                                    <tr>
-                                                        <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Дата</th>
-                                                        <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">ID Орг.</th>
-                                                        <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Шлюз</th>
-                                                        <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Сумма</th>
-                                                        <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Статус</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {payments.map(p => (
-                                                        <tr key={p.id} className="border-b last:border-0">
-                                                            <td className="px-6 py-4 text-sm">{new Date(p.created_at).toLocaleDateString()}</td>
-                                                            <td className="px-6 py-4 text-xs font-mono">{p.organization_id.substring(0, 8)}...</td>
-                                                            <td className="px-6 py-4"><span className="text-[10px] font-bold px-2 py-1 bg-gray-100 rounded-md border">{p.provider}</span></td>
-                                                            <td className="px-6 py-4 font-bold text-green-600">{p.amount}</td>
-                                                            <td className="px-6 py-4">
-                                                                <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${p.status === 'SUCCESS' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                                                    }`}>{p.status}</span>
-                                                            </td>
+                                    <div className="space-y-4">
+                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">История оплат (Payme / Click)</h2>
+                                        <div className="premium-card overflow-hidden">
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead className="bg-slate-50 border-b border-slate-100">
+                                                        <tr>
+                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата</th>
+                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID Орг.</th>
+                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Шлюз</th>
+                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Сумма</th>
+                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                                                        {payments.map(p => (
+                                                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-6 py-4 text-xs font-semibold text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
+                                                                <td className="px-6 py-4 text-xs font-mono text-slate-400">{p.organization_id.substring(0, 8)}...</td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-full border border-slate-200/50 uppercase">
+                                                                        {p.provider}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4 font-bold text-indigo-600">{Number(p.amount).toLocaleString()} UZS</td>
+                                                                <td className="px-6 py-4">
+                                                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                                                                        p.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
+                                                                    }`}>{p.status}</span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            {payments.length === 0 && (
+                                                <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
+                                                    Платежи отсутствуют
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
                             )}
 
                             {tab === 'payments_log' && (
-                                <div className="space-y-6">
+                                <div className="space-y-6 fade-in">
                                     <div className="flex justify-between items-center">
-                                        <h2 className="text-2xl font-bold font-mono uppercase tracking-tighter text-gray-900 line-through decoration-gray-300">Журнал Тразакций</h2>
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-3 py-1 rounded-full border border-gray-100">Audit Mode v3.0</div>
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Журнал Транзакций</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">Полный список платежей всех организаций системы</p>
+                                        </div>
+                                        <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest bg-indigo-50 border border-indigo-100 px-3.5 py-1.5 rounded-full">
+                                            Audit Mode v3.0
+                                        </div>
                                     </div>
-                                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-[#fbfbfb] border-b">
-                                                <tr>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">ID Транзакции / Ваучера</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Организация</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Сумма</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Провайдер</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Дата</th>
-                                                    <th className="px-6 py-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Статус</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                                {payments_log.map(p => (
-                                                    <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
-                                                        <td className="px-6 py-4 font-mono text-[10px] text-gray-500">{p.external_id || p.id.substring(0, 18)}</td>
-                                                        <td className="px-6 py-4 font-bold text-sm text-gray-800">{p.org_name}</td>
-                                                        <td className="px-6 py-4">
-                                                            <div className="font-black text-gray-900">{Number(p.amount).toLocaleString()} UZS</div>
-                                                        </td>
-                                                        <td className="px-6 py-4">
-                                                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded inline-block border ${p.provider === 'PAYME' ? 'bg-cyan-50 text-cyan-600 border-cyan-100' :
-                                                                p.provider === 'CLICK' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                                                                    p.provider === 'VOUCHER' ? 'bg-black text-white border-black' : 'bg-gray-50 text-gray-400 border-gray-200'
-                                                                }`}>{p.provider}</span>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-xs text-gray-400 font-medium">{new Date(p.created_at).toLocaleString()}</td>
-                                                        <td className="px-6 py-4">
-                                                            <span className={`text-[10px] font-black uppercase inline-flex items-center space-x-1 ${p.status === 'SUCCESS' ? 'text-emerald-500' :
-                                                                p.status === 'PENDING' ? 'text-amber-500' : 'text-rose-500'
-                                                                }`}>
-                                                                <div className={`w-1.5 h-1.5 rounded-full ${p.status === 'SUCCESS' ? 'bg-emerald-500' :
-                                                                    p.status === 'PENDING' ? 'bg-amber-500' : 'bg-rose-500'
-                                                                    }`}></div>
-                                                                <span>{p.status}</span>
-                                                            </span>
-                                                        </td>
+
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID Транзакции / Ваучера</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Сумма</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Провайдер</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {payments_log.map(p => (
+                                                        <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{p.external_id || p.id.substring(0, 18)}</td>
+                                                            <td className="px-6 py-4 font-bold text-sm text-slate-800">{p.org_name}</td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-extrabold text-slate-900">{Number(p.amount).toLocaleString()} UZS</div>
+                                                            </td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full inline-block border ${
+                                                                    p.provider === 'PAYME' ? 'bg-cyan-50 text-cyan-700 border-cyan-100' :
+                                                                    p.provider === 'CLICK' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                                                    p.provider === 'VOUCHER' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-100 text-slate-500 border-slate-200/50'
+                                                                }`}>{p.provider}</span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-xs text-slate-400 font-semibold">{new Date(p.created_at).toLocaleString()}</td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={`text-[10px] font-black uppercase inline-flex items-center space-x-1.5 ${
+                                                                    p.status === 'SUCCESS' ? 'text-emerald-600' :
+                                                                    p.status === 'PENDING' ? 'text-amber-600' : 'text-rose-600'
+                                                                }`}>
+                                                                    <div className={`w-1.5 h-1.5 rounded-full ${
+                                                                        p.status === 'SUCCESS' ? 'bg-emerald-500' :
+                                                                        p.status === 'PENDING' ? 'bg-amber-500' : 'bg-rose-500'
+                                                                    }`}></div>
+                                                                    <span>{p.status}</span>
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                         {payments_log.length === 0 && (
-                                            <div className="p-20 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">Транзакции не найдены</div>
+                                            <div className="p-20 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
+                                                Транзакции не найдены
+                                            </div>
                                         )}
                                     </div>
                                 </div>
                             )}
 
                             {tab === 'ai' && (
-                                <div className="space-y-8">
-                                    <h2 className="text-2xl font-bold">Расход ИИ Ресурсов</h2>
-                                    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-                                        <table className="w-full text-left">
-                                            <thead className="bg-[#fbfbfb] border-b">
-                                                <tr>
-                                                    <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Организация</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Запросов</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Токены (I/O)</th>
-                                                    <th className="px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Затраты (USD)</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                                {usage.map(u => (
-                                                    <tr key={u.organization_id}>
-                                                        <td className="px-6 py-5 font-bold text-sm">{u.org_name}</td>
-                                                        <td className="px-6 py-5 text-sm">{u._count.id}</td>
-                                                        <td className="px-6 py-5 text-xs text-gray-500 font-mono">
-                                                            {u._sum.tokens_input} / {u._sum.tokens_output}
-                                                        </td>
-                                                        <td className="px-6 py-5 font-black text-red-600">${Number(u._sum.cost_usd).toFixed(4)}</td>
+                                <div className="space-y-6 fade-in">
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Расход ИИ Ресурсов</h2>
+                                        <p className="text-xs text-slate-400 mt-0.5">Статистика затрат токенов по организациям</p>
+                                    </div>
+
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Запросов</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Токены (Вход / Выход)</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Затраты (USD)</th>
                                                     </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {usage.map(u => (
+                                                        <tr key={u.organization_id} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="px-6 py-5 font-bold text-sm text-slate-800">{u.org_name}</td>
+                                                            <td className="px-6 py-5 text-sm text-slate-600 font-bold">{u._count.id}</td>
+                                                            <td className="px-6 py-5 text-xs text-slate-500 font-mono font-semibold">
+                                                                {u._sum.tokens_input?.toLocaleString()} / {u._sum.tokens_output?.toLocaleString()}
+                                                            </td>
+                                                            <td className="px-6 py-5 font-black text-rose-600 text-right text-sm">${Number(u._sum.cost_usd).toFixed(4)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {usage.length === 0 && (
+                                            <div className="p-20 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
+                                                ИИ запросы отсутствуют
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
 
                             {tab === 'settings' && config && (
-                                <div className="space-y-10">
+                                <div className="space-y-8 fade-in">
                                     <div className="flex justify-between items-center">
-                                        <h2 className="text-3xl font-bold tracking-tight">Настройки шлюзов</h2>
-                                        <button onClick={saveSettings} disabled={loading} className="px-10 py-4 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-95 disabled:opacity-50">
-                                            {loading ? 'Сохранение...' : 'Сохранить изменения'}
+                                        <div>
+                                            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Настройки шлюзов</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">Управление тарификацией и ключами интеграций</p>
+                                        </div>
+                                        <button 
+                                            onClick={saveSettings} 
+                                            disabled={loading} 
+                                            className="px-8 py-3.5 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95 text-sm disabled:opacity-50"
+                                        >
+                                            {loading ? 'Сохранение...' : 'Сохранить настройки'}
                                         </button>
                                     </div>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                                         {/* Plan Pricing */}
-                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                                        <div className="premium-card p-8 space-y-6">
                                             <div className="flex items-center space-x-3 mb-2">
-                                                <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                                                    <LucideIcon name="Zap" className="text-emerald-600" />
+                                                <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm">
+                                                    <LucideIcon name="Zap" size={20} />
                                                 </div>
-                                                <h3 className="text-lg font-bold">Тариф PRO</h3>
+                                                <h3 className="text-lg font-bold text-slate-800">Тариф PRO</h3>
                                             </div>
 
                                             <div className="space-y-4">
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Стоимость (UZS / Год)</label>
-                                                    <input type="number" value={config.pro_price_yearly || 0} onChange={e => setConfig({ ...config, pro_price_yearly: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-bold text-lg" />
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Стоимость (UZS / Год)</label>
+                                                    <input 
+                                                        type="number" 
+                                                        value={config.pro_price_yearly || 0} 
+                                                        onChange={e => setConfig({ ...config, pro_price_yearly: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-bold text-lg text-slate-800" 
+                                                    />
                                                 </div>
-                                                <div className="bg-emerald-50/50 p-4 rounded-xl">
-                                                    <p className="text-[10px] text-emerald-800 font-medium leading-relaxed italic">
-                                                        Эта цена будет отображаться клиентам и использоваться при формировании чеков Payme/Click.
+                                                <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/30">
+                                                    <p className="text-[10px] text-indigo-700 font-semibold leading-relaxed italic">
+                                                        Стоимость тарифа используется в личном кабинете клиентов, а также для автоматической генерации счетов в Payme и Click.
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
 
                                         {/* Payme */}
-                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                                        <div className="premium-card p-8 space-y-6">
                                             <div className="flex items-center space-x-3 mb-2">
-                                                <div className="w-10 h-10 bg-cyan-50 rounded-xl flex items-center justify-center">
-                                                    <LucideIcon name="CreditCard" className="text-cyan-600" />
+                                                <div className="w-10 h-10 bg-cyan-50 rounded-2xl flex items-center justify-center text-cyan-600 shadow-sm">
+                                                    <LucideIcon name="CreditCard" size={20} />
                                                 </div>
-                                                <h3 className="text-lg font-bold">Payme Бизнес</h3>
+                                                <h3 className="text-lg font-bold text-slate-800">Payme Бизнес</h3>
                                             </div>
 
                                             <div className="space-y-4">
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Merchant ID</label>
-                                                    <input type="text" value={config.payme_merchant_id || ''} onChange={e => setConfig({ ...config, payme_merchant_id: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Merchant ID</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={config.payme_merchant_id || ''} 
+                                                        onChange={e => setConfig({ ...config, payme_merchant_id: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
+                                                    />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key (Production)</label>
-                                                    <input type="password" value={config.payme_key || ''} onChange={e => setConfig({ ...config, payme_key: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Secret Key (Production)</label>
+                                                    <input 
+                                                        type="password" 
+                                                        value={config.payme_key || ''} 
+                                                        onChange={e => setConfig({ ...config, payme_key: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
+                                                    />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key (Test)</label>
-                                                    <input type="password" value={config.payme_test_key || ''} onChange={e => setConfig({ ...config, payme_test_key: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Secret Key (Test)</label>
+                                                    <input 
+                                                        type="password" 
+                                                        value={config.payme_test_key || ''} 
+                                                        onChange={e => setConfig({ ...config, payme_test_key: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
+                                                    />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Окружение</label>
-                                                    <select value={config.payme_env} onChange={e => setConfig({ ...config, payme_env: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Окружение</label>
+                                                    <select 
+                                                        value={config.payme_env} 
+                                                        onChange={e => setConfig({ ...config, payme_env: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-xs font-bold text-slate-700"
+                                                    >
                                                         <option value="test">TEST MODE</option>
                                                         <option value="prod">PRODUCTION</option>
                                                     </select>
@@ -723,32 +1213,51 @@
                                         </div>
 
                                         {/* Click */}
-                                        <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                                        <div className="premium-card p-8 space-y-6">
                                             <div className="flex items-center space-x-3 mb-2">
-                                                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                                                    <LucideIcon name="CreditCard" className="text-blue-600" />
+                                                <div className="w-10 h-10 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 shadow-sm">
+                                                    <LucideIcon name="CreditCard" size={20} />
                                                 </div>
-                                                <h3 className="text-lg font-bold">Click Evolution</h3>
+                                                <h3 className="text-lg font-bold text-slate-800">Click Evolution</h3>
                                             </div>
 
                                             <div className="space-y-4">
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div>
-                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Merchant ID</label>
-                                                        <input type="text" value={config.click_merchant_id || ''} onChange={e => setConfig({ ...config, click_merchant_id: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Merchant ID</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={config.click_merchant_id || ''} 
+                                                            onChange={e => setConfig({ ...config, click_merchant_id: e.target.value })} 
+                                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
+                                                        />
                                                     </div>
                                                     <div>
-                                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Service ID</label>
-                                                        <input type="text" value={config.click_service_id || ''} onChange={e => setConfig({ ...config, click_service_id: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Service ID</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={config.click_service_id || ''} 
+                                                            onChange={e => setConfig({ ...config, click_service_id: e.target.value })} 
+                                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
+                                                        />
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Secret Key</label>
-                                                    <input type="password" value={config.click_secret_key || ''} onChange={e => setConfig({ ...config, click_secret_key: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none font-mono text-sm" />
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Secret Key</label>
+                                                    <input 
+                                                        type="password" 
+                                                        value={config.click_secret_key || ''} 
+                                                        onChange={e => setConfig({ ...config, click_secret_key: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
+                                                    />
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 block">Окружение</label>
-                                                    <select value={config.click_env} onChange={e => setConfig({ ...config, click_env: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-gray-100 focus:border-black outline-none text-sm font-bold">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Окружение</label>
+                                                    <select 
+                                                        value={config.click_env} 
+                                                        onChange={e => setConfig({ ...config, click_env: e.target.value })} 
+                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-xs font-bold text-slate-700"
+                                                    >
                                                         <option value="test">TEST MODE</option>
                                                         <option value="prod">PRODUCTION</option>
                                                     </select>
@@ -756,109 +1265,185 @@
                                             </div>
                                         </div>
                                     </div>
+
                                     <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex items-start space-x-4">
-                                        <LucideIcon name="AlertTriangle" className="text-amber-600 mt-1" />
+                                        <LucideIcon name="AlertTriangle" className="text-amber-600 mt-0.5 shrink-0" size={20} />
                                         <div>
-                                            <h3 className="text-amber-900 font-bold">Безопасность данных</h3>
-                                            <p className="text-amber-700 text-sm mt-1">Ключи хранятся в зашифрованном виде в базе данных. В целях безопасности они скрыты звездочками. Если вы не вводите новый ключ, старый останется без изменений.</p>
+                                            <h3 className="text-amber-900 font-bold text-sm">Безопасность конфигураций</h3>
+                                            <p className="text-amber-700 text-xs mt-1 leading-relaxed">
+                                                Все секретные ключи платежных провайдеров хранятся в зашифрованном виде. Для защиты ваших данных они скрыты в интерфейсе. Если вы оставите поля пустыми, старые ключи останутся без изменений.
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Modals */}
+                            {/* Custom Confirmation Modal */}
+                            <ConfirmModal
+                                show={confirmState.show}
+                                title={confirmState.title}
+                                message={confirmState.message}
+                                onConfirm={confirmState.onConfirm}
+                                onCancel={() => setConfirmState({ show: false, title: '', message: '', onConfirm: null })}
+                            />
+
+                            {/* Upgrade Days Modal */}
+                            <UpgradeDaysModal
+                                show={upgradeState.show}
+                                orgName={upgradeState.orgName}
+                                onConfirm={async (days) => {
+                                    if (days) {
+                                        await apiFetch(`/api/users/${upgradeState.orgId}/upgrade`, 'POST', { days });
+                                        loadUsers();
+                                        notify(`Подписка успешно продлена на ${days} дн.`);
+                                    }
+                                    setUpgradeState({ show: false, orgId: '', orgName: '' });
+                                }}
+                                onCancel={() => setUpgradeState({ show: false, orgId: '', orgName: '' })}
+                            />
+
+                            {/* Add User Modal */}
                             {showAddUser && (
-                                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                                        <div className="p-6 border-b flex justify-between items-center">
-                                            <h3 className="text-xl font-bold">Новый клиент</h3>
-                                            <button onClick={() => setShowAddUser(false)} className="p-2 hover:bg-gray-100 rounded-full"><LucideIcon name="X" /></button>
-                                        </div>
-                                        <div className="p-6 space-y-4">
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Email (Логин)</label>
-                                                <div className="relative">
-                                                    <input type="email" placeholder="email@example.com" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} />
-                                                    <LucideIcon name="Mail" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Пароль</label>
-                                                <div className="relative">
-                                                    <input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} />
-                                                    <LucideIcon name="Lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Имя клиента</label>
-                                                <div className="relative">
-                                                    <input type="text" placeholder="Иван Иванов" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} />
-                                                    <LucideIcon name="User" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                                                </div>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Название организации</label>
-                                                <div className="relative">
-                                                    <input type="text" placeholder="ООО 'Моя компания'" className="w-full pl-10 pr-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={newUser.orgName} onChange={e => setNewUser({ ...newUser, orgName: e.target.value })} />
-                                                    <LucideIcon name="Building" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                                                </div>
+                                <Modal title="Новый клиент" onClose={() => setShowAddUser(false)}>
+                                    <div className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Email (Логин)</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="email" 
+                                                    placeholder="email@example.com" 
+                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
+                                                    value={newUser.email} 
+                                                    onChange={e => setNewUser({ ...newUser, email: e.target.value })} 
+                                                />
+                                                <LucideIcon name="Mail" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                                             </div>
                                         </div>
-                                        <div className="p-6 bg-gray-50 flex gap-3">
-                                            <button onClick={() => setShowAddUser(false)} className="flex-1 py-3 border rounded-xl font-bold hover:bg-gray-100 transition-all">Отмена</button>
-                                            <button
-                                                onClick={async () => {
-                                                    if (!newUser.email.includes('@')) return notify('Некорректный Email', 'error');
-                                                    if (newUser.password.length < 6) return notify('Пароль слишком короткий (мин. 6)', 'error');
-                                                    if (!newUser.orgName) return notify('Укажите организацию', 'error');
-
-                                                    setLoading(true);
-                                                    const r = await apiFetch('/api/users', 'POST', newUser);
-                                                    setLoading(false);
-                                                    if (r?.success) { setShowAddUser(false); setNewUser({ email: '', password: '', name: '', orgName: '' }); loadUsers(); notify('Клиент создан!'); }
-                                                    else if (r?.error) notify(r.error, 'error');
-                                                }}
-                                                className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all disabled:opacity-50"
-                                                disabled={loading || !newUser.email || !newUser.password}
-                                            >Создать</button>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Пароль</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="password" 
+                                                    placeholder="••••••••" 
+                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
+                                                    value={newUser.password} 
+                                                    onChange={e => setNewUser({ ...newUser, password: e.target.value })} 
+                                                />
+                                                <LucideIcon name="Lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Имя клиента</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="Иван Иванов" 
+                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
+                                                    value={newUser.name} 
+                                                    onChange={e => setNewUser({ ...newUser, name: e.target.value })} 
+                                                />
+                                                <LucideIcon name="User" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Название организации</label>
+                                            <div className="relative">
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="ООО 'Моя компания'" 
+                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
+                                                    value={newUser.orgName} 
+                                                    onChange={e => setNewUser({ ...newUser, orgName: e.target.value })} 
+                                                />
+                                                <LucideIcon name="Building" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button 
+                                            onClick={async () => {
+                                                if (!newUser.email.includes('@')) return notify('Некорректный Email', 'error');
+                                                if (newUser.password.length < 6) return notify('Пароль слишком короткий (мин. 6)', 'error');
+                                                if (!newUser.orgName) return notify('Укажите организацию', 'error');
+
+                                                setLoading(true);
+                                                const r = await apiFetch('/api/users', 'POST', newUser);
+                                                setLoading(false);
+                                                if (r?.success) { 
+                                                    setShowAddUser(false); 
+                                                    setNewUser({ email: '', password: '', name: '', orgName: '' }); 
+                                                    loadUsers(); 
+                                                    notify('Новый клиент успешно создан!'); 
+                                                } else if (r?.error) {
+                                                    notify(r.error, 'error');
+                                                }
+                                            }}
+                                            className="flex-1 py-3.5 btn-premium rounded-xl font-bold text-sm shadow-md disabled:opacity-50"
+                                            disabled={loading || !newUser.email || !newUser.password}
+                                        >
+                                            Создать
+                                        </button>
+                                        <button 
+                                            onClick={() => setShowAddUser(false)} 
+                                            className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm"
+                                        >
+                                            Отмена
+                                        </button>
+                                    </div>
+                                </Modal>
                             )}
 
+                            {/* Edit User Modal */}
                             {editUser && (
-                                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                                        <div className="p-6 border-b flex justify-between items-center">
-                                            <h3 className="text-xl font-bold">Изменение данных</h3>
-                                            <button onClick={() => setEditUser(null)} className="p-2 hover:bg-gray-100 rounded-full"><LucideIcon name="X" /></button>
+                                <Modal title="Изменение данных" onClose={() => setEditUser(null)}>
+                                    <div className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новый Email</label>
+                                            <input 
+                                                type="email" 
+                                                className="w-full px-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
+                                                value={editUser.email} 
+                                                onChange={e => setEditUser({ ...editUser, email: e.target.value })} 
+                                            />
                                         </div>
-                                        <div className="p-6 space-y-4">
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Новый Email</label>
-                                                <input type="email" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.email} onChange={e => setEditUser({ ...editUser, email: e.target.value })} />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Новый Пароль (оставьте пустым для сохранения)</label>
-                                                <input type="password" placeholder="••••••••" className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-black outline-none" value={editUser.password || ''} onChange={e => setEditUser({ ...editUser, password: e.target.value })} />
-                                            </div>
-                                        </div>
-                                        <div className="p-6 bg-gray-50 flex gap-3">
-                                            <button onClick={() => setEditUser(null)} className="flex-1 py-3 border rounded-xl font-bold hover:bg-gray-100 transition-all">Отмена</button>
-                                            <button
-                                                onClick={async () => {
-                                                    setLoading(true);
-                                                    const r = await apiFetch(`/api/users/${editUser.id}/credentials`, 'PATCH', editUser);
-                                                    setLoading(false);
-                                                    if (r?.success) { setEditUser(null); loadUsers(); notify('Данные обновлены ✓'); }
-                                                    else if (r?.error) notify(r.error, 'error');
-                                                }}
-                                                className="flex-1 py-3 bg-black text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
-                                                disabled={loading}
-                                            >Сохранить</button>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новый Пароль (оставьте пустым для сохранения)</label>
+                                            <input 
+                                                type="password" 
+                                                placeholder="••••••••" 
+                                                className="w-full px-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
+                                                value={editUser.password || ''} 
+                                                onChange={e => setEditUser({ ...editUser, password: e.target.value })} 
+                                            />
                                         </div>
                                     </div>
-                                </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button 
+                                            onClick={async () => {
+                                                setLoading(true);
+                                                const r = await apiFetch(`/api/users/${editUser.id}/credentials`, 'PATCH', editUser);
+                                                setLoading(false);
+                                                if (r?.success) { 
+                                                    setEditUser(null); 
+                                                    loadUsers(); 
+                                                    notify('Данные пользователя обновлены ✓'); 
+                                                } else if (r?.error) {
+                                                    notify(r.error, 'error');
+                                                }
+                                            }}
+                                            className="flex-1 py-3.5 btn-premium rounded-xl font-bold text-sm shadow-md"
+                                            disabled={loading}
+                                        >
+                                            Сохранить
+                                        </button>
+                                        <button 
+                                            onClick={() => setEditUser(null)} 
+                                            className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm"
+                                        >
+                                            Отмена
+                                        </button>
+                                    </div>
+                                </Modal>
                             )}
                         </div>
                     </div>
