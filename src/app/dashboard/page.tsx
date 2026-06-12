@@ -69,9 +69,9 @@ export default function DashboardPage() {
   const metrics = data?.metrics;
 
   const cards = [
-    { name: "Выручка", value: metrics?.revenue, sub: "Всего по счету 9010", icon: ArrowUpRight },
-    { name: "Расходы", value: metrics?.expenses, sub: "Операционные (94*)", icon: ArrowDownRight },
-    { name: "Чистая прибыль", value: metrics?.profit, sub: "Выручка - Расходы", icon: metrics?.profit && metrics.profit >= 0 ? TrendingUp : TrendingDown },
+    { name: "Выручка", value: metrics?.revenue, sub: "Продажи (9010, 9020, 9030) за вычетом возвратов", icon: ArrowUpRight },
+    { name: "Расходы", value: metrics?.expenses, sub: "Себестоимость (91*) + Расходы периода (94*)", icon: ArrowDownRight },
+    { name: "Чистая прибыль", value: metrics?.profit, sub: "Полный ОФР (выручка − себест. − расх. ± прочие − налог)", icon: metrics?.profit && metrics.profit >= 0 ? TrendingUp : TrendingDown },
     { name: "Маржинальность", value: metrics?.margin, unit: "%", sub: "Рентабельность продаж", icon: Minus },
     { name: "Деньги в банке", value: metrics?.bank, sub: "Сальдо счета 5110", icon: Wallet },
     { name: "Касса", value: metrics?.cash, sub: "Наличные (5010)", icon: Wallet },

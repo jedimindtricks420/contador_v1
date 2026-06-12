@@ -35,6 +35,11 @@ export async function GET(request: Request) {
       totalCredit: Decimal,
       type: string
     ): { balanceDebit: Decimal; balanceCredit: Decimal } {
+      // Счета ОФР (доходы/расходы) не имеют входящего сальдо — они закрываются ежемесячно
+      if (['INCOME', 'EXPENSE', 'CONTRA_INCOME'].includes(type)) {
+        return { balanceDebit: new Decimal(0), balanceCredit: new Decimal(0) }
+      }
+
       const isActiveNature = type === 'ACTIVE' || type === 'CONTRA_PASSIVE'
       const isPassiveNature = type === 'PASSIVE' || type === 'CONTRA_ACTIVE'
 
@@ -51,7 +56,7 @@ export async function GET(request: Request) {
           balanceCredit: net.isPositive() ? net : new Decimal(0),
         }
       } else {
-        // ACTIVE_PASSIVE, TRANSIT — сальдо определяется знаком оборота
+        // ACTIVE_PASSIVE — сальдо определяется знаком оборота
         const net = totalDebit.minus(totalCredit)
         if (net.isPositive()) {
           return { balanceDebit: net, balanceCredit: new Decimal(0) }
@@ -80,12 +85,8 @@ export async function GET(request: Request) {
         let { balanceDebit: balanceStartDebit, balanceCredit: balanceStartCredit } =
           calcBalance(s1TotalDebit, s1TotalCredit, acc.type)
 
-        // Исправление: Счета 90-99 (доходы и расходы) всегда закрываются ежемесячно.
-        // Поэтому их сальдо на начало месяца всегда должно быть равно 0 в ОСВ.
-        if (acc.code.startsWith('9')) {
-          balanceStartDebit = new Decimal(0)
-          balanceStartCredit = new Decimal(0)
-        }
+        // Примечание: счета INCOME/EXPENSE/CONTRA_INCOME обрабатываются внутри calcBalance —
+        // дополнительное обнуление по коду больше не нужно.
 
         // 2. Обороты за период
         const dr = await prisma.transaction.aggregate({

@@ -19,6 +19,11 @@ export async function GET() {
     // Вспомогательная функция: рассчитать сумму для стороны баланса
     // по типу счёта с учётом полярности сальдо
     const getAccountBalance = async (acc: typeof accounts[0]): Promise<Decimal> => {
+        // Счета ОФР не включаются в баланс (они закрываются в финрезультат ежемесячно)
+        if (['INCOME', 'EXPENSE', 'CONTRA_INCOME'].includes(acc.type)) {
+          return new Decimal(0)
+        }
+
         const dr = await prisma.transaction.aggregate({
             _sum: { amount: true },
             where: { organization_id: orgId, debit_id: acc.id, is_deleted: false }
@@ -39,7 +44,7 @@ export async function GET() {
         if (acc.type === 'PASSIVE' || acc.type === 'CONTRA_ACTIVE') {
             return credit.minus(debit)
         }
-        // ACTIVE_PASSIVE, TRANSIT → возвращаем чистое значение (знак важен)
+        // ACTIVE_PASSIVE → возвращаем чистое значение (знак важен)
         // Вызывающий код сам решит, в какую сторону баланса отнести
         return debit.minus(credit)
     }

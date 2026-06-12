@@ -46,6 +46,7 @@ model Account {
   code              String
   name              String
   type              AccountType
+  is_postable       Boolean       @default(true)
   organization_id   String
   organization      Organization  @relation(fields: [organization_id], references: [id], onDelete: Cascade)
   transactions_dr   Transaction[] @relation("DebitAccount")
@@ -106,6 +107,7 @@ model MasterAccount {
   code        String               @unique
   name        String
   type        AccountType
+  is_postable Boolean              @default(true)
   description String?
   section     String?
   is_system   Boolean              @default(false)
@@ -192,9 +194,11 @@ enum AccountType {
   CONTRA_ACTIVE
   PASSIVE
   CONTRA_PASSIVE
-  TRANSIT
-  OFF_BALANCE
   ACTIVE_PASSIVE
+  INCOME
+  CONTRA_INCOME
+  EXPENSE
+  OFF_BALANCE
 }
 
 model Subscription {

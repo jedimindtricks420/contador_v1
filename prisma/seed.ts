@@ -1,6 +1,7 @@
 import 'dotenv/config'
-import { PrismaClient, AccountType } from '@prisma/client'
+import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { classifyAccountType, isPostable } from '../src/lib/account-classifier'
 
 const prisma = new PrismaClient()
 
@@ -219,13 +220,16 @@ async function main() {
   const { defaultAccounts, seedDefaultDataForOrg } = await import('../src/lib/seed-utils');
   console.log('Seeding MasterAccounts...');
   for (const acc of defaultAccounts) {
+    const accType = classifyAccountType(acc.code)
+    const accPostable = isPostable(acc.code)
     await prisma.masterAccount.upsert({
       where: { code: acc.code },
-      update: { name: acc.name, type: acc.type },
+      update: { name: acc.name, type: accType, is_postable: accPostable },
       create: {
         code: acc.code,
         name: acc.name,
-        type: acc.type,
+        type: accType,
+        is_postable: accPostable,
         description: '',
         section: '',
         is_system: acc.code === '0000' || acc.code === '9910'

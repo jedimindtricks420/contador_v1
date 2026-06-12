@@ -1,166 +1,148 @@
-# Справочник кода для разработки ИИ (v2.1)
+# Справочник разработчика: AI-модуль
 
-Этот документ содержит ключевые фрагменты логики приложения Contador, необходимые для реализации функций в эндпоинтах `/src/app/api/ai/` и библиотеках `/src/lib/ai/`.
+Ключевые детали реализации для работы с эндпоинтами `src/app/api/ai/`.
 
 ---
 
-## 1. Авторизация и Контекст
+## Файлы модуля
+
+| Файл | Назначение |
+|---|---|
+| `ai/knowledge-base.ts` | `MASTER_COA_COMPACT` (266 счетов) + `INDUSTRY_TEMPLATES_COMPACT` (22 шаблона) |
+| `ai/prompts.ts` | Системный промпт: правила НСБУ, зарплатный цикл, НДС, займы |
+| `src/app/api/ai/chat/route.ts` | POST — приём сообщения, вызов GPT-4o, сохранение истории |
+| `src/app/api/ai/execute/route.ts` | POST — создание проводок из JSON-ответа AI |
+
+---
+
+## 1. Авторизация и контекст
+
 **Файл:** `src/lib/context.ts`
-Позволяет получить ID активной организации для фильтрации данных в ИИ-запросах.
 
 ```typescript
 export async function getActiveOrganizationId(): Promise<string> {
   const sessionToken = (await cookies()).get("session")?.value;
   if (!sessionToken) throw new Error("Unauthorized");
-
   const payload = await decrypt(sessionToken);
-  const userId = payload.user?.id;
-  if (!userId) throw new Error("Invalid session");
-
   const user = await prisma.user.findUnique({
-    where: { id: userId },
+    where: { id: payload.user?.id },
     select: { active_org_id: true }
   });
-
-  if (!user?.active_org_id) {
-    throw new Error("No active organization found for user");
-  }
-
+  if (!user?.active_org_id) throw new Error("No active organization");
   return user.active_org_id;
 }
 ```
 
 ---
 
-## 2. Логика Транзакций (Проводки)
-**Файл:** `src/app/api/transactions/route.ts`
-Обратите внимание на валидацию `closed_period_date` и формат `period`.
+## 2. Chat endpoint (`/api/ai/chat`)
 
-```typescript
-// Схема валидации (Zod)
-const transactionSchema = z.object({
-  date: z.string(),
-  period: z.string(), // Формат "MM.YYYY"
-  description: z.string(),
-  amount: z.number().positive(),
-  debit_id: z.string(),
-  credit_id: z.string(),
-  counterparty_id: z.string().optional().nullable(),
-})
+**Модель:** `gpt-4o`
+**Формат ответа:** `{ type: "json_object" }` — AI всегда возвращает валидный JSON.
 
-// Проверка закрытого периода
-const settings = await prisma.systemSettings.findUnique({
-  where: { organization_id: organizationId }
-})
-if (settings && new Date(validated.date) <= settings.closed_period_date) {
-  return NextResponse.json({ error: 'Период закрыт для редактирования' }, { status: 400 })
-}
+**Тарификация:**
+- FREE: 10 запросов/месяц
+- PRO: 300 запросов/месяц
+- MYAPI: пользовательский ключ OpenAI, без ограничений
 
-// Создание записи
-const result = await tx.transaction.create({
-  data: {
-    date: new Date(validated.date),
-    period: validated.period, // "03.2026"
-    description: validated.description,
-    amount: new Decimal(validated.amount),
-    debit_id: validated.debit_id,
-    credit_id: validated.credit_id,
-    organization_id: organizationId
-  },
-})
-```
+**Что сохраняется в БД:**
+- `ChatMessage` — история сообщений пользователя и AI
+- `AiUsage` — количество токенов, стоимость запроса
+
+**Стоимость токенов (GPT-4o):**
+- Input: $2.50 / 1M токенов
+- Output: $10.00 / 1M токенов
 
 ---
 
-## 3. Активация Счетов
-**Файл:** `src/app/api/accounts/route.ts`
-Как счет связывается с эталонным планом НСБУ (`MasterAccount`).
+## 3. Execute endpoint (`/api/ai/execute`)
 
-```typescript
-if (body.master_account_id) {
-  // Копирование из Мастер-счета
-  const master = await prisma.masterAccount.findUnique({
-    where: { id: body.master_account_id }
-  })
-  accountData = {
-    code: master.code,
-    name: master.name,
-    type: master.type,
-    organization_id: organizationId,
-    master_account_id: master.id,
-    is_active: true,
-    is_custom: false,
-  }
-}
-// Upsert позволяет избежать дублей по коду внутри одной организации
-const account = await prisma.account.upsert({
-  where: {
-    code_organization_id: {
-      code: accountData.code,
-      organization_id: organizationId,
+Принимает JSON с транзакциями от AI и создаёт их в БД.
+
+**Формат запроса:**
+```json
+{
+  "transactions": [
+    {
+      "step": 1,
+      "step_label": "Начисление налога",
+      "description": "Налог с оборота январь",
+      "amount": 500000,
+      "date": "2026-01-31",
+      "period": "01.2026",
+      "debit":  { "code": "9430", "name": "Прочие опер. расходы", "is_missing": false },
+      "credit": { "code": "6410", "name": "Задолженность по налогам", "is_missing": false }
     }
-  },
-  create: accountData,
-  update: { is_active: true },
-})
+  ]
+}
+```
+
+**Поддерживается также одиночный формат:**
+```json
+{ "data": { ...одна транзакция... } }
+```
+
+**Валидация на execute:**
+- Сумма > 0
+- Дебет ≠ Кредит
+- Забалансовые счета (OFF_BALANCE) — ошибка
+- `validateTransaction()` — проверка закрытого периода и правил 0000
+
+**Если `is_missing: true`:**
+Счёт автоматически создаётся через `upsert` из `MasterAccount`. Забалансовые счета — ошибка, не создаются.
+
+**Audit log:** каждая AI-транзакция пишется в `AuditLog` с `action: "AI_TRANSACTION_AUTO_CREATE"`.
+
+---
+
+## 4. Системный промпт
+
+**Файл:** `ai/prompts.ts` → функция `getJournalSystemPrompt(activeAccounts, closedDate)`
+
+Промпт включает:
+1. `MASTER_COA_COMPACT` — 266 проводимых счетов в pipe-формате `код|название|тип|группа|`
+2. Список активных счетов текущей организации
+3. Правила двойной записи (налог с оборота, зарплата, предоплата, НДС)
+4. Классификацию расходов (9420/9430/9410)
+5. Правила по займам, ОС, забалансовым счетам
+6. JSON-схему ответа
+
+**Зарплатный цикл (5 шагов обязательно):**
+```
+Д 9420 — К 6710  (начисление ЗП brutto)
+Д 9420 — К 6520  (соцналог 12%)
+Д 6710 — К 6410  (удержание НДФЛ)
+Д 6710 — К 6530  (удержание ИНПС 0.1%)
+Д 6710 — К 5110  (выплата на руки)
 ```
 
 ---
 
-## 4. Интерфейс и Состояние Чата
-**Файлы:** `src/lib/ui-context.tsx` и `src/components/AIChat.tsx`
+## 5. Активация счетов через AI
+
+При `is_missing: true` в ответе AI — счёт создаётся автоматически:
 
 ```typescript
-// Состояние (UI Context)
-interface UIContextType {
-  isChatOpen: boolean;
-  setIsChatOpen: (isOpen: boolean) => void;
-  toggleChat: () => void;
-}
-
-// Компонент (AIChat)
-export default function AIChat() {
-  const { isChatOpen, setIsChatOpen, toggleChat } = useUI();
-  // ...
-  return (
-    <div className={`fixed ... ${isChatOpen ? "translate-x-0" : "translate-x-full"}`}>
-       {/* Контент чата */}
-    </div>
-  )
-}
+const master = await tx.masterAccount.findFirst({ where: { code: accInfo.code } });
+await tx.account.upsert({
+  where: { code_organization_id: { code: master.code, organization_id } },
+  create: { code: master.code, name: master.name, type: master.type, organization_id, master_account_id: master.id, is_active: true },
+  update: { is_active: true }
+});
 ```
 
 ---
 
-## 5. Модели Данных (Prisma)
-**Файл:** `prisma/schema.prisma`
+## 6. Получение счетов для промпта
 
-```prisma
-model Account {
-  id                String        @id @default(uuid())
-  code              String
-  name              String
-  type              AccountType
-  organization_id   String
-  master_account_id String?
-  is_active         Boolean       @default(true)
-  // ...
-  @@unique([code, organization_id])
-}
-
-model Transaction {
-  id              String       @id @default(uuid())
-  date            DateTime
-  period          String       // MM.YYYY
-  description     String
-  amount          Decimal      @db.Decimal(20, 2)
-  debit_id        String
-  credit_id       String
-  organization_id String
-  is_deleted      Boolean      @default(false)
-  // ...
-}
+```typescript
+// В chat/route.ts — передаётся в getJournalSystemPrompt()
+const activeAccounts = await prisma.account.findMany({
+  where: { organization_id: orgId, is_active: true },
+  select: { code: true, name: true }
+});
 ```
 
 ---
-*Документ подготовлен специально для разработки модуля `/api/ai`.*
+
+*Contador v2.0 — AI Development Reference*

@@ -37,8 +37,11 @@ export async function GET() {
     const revenue = await getTurnover(['901', '902', '903'], 'credit')
     const returns = await getTurnover(['904', '905'], 'debit')
     const netRevenue = revenue.minus(returns)
-    
+
     const expenses = await getTurnover(['91', '94'], 'debit')
+    const otherIncome = await getTurnover(['93', '95'], 'credit')
+    const otherExpenses = await getTurnover(['96'], 'debit')
+    const incomeTax = await getTurnover(['981'], 'debit')
 
     // Bank: только реальный остаток расчетного счета 5110
     const acc5110 = accounts_all.find(a => a.code === '5110')
@@ -106,7 +109,7 @@ export async function GET() {
       metrics: {
         revenue: Number(netRevenue),
         expenses: Number(expenses),
-        profit: Number(netRevenue.minus(expenses)),
+        profit: Number(netRevenue.minus(expenses).plus(otherIncome).minus(otherExpenses).minus(incomeTax)),
         margin: Number(margin),
         bank: Number(bank),
         cash: Number(cash),
