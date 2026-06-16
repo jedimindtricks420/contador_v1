@@ -406,6 +406,34 @@
             const [confirmState, setConfirmState] = useState({ show: false, title: '', message: '', onConfirm: null });
             const [upgradeState, setUpgradeState] = useState({ show: false, orgId: '', orgName: '' });
 
+            // V2 state
+            const [v2Stats, setV2Stats] = useState({ users: 0, organizations: 0, pro_count: 0, free_count: 0, tx_by_status: {} });
+            const [v2Users, setV2Users] = useState([]);
+            const [v2Search, setV2Search] = useState('');
+            const [v2UpgradeState, setV2UpgradeState] = useState({ show: false, orgId: '', orgName: '' });
+            const [v2ShowAddUser, setV2ShowAddUser] = useState(false);
+            const [v2EditUser, setV2EditUser] = useState(null);
+            const [v2NewUser, setV2NewUser] = useState({ email: '', password: '', name: '', orgName: '' });
+            // V2 extended state
+            const [v2ExtraStats, setV2ExtraStats] = useState({ backlog: 0, riskItems: 0, freeOrgs: 0, regsSeries: [] });
+            const [v2ExpiringPro, setV2ExpiringPro] = useState([]);
+            const [v2OrgsList, setV2OrgsList] = useState([]);
+            const [v2OrgsTotal, setV2OrgsTotal] = useState(0);
+            const [v2OrgsPage, setV2OrgsPage] = useState(1);
+            const [v2OrgSearch, setV2OrgSearch] = useState('');
+            const [v2OrgPlanFilter, setV2OrgPlanFilter] = useState('');
+            const [v2OrgRegimeFilter, setV2OrgRegimeFilter] = useState('');
+            const [v2OrgDetail, setV2OrgDetail] = useState(null);
+            const [v2OrgDetailTab, setV2OrgDetailTab] = useState('info');
+            const [v2EditingOrg, setV2EditingOrg] = useState(null);
+            const [v2AuditLogs, setV2AuditLogs] = useState([]);
+            const [v2AuditTotal, setV2AuditTotal] = useState(0);
+            const [v2AuditPage, setV2AuditPage] = useState(1);
+            const [v2AuditOrgFilter, setV2AuditOrgFilter] = useState('');
+            const [v2Rules, setV2Rules] = useState([]);
+            const [v2RulesOrgId, setV2RulesOrgId] = useState('');
+            const [v2RulesOrgName, setV2RulesOrgName] = useState('');
+
             const notify = (msg, type = 'success') => {
                 setNotification({ msg, type });
             };
@@ -490,6 +518,53 @@
                 if (data) setConfig(data);
             };
 
+            const loadV2Dashboard = async () => {
+                const data = await apiFetch('/api/v2/dashboard');
+                if (data) setV2Stats(data);
+            };
+
+            const loadV2Users = async () => {
+                const data = await apiFetch(`/api/v2/users?search=${v2Search}`);
+                if (data) setV2Users(data);
+            };
+
+            const loadV2ExtraStats = async () => {
+                const data = await apiFetch('/api/v2/stats');
+                if (data) setV2ExtraStats(data);
+            };
+
+            const loadV2ExpiringPro = async () => {
+                const data = await apiFetch('/api/v2/subscriptions/expiring?days=30');
+                if (data && Array.isArray(data)) setV2ExpiringPro(data);
+            };
+
+            const loadV2Orgs = async (page = 1, s = v2OrgSearch, plan = v2OrgPlanFilter, regime = v2OrgRegimeFilter) => {
+                const q = new URLSearchParams({ page });
+                if (s) q.set('search', s);
+                if (plan) q.set('plan', plan);
+                if (regime) q.set('taxRegime', regime);
+                const data = await apiFetch(`/api/v2/orgs?${q}`);
+                if (data) { setV2OrgsList(data.orgs); setV2OrgsTotal(data.total); setV2OrgsPage(page); }
+            };
+
+            const loadV2OrgDetail = async (orgId) => {
+                const data = await apiFetch(`/api/v2/orgs/${orgId}/detail`);
+                if (data) { setV2OrgDetail(data); setV2OrgDetailTab('info'); }
+            };
+
+            const loadV2AuditLogs = async (page = 1, orgId = v2AuditOrgFilter) => {
+                const q = new URLSearchParams({ page, limit: '50' });
+                if (orgId) q.set('orgId', orgId);
+                const data = await apiFetch(`/api/v2/audit-logs?${q}`);
+                if (data) { setV2AuditLogs(data.logs || []); setV2AuditTotal(data.total || 0); setV2AuditPage(page); }
+            };
+
+            const loadV2Rules = async (orgId) => {
+                if (!orgId) return;
+                const data = await apiFetch(`/api/v2/orgs/${orgId}/rules`);
+                if (data && Array.isArray(data)) setV2Rules(data);
+            };
+
             const saveSettings = async () => {
                 setLoading(true);
                 const r = await apiFetch('/api/payment-settings', 'POST', config);
@@ -505,8 +580,12 @@
                     if (tab === 'payments_log') loadPaymentsLog();
                     if (tab === 'ai') loadAI();
                     if (tab === 'settings') loadSettings();
+                    if (tab === 'v2_dashboard') { loadV2Dashboard(); loadV2ExtraStats(); loadV2ExpiringPro(); }
+                    if (tab === 'v2_users') loadV2Users();
+                    if (tab === 'v2_orgs') loadV2Orgs(1, '', '', '');
+                    if (tab === 'v2_audit') loadV2AuditLogs(1, '');
                 }
-            }, [tab, isAuthed, search]);
+            }, [tab, isAuthed, search, v2Search]);
 
             const login = () => {
                 localStorage.setItem('admin_pass', password);
@@ -568,10 +647,11 @@
                                 CONTADOR<span className="text-indigo-600 font-medium">ADMIN</span>
                             </h1>
                         </div>
-                        <nav className="flex-1 space-y-1">
+                        <nav className="flex-1 space-y-1 overflow-y-auto">
+                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest px-4 pb-1 pt-1">V1 — Legacy</p>
                             {[
                                 { id: 'dashboard', label: 'Дашборд', icon: 'Layout' },
-                                { id: 'users', label: 'Управление юзерами', icon: 'Users' },
+                                { id: 'users', label: 'Клиенты V1', icon: 'Users' },
                                 { id: 'billing', label: 'Биллинг и Ваучеры', icon: 'CreditCard' },
                                 { id: 'payments_log', label: 'Журнал платежей', icon: 'History' },
                                 { id: 'ai', label: 'Мониторинг AI', icon: 'Zap' },
@@ -581,9 +661,33 @@
                                     key={item.id}
                                     onClick={() => setTab(item.id)}
                                     className={`w-full flex items-center space-x-3.5 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all ${
-                                        tab === item.id 
-                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' 
+                                        tab === item.id
+                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
                                             : 'text-slate-600 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <LucideIcon name={item.icon} size={18} />
+                                    <span>{item.label}</span>
+                                </button>
+                            ))}
+                            <div className="pt-3 pb-1">
+                                <div className="h-px bg-slate-100 mx-2 mb-3"></div>
+                                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest px-4 pb-1">V2 — Новая версия</p>
+                            </div>
+                            {[
+                                { id: 'v2_dashboard', label: 'V2 Обзор', icon: 'Layout' },
+                                { id: 'v2_users', label: 'V2 Клиенты', icon: 'Users' },
+                                { id: 'v2_orgs', label: 'V2 Организации', icon: 'Building' },
+                                { id: 'v2_audit', label: 'V2 Аудит', icon: 'History' },
+                                { id: 'v2_rules', label: 'V2 Правила', icon: 'Settings' }
+                            ].map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setTab(item.id)}
+                                    className={`w-full flex items-center space-x-3.5 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all ${
+                                        tab === item.id
+                                            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100'
+                                            : 'text-slate-600 hover:bg-emerald-50'
                                     }`}
                                 >
                                     <LucideIcon name={item.icon} size={18} />
@@ -1278,6 +1382,993 @@
                                 </div>
                             )}
 
+                            {/* ── V2 Dashboard Tab ── */}
+                            {tab === 'v2_dashboard' && (
+                                <div className="space-y-8 fade-in">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-2 h-8 bg-emerald-500 rounded-full"></div>
+                                        <div>
+                                            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Обзор V2</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">contador v2 — новая платформа (contador_v2 DB)</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Row 1: core counters */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                        <div className="premium-card p-6 border-emerald-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Пользователи</p>
+                                            <p className="text-4xl font-extrabold text-emerald-600">{v2Stats.users}</p>
+                                        </div>
+                                        <div className="premium-card p-6">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Организации</p>
+                                            <p className="text-4xl font-extrabold text-slate-900">{v2Stats.organizations}</p>
+                                        </div>
+                                        <div className="premium-card p-6 bg-indigo-50/20 border-indigo-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">PRO тарифов</p>
+                                            <p className="text-4xl font-extrabold text-indigo-600">{v2Stats.pro_count}</p>
+                                        </div>
+                                        <div className="premium-card p-6">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">FREE тарифов</p>
+                                            <p className="text-4xl font-extrabold text-slate-500">{v2ExtraStats.freeOrgs || v2Stats.free_count}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Row 2: operations metrics */}
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="premium-card p-6 bg-amber-50/30 border-amber-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Транзакций в очереди</p>
+                                            <p className="text-4xl font-extrabold text-amber-600">{v2ExtraStats.backlog}</p>
+                                            <p className="text-[10px] text-slate-400 mt-2 uppercase tracking-wide">IMPORTED + NEEDS_CLARIFICATION</p>
+                                        </div>
+                                        <div className="premium-card p-6 bg-rose-50/30 border-rose-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Рисковых позиций</p>
+                                            <p className="text-4xl font-extrabold text-rose-600">{v2ExtraStats.riskItems}</p>
+                                            <p className="text-[10px] text-slate-400 mt-2 uppercase tracking-wide">OpenItem со статусом RISK</p>
+                                        </div>
+                                        <div className="premium-card p-6">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Регистраций (30 дн.)</p>
+                                            <p className="text-4xl font-extrabold text-slate-700">
+                                                {v2ExtraStats.regsSeries.reduce((s, d) => s + d.count, 0)}
+                                            </p>
+                                            <div className="flex items-end space-x-px h-8 mt-2">
+                                                {v2ExtraStats.regsSeries.slice(-14).map((d, i) => {
+                                                    const max = Math.max(...v2ExtraStats.regsSeries.map(x => x.count), 1);
+                                                    return (
+                                                        <div key={i} className="flex-1 bg-emerald-400 rounded-sm opacity-80" style={{ height: `${Math.max((d.count / max) * 100, 4)}%` }} title={`${d.date}: ${d.count}`}></div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Staged transactions by status */}
+                                    {Object.keys(v2Stats.tx_by_status || {}).length > 0 && (
+                                        <div className="premium-card p-8">
+                                            <h3 className="text-lg font-bold text-slate-800 mb-6">Транзакции по статусам</h3>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                                {Object.entries(v2Stats.tx_by_status).map(([status, count]) => {
+                                                    const color = status === 'NEEDS_CLARIFICATION' ? 'text-amber-600 bg-amber-50' : status === 'POSTED' ? 'text-emerald-600 bg-emerald-50' : status === 'SKIPPED' ? 'text-slate-400 bg-slate-50' : 'text-slate-800 bg-slate-50';
+                                                    return (
+                                                        <div key={status} className={`text-center p-4 rounded-2xl border border-slate-100 ${color}`}>
+                                                            <p className="text-2xl font-extrabold">{count}</p>
+                                                            <p className="text-[9px] font-bold uppercase tracking-wider mt-1 opacity-70">{status.replace(/_/g, ' ')}</p>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Expiring PRO table */}
+                                    {v2ExpiringPro.length > 0 && (
+                                        <div className="premium-card overflow-hidden">
+                                            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                                                <div>
+                                                    <h3 className="text-base font-bold text-slate-800">Истекает PRO (ближайшие 30 дней)</h3>
+                                                    <p className="text-xs text-slate-400 mt-0.5">{v2ExpiringPro.length} организаций</p>
+                                                </div>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead className="bg-slate-50 border-b border-slate-100">
+                                                        <tr>
+                                                            <th className="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                            <th className="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Истекает</th>
+                                                            <th className="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Осталось</th>
+                                                            <th className="px-6 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Действие</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {v2ExpiringPro.map(sub => {
+                                                            const exp = new Date(sub.validUntil);
+                                                            const diff = Math.ceil((exp - new Date()) / (1000 * 60 * 60 * 24));
+                                                            return (
+                                                                <tr key={sub.id} className="hover:bg-slate-50/50">
+                                                                    <td className="px-6 py-3 font-bold text-sm text-slate-800">{sub.org?.name || sub.orgId.substring(0,8)}</td>
+                                                                    <td className="px-6 py-3 text-xs text-slate-500">{exp.toLocaleDateString('ru-RU')}</td>
+                                                                    <td className="px-6 py-3">
+                                                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${diff <= 7 ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                                                                            {diff} дн.
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-6 py-3 text-right">
+                                                                        <button
+                                                                            onClick={() => setV2UpgradeState({ show: true, orgId: sub.orgId, orgName: sub.org?.name || '' })}
+                                                                            className="text-[10px] font-bold px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all"
+                                                                        >
+                                                                            Продлить
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {v2ExpiringPro.length === 0 && v2ExtraStats.regsSeries.length > 0 && (
+                                        <div className="bg-emerald-50/30 border border-emerald-100/50 p-4 rounded-2xl text-center text-emerald-700 text-xs font-semibold">
+                                            Нет PRO подписок, истекающих в ближайшие 30 дней
+                                        </div>
+                                    )}
+
+                                    <div className="bg-emerald-50/40 border border-emerald-100/60 p-6 rounded-2xl">
+                                        <h3 className="text-emerald-900 font-bold text-sm">V2 — Что нового</h3>
+                                        <ul className="text-emerald-700/80 text-xs mt-2 space-y-1 leading-relaxed">
+                                            <li>• Мультиорганизационность через OrgMember (OWNER / ACCOUNTANT / ADMIN)</li>
+                                            <li>• Автоматическая классификация через AI + правила (Rules Engine)</li>
+                                            <li>• Постинг-движок с шаблонами проводок (DocumentType)</li>
+                                            <li>• Периоды учёта с закрытием и контролем остатков</li>
+                                            <li>• Открытые позиции (OpenItem) — авансы, депозиты, займы</li>
+                                            <li>• Налоговый календарь с дедлайнами по режимам НДС / УСН</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ── V2 Users Tab ── */}
+                            {tab === 'v2_users' && (
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                        <div>
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+                                                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Клиенты V2</h2>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-0.5 ml-3.5">Управление пользователями новой платформы</p>
+                                        </div>
+                                        <div className="flex items-center space-x-3 w-full sm:w-auto">
+                                            <button
+                                                onClick={() => setV2ShowAddUser(true)}
+                                                className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all text-xs font-bold shrink-0"
+                                            >
+                                                <LucideIcon name="Plus" size={14} />
+                                                <span>Добавить клиента</span>
+                                            </button>
+                                            <div className="relative w-full sm:w-72">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Поиск по Email..."
+                                                    className="px-4 py-2.5 border border-slate-200 rounded-xl w-full focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm transition-all pl-10 text-xs"
+                                                    value={v2Search}
+                                                    onChange={(e) => setV2Search(e.target.value)}
+                                                />
+                                                <LucideIcon name="Search" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Пользователь</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Роль / Режим</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Тариф</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">OpenAI Key</th>
+                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Действия</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {v2Users.filter(u => !u.memberships || u.memberships.length === 0).map(u => (
+                                                        <tr key={`no-org-${u.id}`} className="hover:bg-slate-50/50 transition-colors bg-amber-50/20">
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-mono text-xs font-bold text-slate-900">{u.email}</span>
+                                                                    <span className="text-[10px] text-amber-500 mt-0.5 font-semibold">Нет организации</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 align-middle text-xs text-slate-400">—</td>
+                                                            <td className="px-6 py-4 align-middle text-xs text-slate-400">—</td>
+                                                            <td className="px-6 py-4 align-middle text-xs text-slate-400">—</td>
+                                                            <td className="px-6 py-4 align-middle text-xs text-slate-400">—</td>
+                                                            <td className="px-6 py-4 align-middle">
+                                                                <div className="flex gap-1.5 justify-end">
+                                                                    <button onClick={() => setV2EditUser({ id: u.id, email: u.email })}
+                                                                        className="text-[9px] font-bold px-2 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all uppercase">
+                                                                        Пароль
+                                                                    </button>
+                                                                    <button onClick={() => triggerConfirm('Удалить пользователя', `Удалить "${u.email}"?`, async () => { await apiFetch(`/api/v2/users/${u.id}`, 'DELETE'); loadV2Users(); notify('Удалён', 'error'); })}
+                                                                        className="text-[9px] font-bold px-2 py-1.5 bg-white border border-rose-100 text-rose-600 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                        Удалить
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                    {v2Users.flatMap(u => (u.memberships || []).map(m => ({
+                                                        org: m.org,
+                                                        role: m.role,
+                                                        membershipId: m.id,
+                                                        userEmail: u.email,
+                                                        userName: u.name,
+                                                        userId: u.id,
+                                                        createdAt: u.createdAt
+                                                    }))).map((item, idx) => {
+                                                        const org = item.org;
+                                                        const sub = org?.subscription;
+                                                        const plan = sub?.plan || 'FREE';
+                                                        const now = new Date();
+                                                        const validUntil = sub?.validUntil ? new Date(sub.validUntil) : null;
+
+                                                        let statusText = plan === 'PRO' ? 'PRO' : 'FREE';
+                                                        let statusColor = plan === 'PRO'
+                                                            ? 'text-indigo-700 bg-indigo-50 border border-indigo-100'
+                                                            : 'text-slate-400 bg-slate-100/60';
+
+                                                        if (plan === 'PRO' && validUntil) {
+                                                            if (validUntil > now) {
+                                                                const diff = Math.ceil((validUntil - now) / (1000 * 60 * 60 * 24));
+                                                                statusText = `PRO (${diff} дн.)`;
+                                                                statusColor = 'text-emerald-700 bg-emerald-50 border border-emerald-100';
+                                                            } else {
+                                                                statusText = 'PRO Истек';
+                                                                statusColor = 'text-rose-700 bg-rose-50 border border-rose-100';
+                                                            }
+                                                        }
+
+                                                        const roleColor = item.role === 'OWNER'
+                                                            ? 'text-amber-700 bg-amber-50 border-amber-100'
+                                                            : item.role === 'ADMIN'
+                                                                ? 'text-indigo-700 bg-indigo-50 border-indigo-100'
+                                                                : 'text-slate-500 bg-slate-50 border-slate-100';
+
+                                                        return (
+                                                            <tr key={`${item.userId}-${org?.id}-${idx}`} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-6 py-4 align-middle">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-mono text-xs font-bold text-slate-900 truncate max-w-[180px]">{item.userEmail}</span>
+                                                                        <span className="text-[10px] text-slate-400 mt-0.5">{item.userName || '—'}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 align-middle">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-bold text-sm text-slate-800 truncate max-w-[180px]">{org?.name || '—'}</span>
+                                                                        <span className="text-[10px] text-slate-400 mt-0.5">ИНН: {org?.inn || '—'} · {org?.taxRegime === 'VAT' ? 'НДС' : 'УСН'}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 align-middle">
+                                                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${roleColor}`}>
+                                                                        {item.role}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4 align-middle">
+                                                                    <div className="flex flex-col space-y-1.5 min-w-[100px]">
+                                                                        <select
+                                                                            className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${
+                                                                                plan === 'PRO'
+                                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                                                    : 'bg-white text-slate-500 border-slate-200'
+                                                                            }`}
+                                                                            value={plan}
+                                                                            onChange={async (e) => {
+                                                                                await apiFetch(`/api/v2/orgs/${org?.id}/plan`, 'PATCH', { plan: e.target.value });
+                                                                                loadV2Users();
+                                                                                notify(`V2 тариф изменен на ${e.target.value}`);
+                                                                            }}
+                                                                        >
+                                                                            <option value="FREE">FREE</option>
+                                                                            <option value="PRO">PRO</option>
+                                                                        </select>
+                                                                        <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${statusColor}`}>
+                                                                            {statusText}
+                                                                        </span>
+                                                                        {validUntil && plan === 'PRO' && (
+                                                                            <span className="text-[9px] text-slate-400 font-semibold">{validUntil.toLocaleDateString()}</span>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 align-middle">
+                                                                    <div className="flex items-center space-x-1.5 bg-slate-50/50 px-2 py-1 rounded-lg border border-slate-100 min-w-[140px]">
+                                                                        <input
+                                                                            type="password"
+                                                                            placeholder="sk-..."
+                                                                            defaultValue={sub?.customApiKey || ''}
+                                                                            className="text-[10px] font-mono border-none bg-transparent w-full outline-none focus:ring-0 px-0 py-0"
+                                                                            onBlur={async (e) => {
+                                                                                if (e.target.value !== (sub?.customApiKey || '')) {
+                                                                                    await apiFetch(`/api/v2/orgs/${org?.id}/api-key`, 'PATCH', { apiKey: e.target.value });
+                                                                                    loadV2Users();
+                                                                                    notify('OpenAI Key сохранён');
+                                                                                }
+                                                                            }}
+                                                                        />
+                                                                        <span className="text-[8px] font-black text-emerald-500 bg-emerald-50 px-1 rounded uppercase select-none shrink-0">KEY</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 align-middle">
+                                                                    <div className="flex flex-col gap-1.5 min-w-[170px] items-end">
+                                                                        <button
+                                                                            onClick={() => setV2UpgradeState({ show: true, orgId: org?.id, orgName: org?.name })}
+                                                                            className="w-full flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all text-[10px] font-extrabold uppercase tracking-wider shadow-sm"
+                                                                        >
+                                                                            <LucideIcon name="Zap" size={11} />
+                                                                            <span>Продлить PRO</span>
+                                                                        </button>
+                                                                        <div className="grid grid-cols-2 gap-1.5 w-full">
+                                                                            <button
+                                                                                onClick={() => setV2EditUser({ id: item.userId, email: item.userEmail })}
+                                                                                className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="Edit" size={10} />
+                                                                                <span>Доступ</span>
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    triggerConfirm(
+                                                                                        'УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ',
+                                                                                        `Удалить пользователя "${item.userEmail}" из V2? Все его организации тоже будут удалены.`,
+                                                                                        async () => {
+                                                                                            await apiFetch(`/api/v2/users/${item.userId}`, 'DELETE');
+                                                                                            loadV2Users();
+                                                                                            notify('Пользователь V2 удалён', 'error');
+                                                                                        }
+                                                                                    );
+                                                                                }}
+                                                                                className="flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-rose-600 border border-rose-100 rounded-lg hover:bg-rose-50 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="UserX" size={10} />
+                                                                                <span>Удалить</span>
+                                                                            </button>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                triggerConfirm(
+                                                                                    'УДАЛИТЬ ОРГАНИЗАЦИЮ',
+                                                                                    `Удалить организацию "${org?.name}" из V2? Все данные (транзакции, документы) будут стёрты.`,
+                                                                                    async () => {
+                                                                                        await apiFetch(`/api/v2/orgs/${org?.id}`, 'DELETE');
+                                                                                        loadV2Users();
+                                                                                        notify('Организация V2 удалена', 'error');
+                                                                                    }
+                                                                                );
+                                                                            }}
+                                                                            className="w-full flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-rose-400 border border-slate-200 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all text-[9px] font-bold uppercase"
+                                                                        >
+                                                                            <LucideIcon name="Trash2" size={10} />
+                                                                            <span>Удалить организацию</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {v2Users.length === 0 && (
+                                            <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
+                                                Клиенты V2 не найдены
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* V2 Upgrade Modal — глобальный, управляется через v2UpgradeState */}
+
+                                    {/* V2 Add User Modal */}
+                                    {v2ShowAddUser && (
+                                        <Modal title="Новый клиент V2" onClose={() => setV2ShowAddUser(false)}>
+                                            <div className="space-y-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Email</label>
+                                                    <div className="relative">
+                                                        <input type="email" placeholder="email@example.com" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                                            value={v2NewUser.email} onChange={e => setV2NewUser({ ...v2NewUser, email: e.target.value })} />
+                                                        <LucideIcon name="Mail" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Пароль</label>
+                                                    <div className="relative">
+                                                        <input type="password" placeholder="••••••••" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                                            value={v2NewUser.password} onChange={e => setV2NewUser({ ...v2NewUser, password: e.target.value })} />
+                                                        <LucideIcon name="Lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Имя клиента</label>
+                                                    <div className="relative">
+                                                        <input type="text" placeholder="Иван Иванов" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                                            value={v2NewUser.name} onChange={e => setV2NewUser({ ...v2NewUser, name: e.target.value })} />
+                                                        <LucideIcon name="User" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Организация</label>
+                                                    <div className="relative">
+                                                        <input type="text" placeholder="ООО 'Моя компания'" className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                                            value={v2NewUser.orgName} onChange={e => setV2NewUser({ ...v2NewUser, orgName: e.target.value })} />
+                                                        <LucideIcon name="Building" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 mt-8">
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!v2NewUser.email.includes('@')) return notify('Некорректный Email', 'error');
+                                                        if (v2NewUser.password.length < 6) return notify('Пароль слишком короткий (мин. 6)', 'error');
+                                                        if (!v2NewUser.orgName) return notify('Укажите организацию', 'error');
+                                                        setLoading(true);
+                                                        const r = await apiFetch('/api/v2/users', 'POST', v2NewUser);
+                                                        setLoading(false);
+                                                        if (r?.success) {
+                                                            setV2ShowAddUser(false);
+                                                            setV2NewUser({ email: '', password: '', name: '', orgName: '' });
+                                                            loadV2Users();
+                                                            notify('V2 клиент создан!');
+                                                        } else if (r?.error) { notify(r.error, 'error'); }
+                                                    }}
+                                                    className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md disabled:opacity-50"
+                                                    disabled={loading || !v2NewUser.email || !v2NewUser.password}
+                                                >
+                                                    Создать
+                                                </button>
+                                                <button onClick={() => setV2ShowAddUser(false)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm">
+                                                    Отмена
+                                                </button>
+                                            </div>
+                                        </Modal>
+                                    )}
+
+                                    {/* V2 Edit User Modal */}
+                                    {v2EditUser && (
+                                        <Modal title="Изменение данных V2" onClose={() => setV2EditUser(null)}>
+                                            <div className="space-y-4">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новый Email</label>
+                                                    <input type="email" className="w-full px-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                                        value={v2EditUser.email} onChange={e => setV2EditUser({ ...v2EditUser, email: e.target.value })} />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новый пароль (пусто = без изменений)</label>
+                                                    <input type="password" placeholder="••••••••" className="w-full px-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                                                        value={v2EditUser.password || ''} onChange={e => setV2EditUser({ ...v2EditUser, password: e.target.value })} />
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-3 mt-8">
+                                                <button
+                                                    onClick={async () => {
+                                                        setLoading(true);
+                                                        const r = await apiFetch(`/api/v2/users/${v2EditUser.id}/credentials`, 'PATCH', v2EditUser);
+                                                        setLoading(false);
+                                                        if (r?.success) { setV2EditUser(null); loadV2Users(); notify('Данные V2 обновлены ✓'); }
+                                                        else if (r?.error) notify(r.error, 'error');
+                                                    }}
+                                                    className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-md"
+                                                    disabled={loading}
+                                                >
+                                                    Сохранить
+                                                </button>
+                                                <button onClick={() => setV2EditUser(null)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm">
+                                                    Отмена
+                                                </button>
+                                            </div>
+                                        </Modal>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── V2 Organisations Tab ── */}
+                            {tab === 'v2_orgs' && (
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                        <div>
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+                                                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Организации V2</h2>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-0.5 ml-3.5">Всего: {v2OrgsTotal}</p>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                                            <div className="relative">
+                                                <input type="text" placeholder="Поиск по назв. / ИНН..."
+                                                    className="pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none w-56"
+                                                    value={v2OrgSearch}
+                                                    onChange={e => setV2OrgSearch(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && loadV2Orgs(1, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter)}
+                                                />
+                                                <LucideIcon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                                            </div>
+                                            <select className="px-3 py-2.5 border border-slate-200 rounded-xl text-xs outline-none font-bold"
+                                                value={v2OrgPlanFilter}
+                                                onChange={e => { setV2OrgPlanFilter(e.target.value); loadV2Orgs(1, v2OrgSearch, e.target.value, v2OrgRegimeFilter); }}>
+                                                <option value="">Все тарифы</option>
+                                                <option value="PRO">PRO</option>
+                                                <option value="FREE">FREE</option>
+                                            </select>
+                                            <select className="px-3 py-2.5 border border-slate-200 rounded-xl text-xs outline-none font-bold"
+                                                value={v2OrgRegimeFilter}
+                                                onChange={e => { setV2OrgRegimeFilter(e.target.value); loadV2Orgs(1, v2OrgSearch, v2OrgPlanFilter, e.target.value); }}>
+                                                <option value="">Все режимы</option>
+                                                <option value="VAT">НДС</option>
+                                                <option value="TURNOVER_TAX">УСН</option>
+                                            </select>
+                                            <button onClick={() => loadV2Orgs(1, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter)}
+                                                className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                Найти
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Режим / НДС</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Тариф</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Участников</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Backlog</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Создана</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Действия</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {v2OrgsList.map(org => {
+                                                        const plan = org.subscription?.plan || 'FREE';
+                                                        const validUntil = org.subscription?.validUntil ? new Date(org.subscription.validUntil) : null;
+                                                        const isPro = plan === 'PRO';
+                                                        return (
+                                                            <tr key={org.id} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-5 py-3.5 align-middle">
+                                                                    <div>
+                                                                        <p className="font-bold text-sm text-slate-800">{org.name}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">ИНН: {org.inn || '—'}</p>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-5 py-3.5 align-middle">
+                                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">{org.taxRegime === 'VAT' ? 'НДС' : 'УСН'}</span>
+                                                                    {org.isVatPayer && <span className="ml-1 text-[9px] font-bold px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-full">НДС</span>}
+                                                                </td>
+                                                                <td className="px-5 py-3.5 align-middle">
+                                                                    <div className="flex flex-col">
+                                                                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isPro ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{plan}</span>
+                                                                        {validUntil && <span className="text-[9px] text-slate-400 mt-0.5">{validUntil.toLocaleDateString('ru-RU')}</span>}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-5 py-3.5 align-middle text-sm font-bold text-slate-700">{org._count?.members || 0}</td>
+                                                                <td className="px-5 py-3.5 align-middle">
+                                                                    {org.txBacklog > 0
+                                                                        ? <span className="text-[10px] font-black px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-100 rounded-full">{org.txBacklog}</span>
+                                                                        : <span className="text-[10px] text-slate-300 font-bold">—</span>
+                                                                    }
+                                                                </td>
+                                                                <td className="px-5 py-3.5 align-middle text-xs text-slate-400 font-semibold">
+                                                                    {new Date(org.createdAt).toLocaleDateString('ru-RU')}
+                                                                </td>
+                                                                <td className="px-5 py-3.5 align-middle">
+                                                                    <div className="flex gap-1.5 justify-end">
+                                                                        <button onClick={async () => { await loadV2OrgDetail(org.id); setV2EditingOrg(org); }}
+                                                                            className="text-[9px] font-bold px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all uppercase">
+                                                                            Детали
+                                                                        </button>
+                                                                        <button onClick={() => setV2UpgradeState({ show: true, orgId: org.id, orgName: org.name })}
+                                                                            className="text-[9px] font-bold px-2.5 py-1.5 bg-white border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-all uppercase">
+                                                                            PRO
+                                                                        </button>
+                                                                        <button onClick={() => triggerConfirm('Удалить организацию', `Удалить "${org.name}" и все данные?`, async () => { await apiFetch(`/api/v2/orgs/${org.id}`, 'DELETE'); loadV2Orgs(v2OrgsPage, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter); notify('Орг. удалена', 'error'); })}
+                                                                            className="text-[9px] font-bold px-2.5 py-1.5 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                            Удалить
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {v2OrgsList.length === 0 && (
+                                            <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">Организации не найдены</div>
+                                        )}
+                                    </div>
+
+                                    {/* Pagination */}
+                                    {Math.ceil(v2OrgsTotal / 50) > 1 && (
+                                        <div className="flex justify-center gap-2">
+                                            {Array.from({ length: Math.ceil(v2OrgsTotal / 50) }, (_, i) => i + 1).map(p => (
+                                                <button key={p} onClick={() => loadV2Orgs(p, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter)}
+                                                    className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${p === v2OrgsPage ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300'}`}>
+                                                    {p}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Org Detail Modal */}
+                                    {v2EditingOrg && v2OrgDetail && (
+                                        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && (setV2EditingOrg(null), setV2OrgDetail(null))}>
+                                            <div style={{ background: 'white', borderRadius: 24, width: '100%', maxWidth: 760, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)' }}>
+                                                {/* Modal Header */}
+                                                <div className="p-6 border-b border-slate-100 flex justify-between items-center shrink-0">
+                                                    <div>
+                                                        <h3 className="text-lg font-bold text-slate-900">{v2OrgDetail.org.name}</h3>
+                                                        <p className="text-xs text-slate-400 mt-0.5">ИНН: {v2OrgDetail.org.inn || '—'} · {v2OrgDetail.org.taxRegime === 'VAT' ? 'НДС' : 'УСН'}</p>
+                                                    </div>
+                                                    <button onClick={() => { setV2EditingOrg(null); setV2OrgDetail(null); }} className="p-2 hover:bg-slate-50 rounded-full text-slate-400 hover:text-slate-600 transition-all">
+                                                        <LucideIcon name="X" size={18} />
+                                                    </button>
+                                                </div>
+                                                {/* Sub-tabs */}
+                                                <div className="flex border-b border-slate-100 px-6 shrink-0">
+                                                    {['info', 'members', 'accounts', 'periods', 'txstats'].map(t => (
+                                                        <button key={t} onClick={() => setV2OrgDetailTab(t)}
+                                                            className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all mr-1 ${v2OrgDetailTab === t ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+                                                            {t === 'info' ? 'Общее' : t === 'members' ? 'Участники' : t === 'accounts' ? 'Счета' : t === 'periods' ? 'Периоды' : 'Транзакции'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                {/* Modal Body */}
+                                                <div className="overflow-y-auto p-6 flex-1">
+                                                    {/* TAB: info */}
+                                                    {v2OrgDetailTab === 'info' && (
+                                                        <div className="space-y-4">
+                                                            {[
+                                                                { label: 'Название', field: 'name', type: 'text' },
+                                                                { label: 'ИНН', field: 'inn', type: 'text' },
+                                                                { label: 'Порог AI (%)', field: 'aiConfidenceThreshold', type: 'number' },
+                                                                { label: 'Макс. вопросов AI', field: 'maxClarificationQuestions', type: 'number' }
+                                                            ].map(f => (
+                                                                <div key={f.field} className="space-y-1">
+                                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">{f.label}</label>
+                                                                    <input type={f.type}
+                                                                        defaultValue={v2OrgDetail.org[f.field] || ''}
+                                                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                                        id={`org-field-${f.field}`} />
+                                                                </div>
+                                                            ))}
+                                                            <div className="space-y-1">
+                                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Налоговый режим</label>
+                                                                <select defaultValue={v2OrgDetail.org.taxRegime} id="org-field-taxRegime"
+                                                                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 outline-none">
+                                                                    <option value="TURNOVER_TAX">УСН (оборотный налог)</option>
+                                                                    <option value="VAT">НДС</option>
+                                                                </select>
+                                                            </div>
+                                                            <div className="flex items-center space-x-3 mt-2">
+                                                                <input type="checkbox" id="org-field-isVatPayer" defaultChecked={v2OrgDetail.org.isVatPayer} className="w-4 h-4 accent-emerald-600" />
+                                                                <label htmlFor="org-field-isVatPayer" className="text-sm font-semibold text-slate-700">Плательщик НДС</label>
+                                                            </div>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    const g = id => document.getElementById(id);
+                                                                    const body = {
+                                                                        name: g('org-field-name').value,
+                                                                        inn: g('org-field-inn').value,
+                                                                        taxRegime: g('org-field-taxRegime').value,
+                                                                        isVatPayer: g('org-field-isVatPayer').checked,
+                                                                        aiConfidenceThreshold: g('org-field-aiConfidenceThreshold').value,
+                                                                        maxClarificationQuestions: g('org-field-maxClarificationQuestions').value
+                                                                    };
+                                                                    const r = await apiFetch(`/api/v2/orgs/${v2OrgDetail.org.id}/settings`, 'PATCH', body);
+                                                                    if (r?.success) { notify('Настройки сохранены ✓'); loadV2Orgs(v2OrgsPage, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter); await loadV2OrgDetail(v2OrgDetail.org.id); }
+                                                                    else notify('Ошибка сохранения', 'error');
+                                                                }}
+                                                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm mt-2 transition-all">
+                                                                Сохранить
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {/* TAB: members */}
+                                                    {v2OrgDetailTab === 'members' && (
+                                                        <div className="space-y-3">
+                                                            {v2OrgDetail.org.members.map(m => (
+                                                                <div key={m.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                                    <div>
+                                                                        <p className="font-bold text-sm text-slate-800">{m.user.email}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">{m.user.name || '—'}</p>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border uppercase ${m.role === 'OWNER' ? 'text-amber-700 bg-amber-50 border-amber-100' : m.role === 'ADMIN' ? 'text-indigo-700 bg-indigo-50 border-indigo-100' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>{m.role}</span>
+                                                                        {m.role !== 'OWNER' && (
+                                                                            <button onClick={() => triggerConfirm('Удалить участника', `Удалить "${m.user.email}" из орг.?`, async () => {
+                                                                                await apiFetch(`/api/v2/orgs/${v2OrgDetail.org.id}/members/${m.user.id}`, 'DELETE');
+                                                                                notify('Участник удалён');
+                                                                                await loadV2OrgDetail(v2OrgDetail.org.id);
+                                                                            })}
+                                                                                className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                                Удалить
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            {v2OrgDetail.org.members.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Участников нет</p>}
+                                                        </div>
+                                                    )}
+                                                    {/* TAB: accounts */}
+                                                    {v2OrgDetailTab === 'accounts' && (
+                                                        <div className="space-y-3">
+                                                            {v2OrgDetail.org.bankAccounts.map(acc => (
+                                                                <div key={acc.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                                    <div>
+                                                                        <p className="font-bold text-sm text-slate-800">{acc.name}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">{acc.bankName || '—'} · {acc.currency} · {Number(acc.lastBalance).toLocaleString()} </p>
+                                                                    </div>
+                                                                    <button onClick={() => triggerConfirm('Удалить счёт', `Удалить счёт "${acc.name}"?`, async () => {
+                                                                        await apiFetch(`/api/v2/bank-accounts/${acc.id}`, 'DELETE');
+                                                                        notify('Счёт удалён');
+                                                                        await loadV2OrgDetail(v2OrgDetail.org.id);
+                                                                    })}
+                                                                        className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                        Удалить
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                            {v2OrgDetail.org.bankAccounts.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Банковских счетов нет</p>}
+                                                        </div>
+                                                    )}
+                                                    {/* TAB: periods */}
+                                                    {v2OrgDetailTab === 'periods' && (
+                                                        <div className="space-y-3">
+                                                            {v2OrgDetail.periods.map(p => (
+                                                                <div key={p.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                                    <div>
+                                                                        <p className="font-bold text-sm text-slate-800">{p.year} / {String(p.month).padStart(2,'0')}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">Транзакций: {p._count?.stagedTransactions || 0} · Документов: {p._count?.documents || 0}</p>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border uppercase ${p.status === 'OPEN' ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>{p.status}</span>
+                                                                        <button onClick={async () => {
+                                                                            const newStatus = p.status === 'OPEN' ? 'CLOSED' : 'OPEN';
+                                                                            const r = await apiFetch(`/api/v2/periods/${p.id}/status`, 'PATCH', { status: newStatus });
+                                                                            if (r?.success) { notify(`Период ${newStatus}`); await loadV2OrgDetail(v2OrgDetail.org.id); }
+                                                                        }}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100 transition-all uppercase">
+                                                                            {p.status === 'OPEN' ? 'Закрыть' : 'Открыть'}
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            {v2OrgDetail.periods.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Периодов нет</p>}
+                                                        </div>
+                                                    )}
+                                                    {/* TAB: txstats */}
+                                                    {v2OrgDetailTab === 'txstats' && (
+                                                        <div className="space-y-4">
+                                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                                {Object.entries(v2OrgDetail.txByStatus || {}).map(([status, count]) => {
+                                                                    const colorMap = { IMPORTED: 'text-slate-700', AUTO_MATCHED: 'text-blue-700', NEEDS_CLARIFICATION: 'text-amber-700', CONFIRMED: 'text-emerald-700', POSTED: 'text-indigo-700', SKIPPED: 'text-slate-400' };
+                                                                    return (
+                                                                        <div key={status} className="text-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                                            <p className={`text-3xl font-extrabold ${colorMap[status] || 'text-slate-700'}`}>{count}</p>
+                                                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">{status.replace(/_/g, ' ')}</p>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                            {Object.keys(v2OrgDetail.txByStatus || {}).length === 0 && <p className="text-xs text-slate-400 text-center py-8">Транзакций нет</p>}
+                                                            {/* Recent audit */}
+                                                            {v2OrgDetail.auditLogs.length > 0 && (
+                                                                <div className="mt-4">
+                                                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Последние записи аудита</h4>
+                                                                    <div className="space-y-2">
+                                                                        {v2OrgDetail.auditLogs.map(l => (
+                                                                            <div key={l.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl text-xs">
+                                                                                <span className="font-semibold text-slate-700">{l.action} · {l.entityType}</span>
+                                                                                <span className="text-slate-400">{new Date(l.createdAt).toLocaleString('ru-RU')}</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── V2 Audit Log Tab ── */}
+                            {tab === 'v2_audit' && (
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                        <div>
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+                                                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Аудит V2</h2>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-0.5 ml-3.5">Всего записей: {v2AuditTotal}</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input type="text" placeholder="Фильтр по orgId..."
+                                                className="px-4 py-2.5 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-400 w-64"
+                                                value={v2AuditOrgFilter}
+                                                onChange={e => setV2AuditOrgFilter(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && loadV2AuditLogs(1, v2AuditOrgFilter)} />
+                                            <button onClick={() => loadV2AuditLogs(1, v2AuditOrgFilter)}
+                                                className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                Применить
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Действие</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Сущность</th>
+                                                        <th className="px-5 py-3.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Пользователь</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {v2AuditLogs.map(log => (
+                                                        <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="px-5 py-3.5 text-xs text-slate-400 font-semibold whitespace-nowrap">
+                                                                {new Date(log.createdAt).toLocaleString('ru-RU')}
+                                                            </td>
+                                                            <td className="px-5 py-3.5">
+                                                                <span className="text-xs font-bold text-slate-700">{log.org?.name || '—'}</span>
+                                                            </td>
+                                                            <td className="px-5 py-3.5">
+                                                                <span className="text-[10px] font-black px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-full uppercase">{log.action}</span>
+                                                            </td>
+                                                            <td className="px-5 py-3.5">
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-xs font-semibold text-slate-600">{log.entityType || '—'}</span>
+                                                                    {log.entityId && <span className="text-[9px] text-slate-400 font-mono">{log.entityId.substring(0,12)}...</span>}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-5 py-3.5 text-[10px] font-mono text-slate-400">{log.userId.substring(0,8)}...</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {v2AuditLogs.length === 0 && (
+                                            <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">Записей аудита нет</div>
+                                        )}
+                                    </div>
+
+                                    {/* Pagination */}
+                                    {Math.ceil(v2AuditTotal / 50) > 1 && (
+                                        <div className="flex justify-center gap-2">
+                                            {Array.from({ length: Math.min(Math.ceil(v2AuditTotal / 50), 10) }, (_, i) => i + 1).map(p => (
+                                                <button key={p} onClick={() => loadV2AuditLogs(p, v2AuditOrgFilter)}
+                                                    className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${p === v2AuditPage ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300'}`}>
+                                                    {p}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── V2 Rules Tab ── */}
+                            {tab === 'v2_rules' && (
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                        <div>
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
+                                                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Правила классификации V2</h2>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-0.5 ml-3.5">Просмотр и удаление правил AI-классификации по организации</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input type="text" placeholder="orgId организации..."
+                                                className="px-4 py-2.5 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-emerald-400 w-72 font-mono"
+                                                value={v2RulesOrgId}
+                                                onChange={e => setV2RulesOrgId(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && loadV2Rules(v2RulesOrgId)} />
+                                            <button onClick={() => loadV2Rules(v2RulesOrgId)}
+                                                className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                Загрузить
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Quick org picker from list */}
+                                    {v2OrgsList.length > 0 && (
+                                        <div className="premium-card p-4">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Быстрый выбор орг. из списка</p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {v2OrgsList.slice(0, 10).map(org => (
+                                                    <button key={org.id} onClick={() => { setV2RulesOrgId(org.id); setV2RulesOrgName(org.name); loadV2Rules(org.id); }}
+                                                        className={`text-[10px] font-bold px-3 py-1.5 rounded-xl border transition-all ${v2RulesOrgId === org.id ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-300'}`}>
+                                                        {org.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {v2Rules.length > 0 && (
+                                        <div className="premium-card overflow-hidden">
+                                            <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                                                <p className="text-sm font-bold text-slate-700">{v2RulesOrgName || v2RulesOrgId} — {v2Rules.length} правил</p>
+                                                <button onClick={() => triggerConfirm('Удалить ВСЕ правила', 'Удалить все правила классификации этой организации? Действие необратимо.', async () => {
+                                                    await Promise.all(v2Rules.map(r => apiFetch(`/api/v2/rules/${r.id}`, 'DELETE')));
+                                                    setV2Rules([]); notify('Все правила удалены', 'error');
+                                                })}
+                                                    className="text-[9px] font-bold px-3 py-1.5 bg-white border border-rose-200 text-rose-600 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                    Удалить все
+                                                </button>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left">
+                                                    <thead className="bg-slate-50 border-b border-slate-100">
+                                                        <tr>
+                                                            <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">#</th>
+                                                            <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Тип</th>
+                                                            <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Значение</th>
+                                                            <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Категория</th>
+                                                            <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Источник</th>
+                                                            <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Удалить</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                                        {v2Rules.map((rule, i) => (
+                                                            <tr key={rule.id} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-5 py-3 text-xs font-bold text-slate-400">{rule.order ?? i + 1}</td>
+                                                                <td className="px-5 py-3">
+                                                                    <span className="text-[10px] font-black px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full uppercase">{rule.matchType}</span>
+                                                                </td>
+                                                                <td className="px-5 py-3 font-mono text-xs text-slate-700 max-w-[180px] truncate" title={rule.matchValue}>{rule.matchValue}</td>
+                                                                <td className="px-5 py-3 text-xs font-semibold text-slate-700">{rule.documentType?.name || rule.categoryId.substring(0,8)}</td>
+                                                                <td className="px-5 py-3">
+                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${rule.createdFrom === 'USER_ANSWER' ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>{rule.createdFrom}</span>
+                                                                </td>
+                                                                <td className="px-5 py-3 text-right">
+                                                                    <button onClick={() => triggerConfirm('Удалить правило', `Удалить правило "${rule.matchType}: ${rule.matchValue}"?`, async () => {
+                                                                        await apiFetch(`/api/v2/rules/${rule.id}`, 'DELETE');
+                                                                        setV2Rules(prev => prev.filter(r => r.id !== rule.id));
+                                                                        notify('Правило удалено');
+                                                                    })}
+                                                                        className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                        Удалить
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {v2Rules.length === 0 && v2RulesOrgId && (
+                                        <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white rounded-2xl border border-dashed">
+                                            Правил не найдено для данной организации
+                                        </div>
+                                    )}
+                                    {!v2RulesOrgId && (
+                                        <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white rounded-2xl border border-dashed">
+                                            Введите ID организации или выберите из списка выше
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Custom Confirmation Modal */}
                             <ConfirmModal
                                 show={confirmState.show}
@@ -1287,7 +2378,7 @@
                                 onCancel={() => setConfirmState({ show: false, title: '', message: '', onConfirm: null })}
                             />
 
-                            {/* Upgrade Days Modal */}
+                            {/* V1 Upgrade Days Modal */}
                             <UpgradeDaysModal
                                 show={upgradeState.show}
                                 orgName={upgradeState.orgName}
@@ -1300,6 +2391,23 @@
                                     setUpgradeState({ show: false, orgId: '', orgName: '' });
                                 }}
                                 onCancel={() => setUpgradeState({ show: false, orgId: '', orgName: '' })}
+                            />
+
+                            {/* V2 Upgrade Days Modal — глобальный, работает из любой вкладки */}
+                            <UpgradeDaysModal
+                                show={v2UpgradeState.show}
+                                orgName={v2UpgradeState.orgName}
+                                onConfirm={async (days) => {
+                                    if (days) {
+                                        await apiFetch(`/api/v2/orgs/${v2UpgradeState.orgId}/upgrade`, 'POST', { days });
+                                        if (tab === 'v2_users') loadV2Users();
+                                        if (tab === 'v2_orgs') loadV2Orgs(v2OrgsPage, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter);
+                                        if (tab === 'v2_dashboard') { loadV2Dashboard(); loadV2ExpiringPro(); }
+                                        notify(`V2 PRO продлён на ${days} дн.`);
+                                    }
+                                    setV2UpgradeState({ show: false, orgId: '', orgName: '' });
+                                }}
+                                onCancel={() => setV2UpgradeState({ show: false, orgId: '', orgName: '' })}
                             />
 
                             {/* Add User Modal */}

@@ -1,0 +1,398 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  passwordHash        String
+  name                String?
+  createdAt           DateTime             @default(now())
+  activeOrgId         String?
+  memberships         OrgMember[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model Organization {
+  id                        String                @id @default(uuid())
+  name                      String
+  inn                       String?
+  taxRegime                 TaxRegime             @default(TURNOVER_TAX)
+  isVatPayer                Boolean               @default(false)
+  createdAt                 DateTime              @default(now())
+  activityDescription       String?
+  aiConfidenceThreshold     Int                   @default(70)
+  maxClarificationQuestions Int                   @default(10)
+  settings                  Json?
+  activityCustom            String?
+  activityGroup             String?
+  auditLogs                 AuditLog[]
+  bankAccounts              BankAccount[]
+  counterparties            Counterparty[]
+  documents                 Document[]
+  openItems                 OpenItem[]
+  members                   OrgMember[]
+  periods                   Period[]
+  rules                     Rule[]
+  subscription              Subscription?
+  taxCalendar               TaxCalendarEvent[]
+  taxTemplates              TaxDeadlineTemplate[]
+}
+
+model OrgMember {
+  id     String       @id @default(uuid())
+  role   OrgRole      @default(OWNER)
+  userId String
+  orgId  String
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+}
+
+model BankAccount {
+  id                 String              @id @default(uuid())
+  orgId              String
+  name               String
+  currency           String              @default("UZS")
+  bankName           String?
+  accountNumber      String?
+  lastBalance        Decimal             @default(0) @db.Decimal(20, 2)
+  lastSyncedAt       DateTime?
+  org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  stagedTransactions StagedTransaction[]
+
+  @@index([orgId])
+}
+
+model Period {
+  id                 String              @id @default(uuid())
+  orgId              String
+  year               Int
+  month              Int
+  mode               PeriodMode          @default(ACTIVE)
+  status             PeriodStatus        @default(OPEN)
+  lockDate           DateTime?
+  closingData        Json?
+  documents          Document[]
+  org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  stagedTransactions StagedTransaction[]
+  taxEvents          TaxCalendarEvent[]
+
+  @@unique([orgId, year, month])
+  @@index([orgId])
+}
+
+model StagedTransaction {
+  id               String                  @id @default(uuid())
+  orgId            String
+  bankAccountId    String
+  periodId         String
+  date             DateTime
+  amount           Decimal                 @db.Decimal(20, 2)
+  direction        TransactionDirection
+  description      String
+  counterpartyHint String?
+  counterpartyInn  String?
+  hash             String
+  status           StagedTransactionStatus @default(IMPORTED)
+  aiSuggestion     Json?
+  documentId       String?
+  importBatchId    String?
+  createdAt        DateTime                @default(now()) @db.Timestamptz(6)
+  bankAccount      BankAccount             @relation(fields: [bankAccountId], references: [id])
+  document         Document?               @relation(fields: [documentId], references: [id])
+  period           Period                  @relation(fields: [periodId], references: [id])
+
+  @@unique([orgId, hash])
+  @@index([orgId, periodId])
+  @@index([status])
+  @@index([importBatchId])
+}
+
+model Rule {
+  id           String        @id @default(uuid())
+  orgId        String
+  matchType    RuleMatchType
+  matchValue   String
+  categoryId   String
+  createdFrom  RuleSource    @default(USER_ANSWER)
+  createdAt    DateTime      @default(now())
+  order        Int           @default(0)
+  documentType DocumentType  @relation(fields: [categoryId], references: [id])
+  org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model Account {
+  id             String         @id @default(uuid())
+  code           String         @unique
+  name           String
+  type           AccountType
+  parentId       String?
+  isSystem       Boolean        @default(true)
+  group          String?
+  isDeprecated   Boolean        @default(false)
+  layer          AccountLayer   @default(CORE)
+  parent         Account?       @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children       Account[]      @relation("AccountHierarchy")
+  journalEntries JournalEntry[]
+  openItems      OpenItem[]
+
+  @@index([code])
+}
+
+model DocumentType {
+  id              String     @id @default(uuid())
+  code            String     @unique
+  name            String
+  postingTemplate Json
+  documents       Document[]
+  rules           Rule[]
+}
+
+model Document {
+  id                    String              @id @default(uuid())
+  orgId                 String
+  periodId              String
+  typeId                String
+  date                  DateTime
+  status                DocumentStatus      @default(POSTED)
+  payload               Json
+  sourceTransactionId   String?
+  correctionForPeriodId String?
+  org                   Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  period                Period              @relation(fields: [periodId], references: [id])
+  type                  DocumentType        @relation(fields: [typeId], references: [id])
+  journalEntries        JournalEntry[]
+  openItemsClosed       OpenItem[]          @relation("ClosingDocument")
+  openItemsCreated      OpenItem[]          @relation("OpeningDocument")
+  stagedTransactions    StagedTransaction[]
+
+  @@index([orgId, periodId])
+  @@index([orgId, date])
+}
+
+model JournalEntry {
+  id             String        @id @default(uuid())
+  documentId     String
+  accountId      String
+  debit          Decimal       @db.Decimal(20, 2)
+  credit         Decimal       @db.Decimal(20, 2)
+  date           DateTime
+  counterpartyId String?
+  contractId     String?
+  account        Account       @relation(fields: [accountId], references: [id])
+  counterparty   Counterparty? @relation(fields: [counterpartyId], references: [id])
+  document       Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([accountId, date])
+  @@index([counterpartyId])
+}
+
+model Counterparty {
+  id             String         @id @default(uuid())
+  orgId          String
+  name           String
+  inn            String?
+  org            Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  journalEntries JournalEntry[]
+  openItems      OpenItem[]
+
+  @@index([orgId])
+}
+
+model OpenItem {
+  id                String         @id @default(uuid())
+  orgId             String
+  accountId         String
+  counterpartyId    String?
+  openingDocumentId String
+  amount            Decimal        @db.Decimal(20, 2)
+  dateOpened        DateTime
+  status            OpenItemStatus @default(OPEN)
+  riskDeadline      DateTime?
+  closingDocumentId String?
+  dateClosed        DateTime?
+  affectedPeriodId  String?
+  account           Account        @relation(fields: [accountId], references: [id])
+  closingDocument   Document?      @relation("ClosingDocument", fields: [closingDocumentId], references: [id])
+  counterparty      Counterparty?  @relation(fields: [counterpartyId], references: [id])
+  openingDocument   Document       @relation("OpeningDocument", fields: [openingDocumentId], references: [id])
+  org               Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+}
+
+model TaxCalendarEvent {
+  id              String         @id @default(uuid())
+  orgId           String
+  periodId        String?
+  type            TaxEventType
+  dueDate         DateTime
+  status          TaxEventStatus @default(PENDING)
+  estimatedAmount Decimal?       @db.Decimal(20, 2)
+  note            String?
+  org             Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  period          Period?        @relation(fields: [periodId], references: [id])
+
+  @@index([orgId, dueDate])
+}
+
+model TaxDeadlineTemplate {
+  id         String       @id @default(uuid())
+  orgId      String
+  type       TaxEventType
+  dayOfMonth Int
+  frequency  Frequency
+  taxRegime  TaxRegime?
+  isActive   Boolean      @default(true)
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model AuditLog {
+  id         String       @id @default(uuid())
+  orgId      String
+  userId     String
+  action     String
+  entityType String?
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  createdAt  DateTime     @default(now())
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+}
+
+model Subscription {
+  id           String       @id @default(uuid())
+  orgId        String       @unique
+  plan         PlanType     @default(FREE)
+  validUntil   DateTime?
+  customApiKey String?
+  updatedAt    DateTime     @updatedAt
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+enum TaxRegime {
+  VAT
+  TURNOVER_TAX
+}
+
+enum OrgRole {
+  OWNER
+  ACCOUNTANT
+  ADMIN
+}
+
+enum PeriodMode {
+  HISTORICAL
+  ACTIVE
+}
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+enum TransactionDirection {
+  CREDIT
+  DEBIT
+}
+
+enum StagedTransactionStatus {
+  IMPORTED
+  AUTO_MATCHED
+  NEEDS_CLARIFICATION
+  CONFIRMED
+  POSTED
+  SKIPPED
+}
+
+enum RuleMatchType {
+  INN
+  KEYWORD
+  AMOUNT_RANGE
+  TREASURY_ACCOUNT
+}
+
+enum RuleSource {
+  USER_ANSWER
+  MANUAL
+}
+
+enum AccountType {
+  ASSET
+  CONTRA_ASSET
+  LIABILITY
+  CONTRA_LIABILITY
+  ACTIVE_PASSIVE
+  TRANSIT
+  OFF_BALANCE
+}
+
+enum AccountLayer {
+  CORE
+  EXTENSION
+  INDUSTRY
+}
+
+enum DocumentStatus {
+  POSTED
+  VOIDED
+}
+
+enum OpenItemStatus {
+  OPEN
+  CLOSED
+  RISK
+}
+
+enum TaxEventType {
+  VAT
+  PERSONAL_INCOME_TAX
+  TURNOVER_TAX
+  PROFIT_TAX
+  STATISTICS
+  SOCIAL_TAX
+}
+
+enum TaxEventStatus {
+  PENDING
+  DONE
+}
+
+enum PlanType {
+  FREE
+  PRO
+}
+
+enum Frequency {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}

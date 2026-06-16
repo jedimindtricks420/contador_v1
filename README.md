@@ -1,38 +1,62 @@
 # Contador — Бухгалтерская система для Узбекистана
 
-Мультитенантная SaaS-система для бухгалтерского учёта по **НСБУ №21** с ИИ-помощником на базе GPT-4o.
+Мультитенантная SaaS-система двойной записи по **НСБУ №21** с AI-классификатором банковских операций на базе GPT-4o-mini.
 
-**Стек:** Next.js 16.2.1 · Prisma 6 · PostgreSQL 16 · OpenAI GPT-4o · Tailwind CSS 4 · Decimal.js
+**Стек:** Next.js 16.2.1 · Prisma 6 · PostgreSQL 16 · OpenAI GPT-4o-mini · Tailwind CSS 4 · Decimal.js · TypeScript 5
 
 ---
 
-## Быстрый старт
+## Архитектура
 
-Приложение работает в Docker. Из-за особенностей окружения (legacy Docker Compose) используйте прямые команды:
+Проект состоит из двух приложений, работающих одновременно:
 
-```bash
-# Сборка образа (из временной директории без postgres_data)
-rsync -av --exclude=postgres_data /home/admin1/contador/ /tmp/contador-build/
-docker build -t contador-app -f /tmp/contador-build/Dockerfile /tmp/contador-build/
+| Приложение | Порт | Статус | Описание |
+|-----------|------|--------|----------|
+| **v2** (основная) | 3032 | ✅ Активна | Документоцентричный учёт, импорт выписок, AI-классификация, мастер закрытия месяца |
+| **v1** (legacy) | 3030 | 🔒 Legacy | AI-чат для ввода проводок вручную, базовые отчёты |
 
-# Запуск контейнера
-docker stop contador-app 2>/dev/null; docker rm contador-app 2>/dev/null
-docker run -d \
-  --name contador-app \
-  --network contador_contador-net \
-  -p 3030:3030 \
-  --env-file /home/admin1/contador/.env \
-  contador-app
-```
+**Основная точка входа** — v2 на порту 3032. v1 оставлена для обратной совместимости.
 
-Приложение доступно на `http://localhost:3030` (через nginx: `https://contador.uz`).
+**Admin-панель** (Express, порт 3031) — управление платёжными интеграциями (Payme, Click), подписками, организациями.
 
-### Разработка (без Docker)
+---
+
+## Быстрый старт (v2 — основное приложение)
+
+### Разработка
 
 ```bash
+cd /home/admin1/contador/v2
 npm install
 npx prisma generate
-npm run dev        # http://localhost:3030
+npx prisma migrate deploy
+npm run dev        # http://localhost:3032
+```
+
+### Продакшн (PM2)
+
+```bash
+cd /home/admin1/contador/v2
+npm run build
+pm2 start "npm run start" --name contador-v2
+
+# Перезапуск после обновления
+npm run build && pm2 restart contador-v2
+```
+
+Статус: `pm2 status` — процесс `contador-v2` (pid ~2654692).
+
+### База данных
+
+```bash
+# Применить миграции
+npx prisma migrate deploy
+
+# Prisma Studio
+npx prisma studio
+
+# Прямой доступ к PostgreSQL
+psql postgresql://user:password@172.26.0.2:5432/contador_v2
 ```
 
 ---
@@ -41,58 +65,130 @@ npm run dev        # http://localhost:3030
 
 ```
 contador/
-├── src/
-│   ├── app/               # Next.js App Router (страницы и API routes)
-│   │   ├── api/           # REST API endpoints
-│   │   │   ├── ai/        # AI чат и выполнение проводок
-│   │   │   ├── reports/   # ОСВ, баланс, ОФР, дашборд
+├── v2/                        # ✅ ОСНОВНОЕ приложение (Next.js, порт 3032)
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── api/           # REST API (50+ endpoints)
+│   │   │   ├── closing/       # Мастер закрытия месяца (7 шагов)
+│   │   │   ├── dashboard/     # Главный дашборд с KPI
+│   │   │   ├── transactions/  # Реестр транзакций
+│   │   │   ├── reports/       # ОСВ, журнал, карточка счёта
 │   │   │   └── ...
-│   │   ├── dashboard/     # Дашборд
-│   │   ├── journal/       # Журнал операций
-│   │   ├── osv/           # ОСВ
-│   │   └── ...
-│   ├── components/        # UI компоненты (AIChat, таблицы, формы)
-│   └── lib/               # Утилиты (context, prisma, accounting-logic)
-├── ai/
-│   ├── knowledge-base.ts  # MASTER_COA_COMPACT — 266 счетов НСБУ + 22 отраслевых шаблона
-│   └── prompts.ts         # Системный промпт AI с правилами бухгалтерии
-├── prisma/
-│   ├── schema.prisma      # Схема БД
-│   └── seed.ts            # Сидинг мастер-данных (340 счетов, 22 шаблона)
-├── scripts/               # Утилиты миграции и обслуживания
-└── docs/                  # Документация
+│   │   └── lib/
+│   │       ├── posting/       # Движок проводок (postingEngine.ts)
+│   │       ├── classification/ # Движок правил + AI-классификатор
+│   │       ├── reports/       # OSV, P&L, Cashflow
+│   │       ├── constants.ts   # Коды счетов НСБУ, налоговые ставки
+│   │       └── ensureBaseData.ts  # Seed документ-типов при старте
+│   ├── prisma/
+│   │   └── schema.prisma      # Схема v2 (БД: contador_v2)
+│   └── docs/modules/          # Техническая документация по модулям
+│
+├── src/                       # 🔒 Приложение v1 (legacy, порт 3030)
+├── prisma/                    # Схема v1 (БД: contador)
+├── admin/                     # Admin-панель (Express, порт 3031)
+├── ai/                        # AI модуль: knowledge-base.ts, prompts.ts
+└── docs/                      # Общая документация проекта
 ```
 
 ---
 
-## Ключевые возможности
+## Ключевые возможности v2
 
-- **Multi-tenancy** — неограниченное число организаций на один аккаунт, полная изоляция данных
-- **AI-помощник** — GPT-4o с базой знаний НСБУ, автоматически создаёт корректные проводки по текстовому описанию
-- **340 счетов НСБУ** — полный план счетов, 22 отраслевых шаблона для быстрого старта
-- **9 типов счетов** — ACTIVE, PASSIVE, CONTRA_ACTIVE, CONTRA_PASSIVE, ACTIVE_PASSIVE, INCOME, EXPENSE, CONTRA_INCOME, OFF_BALANCE
-- **Отчёты в реальном времени** — ОСВ, Баланс (Форма 1), ОФР (Форма 2), Дашборд с KPI и графиками
-- **Контроль периодов** — закрытый период блокирует редактирование; счёт 0000 для начальных остатков
-- **Подписки** — FREE (10 req/мес), PRO (300 req/мес), MYAPI (свой ключ OpenAI)
+### Импорт банковских выписок
+- Форматы: 1CClientBankExchange (.txt), Excel (Asaka, Kapital, Ipak Yoli)
+- Дедупликация по SHA-256 хэшу — повторный импорт безопасен
+- Откат импорта по `importBatchId`
+
+### AI-классификация операций
+- Движок правил (INN → KEYWORD → AMOUNT_RANGE → TREASURY_ACCOUNT)
+- GPT-4o-mini с 70% порогом уверенности (настраивается на уровне организации)
+- Очередь уточнений — пользователь отвечает на вопросы, создаются новые правила
+
+### Документоцентричный движок проводок
+- Шаблоны проводок в JSON (expression-based, с условиями)
+- Автоматическое создание OpenItem для буферных счетов (авансы, подотчёт)
+- Проверка баланса Σ Дт = Σ Кт на уровне движка
+
+### Мастер закрытия месяца (7 шагов)
+1. Импорт выписки
+2. Классификация (AI + правила + очередь уточнений)
+3. Реестр и проверка документов
+4. Начисления (ФОТ, амортизация, аренда)
+5. Курсовые разницы (USD ↔ UZS)
+6. Сверка с Soliq (ЭСФ)
+7. Финализация и закрытие периода
+
+### Отчёты
+- ОСВ (оборотно-сальдовая ведомость)
+- P&L (доходы / расходы / прибыль)
+- Cashflow (движение по счетам)
+- Журнал проводок
+- Карточка счёта
+- Анализ субконто
+
+### Открытые позиции
+- Авансы полученные / выданные, подотчёт, депозиты
+- Автоматический расчёт риска по дедлайнам
+- Флаг RISK на дашборде
 
 ---
 
-## База данных
+## Переменные окружения
 
-```bash
-# Применить миграции
-npx prisma migrate deploy
+### v2 (`/home/admin1/contador/v2/.env`)
 
-# Сидинг (340 мастер-счетов + 22 шаблона)
-npx prisma db seed
-
-# Prisma Studio (UI для БД)
-npx prisma studio
+```env
+DATABASE_URL=postgresql://user:password@172.26.0.2:5432/contador_v2
+JWT_SECRET=<секрет>
+OPENAI_API_KEY=sk-proj-...
+PORT=3032
+NEXT_PUBLIC_APP_URL=https://contador.uz
+# SMTP (опционально — для email-уведомлений)
+SMTP_HOST=...
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASS=...
+SMTP_FROM=...
 ```
 
-Прямой доступ к PostgreSQL:
+### Root / admin (`/home/admin1/contador/.env`)
+
+```env
+DATABASE_URL=postgresql://user:password@172.26.0.2:5432/contador
+V2_DATABASE_URL=postgresql://user:password@172.26.0.2:5432/contador_v2
+JWT_SECRET=<секрет>
+OPENAI_API_KEY=sk-proj-...
+ADMIN_PORT=3031
+ADMIN_PASSWORD=<пароль>
+PAYME_MERCHANT_ID=...
+CLICK_SERVICE_ID=...
+```
+
+---
+
+## Тесты
+
 ```bash
-docker exec -it 319b5e2913a4_contador-db psql -U user -d contador
+cd /home/admin1/contador/v2
+npm run test        # Vitest (src/__tests__/)
+```
+
+8 тест-файлов покрывают: импорт, periods, dashboard API, P&L, cashflow, year-end, step4 validation.
+
+---
+
+## Docker (v1 + Admin)
+
+```bash
+# Сборка v1
+rsync -av --exclude=postgres_data --exclude=.next --exclude=node_modules \
+  /home/admin1/contador/ /tmp/contador-build/
+docker build -t contador-app -f /tmp/contador-build/Dockerfile /tmp/contador-build/
+
+docker stop contador-app 2>/dev/null; docker rm contador-app 2>/dev/null
+docker run -d --name contador-app --network contador_contador-net \
+  -p 3030:3030 --env-file /home/admin1/contador/.env contador-app
 ```
 
 ---
@@ -100,15 +196,16 @@ docker exec -it 319b5e2913a4_contador-db psql -U user -d contador
 ## Документация
 
 | Файл | Содержимое |
-|---|---|
-| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Руководство пользователя (с нуля) |
-| [docs/TECHNICAL.md](docs/TECHNICAL.md) | Архитектура и технические детали |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Docker, бэкапы, обслуживание |
-| [docs/ONBOARDING.md](docs/ONBOARDING.md) | Онбординг и отраслевые шаблоны |
-| [docs/AI_DEVELOPMENT_REFERENCE.md](docs/AI_DEVELOPMENT_REFERENCE.md) | Справочник для разработки AI-модуля |
-| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | REST API endpoints |
-| [docs/MULTI_ORG_SPEC.md](docs/MULTI_ORG_SPEC.md) | Мультиорганизационная архитектура |
-| [docs/full-chart-of-accounts.md](docs/full-chart-of-accounts.md) | Полный план счетов (340 позиций) |
+|------|-----------|
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Руководство пользователя v2 |
+| [docs/TECHNICAL.md](docs/TECHNICAL.md) | Архитектура, схема данных v2 |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Деплой, PM2, бэкапы, мониторинг |
+| [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | Полный справочник REST API v2 |
+| [docs/AI_DEVELOPMENT_REFERENCE.md](docs/AI_DEVELOPMENT_REFERENCE.md) | AI-классификатор: промпты, правила |
+| [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) | UI-компоненты и паттерны |
+| [docs/MULTI_ORG_SPEC.md](docs/MULTI_ORG_SPEC.md) | Мультитенантность |
+| [v2/docs/modules/00_overview.md](v2/docs/modules/00_overview.md) | Обзор модулей v2 |
+| [docs/full-chart-of-accounts.md](docs/full-chart-of-accounts.md) | Полный план счетов НСБУ №21 |
 
 ---
 

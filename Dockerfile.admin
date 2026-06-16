@@ -7,8 +7,13 @@ RUN npm install
 # Явно устанавливаем Express и его типы для admin-сервера
 RUN npm install express @types/express
 
+# V1 Prisma schema → generate client at node_modules/.prisma/client
 COPY prisma ./prisma
 RUN npx prisma generate
+
+# V2 Prisma schema → generate client at v2/node_modules/.prisma/client
+COPY v2/prisma/schema.prisma ./v2/prisma/schema.prisma
+RUN npx prisma generate --schema ./v2/prisma/schema.prisma
 
 COPY admin ./admin
 COPY tsconfig.json ./

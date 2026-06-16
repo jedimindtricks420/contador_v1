@@ -13,7 +13,6 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: contador
-    # No public ports for DB in Enterprise mode
     expose:
       - "5432"
     volumes:
@@ -26,26 +25,6 @@ services:
       timeout: 5s
       retries: 5
 
-  app:
-    build: .
-    image: contador-app
-    container_name: contador-app
-    restart: always
-    ports:
-      - "3030:3030"
-    environment:
-      DATABASE_URL: postgresql://user:password@db:5432/contador
-      NEXT_PUBLIC_PORT: 3030
-      BASIC_AUTH_USER: admin
-      BASIC_AUTH_PASSWORD: securepassword
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      JWT_SECRET: ${JWT_SECRET}
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - contador-net
-
   admin:
     build:
       context: .
@@ -57,6 +36,7 @@ services:
       - "3031:3031"
     environment:
       DATABASE_URL: postgresql://user:password@db:5432/contador
+      V2_DATABASE_URL: postgresql://user:password@db:5432/contador_v2
       ADMIN_PORT: 3031
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     depends_on:

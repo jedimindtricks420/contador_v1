@@ -1,0 +1,24 @@
+import { NextResponse } from "next/server";
+
+export async function GET() {
+  try {
+    const res = await fetch("https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/", {
+      next: { revalidate: 3600 }
+    });
+    if (!res.ok) {
+      return NextResponse.json({ error: "CBU API недоступен" }, { status: 502 });
+    }
+    const data = await res.json();
+    const entry = Array.isArray(data) ? data[0] : null;
+    if (!entry?.Rate) {
+      return NextResponse.json({ error: "Неверный формат ответа CBU" }, { status: 502 });
+    }
+    return NextResponse.json({
+      rate: parseFloat(entry.Rate),
+      date: entry.Date,
+      currency: entry.Ccy
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || "Ошибка получения курса" }, { status: 500 });
+  }
+}

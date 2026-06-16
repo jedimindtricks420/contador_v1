@@ -1,0 +1,243 @@
+"use client";
+import { useState } from "react";
+import { BarChart2, Check, AlertTriangle } from "lucide-react";
+import { formatSum } from "@/lib/format";
+
+interface Step6SoliqProps {
+  periodId: string;
+  onNext: (payload: any) => void;
+  onPrev: () => void;
+  initialSoliqMatched: {
+    matched: number;
+    unmatched: number;
+  };
+}
+
+export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatched }: Step6SoliqProps) {
+  const [soliqFile, setSoliqFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [reconciliation, setReconciliation] = useState<any | null>(null);
+  const [reconciliationFileName, setReconciliationFileName] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleUpload = async () => {
+    if (!soliqFile) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", soliqFile);
+      fd.append("periodId", periodId);
+
+      const res = await fetch("/v2/api/import/soliq", {
+        method: "POST",
+        body: fd
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setReconciliation(data);
+        setReconciliationFileName(soliqFile.name);
+        setSoliqFile(null);
+      } else {
+        setUploadError(`Ошибка импорта: ${data.error}`);
+      }
+    } catch {
+      setUploadError("Ошибка сети. Попробуйте снова.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!reconciliation) {
+      // If skipped or not uploaded, default to initial or zeros
+      onNext({ soliqMatched: initialSoliqMatched });
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const payload = {
+        matched: reconciliation.matched,
+        unmatched: reconciliation.unmatched
+      };
+
+      const res = await fetch(`/v2/api/closing/${periodId}/step/6/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        onNext({ soliqMatched: payload });
+      } else {
+        const err = await res.json();
+        setSaveError(`Ошибка сохранения: ${err.error}`);
+      }
+    } catch {
+      setSaveError("Ошибка сети. Попробуйте снова.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-bold text-gray-800">Шаг 6. Сверка с порталом my.soliq.uz</h2>
+        <p className="text-xs text-gray-400 mt-1">
+          Загрузите Excel-выгрузку реестра ЭСФ, чтобы сопоставить выставленные счета-фактуры с открытыми авансами в банке.
+        </p>
+      </div>
+
+      {/* Upload Zone */}
+      {!reconciliation && (
+        <div className="bg-gray-50/20 border border-gray-200 rounded p-5 space-y-4 max-w-xl">
+          <div className="border-2 border-dashed border-gray-200 hover:border-gray-200 rounded p-6 text-center transition duration-200">
+            <input
+              type="file"
+              id="wizardSoliqFile"
+              accept=".xlsx,.xls"
+              onChange={(e) => setSoliqFile(e.target.files?.[0] || null)}
+              className="hidden"
+            />
+            <label htmlFor="wizardSoliqFile" className="cursor-pointer space-y-1 block">
+              <BarChart2 className="h-7 w-7 text-gray-400 mx-auto" />
+              <div className="text-sm font-semibold text-gray-750">
+                {soliqFile ? soliqFile.name : "Выберите файл отчета Soliq"}
+              </div>
+              <div className="text-[10px] text-gray-400">
+                Поддерживаются реестры ЭСФ в формате Excel (.xlsx)
+              </div>
+            </label>
+          </div>
+
+          {uploadError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 font-semibold">
+              {uploadError}
+            </div>
+          )}
+
+          {soliqFile && (
+            <button
+              onClick={handleUpload}
+              disabled={uploading}
+              className="w-full bg-black hover:opacity-80 text-white text-xs font-bold py-2.5 rounded transition disabled:opacity-50"
+            >
+              {uploading ? "Сверка данных..." : "Запустить сверку ЭСФ"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Reconciliation table */}
+      {reconciliation && (
+        <div className="space-y-4">
+          {/* File info + replace button */}
+          <div className="flex items-center justify-between max-w-2xl">
+            <div className="text-xs text-gray-500 font-medium truncate">
+              Файл: <span className="font-semibold text-gray-700">{reconciliationFileName}</span>
+            </div>
+            <button
+              onClick={() => { setReconciliation(null); setReconciliationFileName(""); setSoliqFile(null); }}
+              className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 hover:border-gray-300 py-1 px-2.5 rounded font-semibold transition ml-4 shrink-0"
+            >
+              × Заменить файл
+            </button>
+          </div>
+          <div className="bg-gray-50 border border-gray-150 p-4 rounded flex gap-6 text-xs max-w-2xl font-bold">
+            <div className="text-gray-700 flex items-center gap-1"><Check size={14} />Сопоставлено: {reconciliation.matched} ЭСФ</div>
+            <div className="text-gray-600 flex items-center gap-1"><AlertTriangle size={14} />Не сопоставлено: {reconciliation.unmatched} ЭСФ</div>
+            {reconciliation.taxSummary && (
+              <div className="text-gray-600 border-l border-gray-350 pl-6 font-semibold">
+                НДС (Soliq): {formatSum(reconciliation.taxSummary.vat)}
+              </div>
+            )}
+          </div>
+
+          {/* Grid comparison */}
+          <div className="border border-gray-200 rounded overflow-hidden max-w-3xl">
+            <div className="overflow-y-auto max-h-[300px]">
+              <table className="w-full text-left border-collapse text-[11px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold">
+                    <th className="p-2.5 w-[45%]">По банку (Авансы)</th>
+                    <th className="p-2.5 w-[10%] text-center">Статус</th>
+                    <th className="p-2.5 w-[45%]">По Soliq (ЭСФ)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium">
+                  {/* Matches */}
+                  {reconciliation.matches.map((m: any, idx: number) => (
+                    <tr key={`m-${idx}`} className="hover:bg-gray-50/50">
+                      <td className="p-2.5 text-gray-700">
+                        <div className="font-bold">{m.counterpartyName}</div>
+                        <div className="text-[10px] text-gray-400 font-mono">{formatSum(m.amount)}</div>
+                      </td>
+                      <td className="p-2.5 text-center text-gray-700"><Check size={14} className="mx-auto text-gray-600" /></td>
+                      <td className="p-2.5 text-gray-700">
+                        <div className="font-bold">{m.counterpartyName}</div>
+                        <div className="text-[10px] text-gray-400 font-mono">{formatSum(m.amount)}</div>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {/* Bank Only */}
+                  {reconciliation.bankOnly.map((b: any, idx: number) => (
+                    <tr key={`b-${idx}`} className="hover:bg-gray-50/50 bg-rose-50/5 text-rose-950/20">
+                      <td className="p-2.5 text-gray-700">
+                        <div className="font-bold text-rose-700">{b.counterpartyName}</div>
+                        <div className="text-[10px] text-gray-400 font-mono">{formatSum(b.amount)}</div>
+                      </td>
+                      <td className="p-2.5 text-center text-rose-500 text-xs font-bold">◄─►</td>
+                      <td className="p-2.5 text-gray-400 italic font-semibold">(не найден в Soliq)</td>
+                    </tr>
+                  ))}
+
+                  {/* Soliq Only */}
+                  {reconciliation.soliqOnly.map((s: any, idx: number) => (
+                    <tr key={`s-${idx}`} className="hover:bg-gray-50/50 bg-rose-50/5 text-rose-950/20">
+                      <td className="p-2.5 text-gray-400 italic font-semibold">(не найден в банке)</td>
+                      <td className="p-2.5 text-center text-rose-500 text-xs font-bold">◄─►</td>
+                      <td className="p-2.5 text-gray-700">
+                        <div className="font-bold text-rose-700">{s.counterpartyName}</div>
+                        <div className="text-[10px] text-gray-400 font-mono">{formatSum(s.amount)}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 font-semibold">
+          {saveError}
+        </div>
+      )}
+
+      {/* Nav Buttons */}
+      <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+        <button
+          onClick={onPrev}
+          disabled={saving}
+          className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-5 rounded transition"
+        >
+          ← Назад
+        </button>
+        <button
+          onClick={handleConfirm}
+          disabled={saving}
+          className="text-xs bg-black hover:opacity-80 text-white font-bold py-2 px-6 rounded transition"
+        >
+          {saving ? "Обработка..." : reconciliation ? "Принять всё совпавшее и продолжить →" : "Пропустить шаг →"}
+        </button>
+      </div>
+    </div>
+  );
+}

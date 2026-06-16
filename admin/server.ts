@@ -22,6 +22,12 @@ app.use(helmet({
 })); // Configured security headers for Admin Portal
 
 const prisma = new PrismaClient();
+
+// ─── V2 DATABASE CLIENT ──────────────────────────────────────────────────────
+// Uses the v2 Prisma client generated from the v2 schema (contador_v2 DB)
+const { PrismaClient: PrismaClientV2 } = require("../v2/node_modules/.prisma/client");
+const V2_DATABASE_URL = process.env.V2_DATABASE_URL || "postgresql://user:password@172.26.0.2:5432/contador_v2";
+const prismaV2 = new PrismaClientV2({ datasources: { db: { url: V2_DATABASE_URL } } });
 const PORT = process.env.ADMIN_PORT || 3031;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecretadmin";
 
@@ -120,10 +126,8 @@ const publicLimiter = rateLimit({
   max: 50,
   message: { error: "Too many requests from this IP, please try again after 15 minutes" }
 });
-publicRouter.use(publicLimiter);
-
 // Initiate Payment
-publicRouter.post("/payments/initiate", async (req: Request, res: Response) => {
+publicRouter.post("/payments/initiate", publicLimiter, async (req: Request, res: Response) => {
   const { orgId, provider } = req.body;
   if (!orgId || !["PAYME", "CLICK"].includes(provider)) {
     return res.status(400).json({ error: "Invalid orgId or provider" });
@@ -154,13 +158,13 @@ publicRouter.post("/payments/initiate", async (req: Request, res: Response) => {
   res.json({ success: true, url, paymentId: payment.id });
 });
 
-publicRouter.get("/payment-info", async (_req: Request, res: Response) => {
+publicRouter.get("/payment-info", publicLimiter, async (_req: Request, res: Response) => {
   const config = await getPaymentConfig();
   res.json({ pro_price_yearly: config?.pro_price_yearly || 299000 });
 });
 
 // Payme Webhook
-publicRouter.post("/payments/payme", async (req: Request, res: Response) => {
+publicRouter.post("/payments/payme", publicLimiter, async (req: Request, res: Response) => {
   const { method, params, id } = req.body;
   const config = await getPaymentConfig();
   if (!checkPaymeAuth(req.headers.authorization, config)) {
@@ -235,7 +239,7 @@ publicRouter.post("/payments/payme", async (req: Request, res: Response) => {
 });
 
 // Click Callback
-publicRouter.post("/payments/click/prepare", async (req: Request, res: Response) => {
+publicRouter.post("/payments/click/prepare", publicLimiter, async (req: Request, res: Response) => {
   const p = req.body;
   const config = await getPaymentConfig();
   if (!verifyClickSignature(p, 0, config?.click_secret_key || "")) {
@@ -255,7 +259,7 @@ publicRouter.post("/payments/click/prepare", async (req: Request, res: Response)
   res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.id, error: 0, error_note: "Success" });
 });
 
-publicRouter.post("/payments/click/complete", async (req: Request, res: Response) => {
+publicRouter.post("/payments/click/complete", publicLimiter, async (req: Request, res: Response) => {
   const p = req.body;
   const config = await getPaymentConfig();
   if (!verifyClickSignature(p, 1, config?.click_secret_key || "")) {
@@ -502,6 +506,353 @@ router.post("/payment-settings", async (req: Request, res: Response) => {
   if (data.pro_price_yearly) data.pro_price_yearly = parseInt(data.pro_price_yearly);
   const config = await prisma.paymentConfig.upsert({ where: { id: "default" }, update: data, create: { id: "default", ...data } });
   res.json({ success: true, config });
+});
+
+// ─────────────────────────────────────────────
+// V2 ROUTES — управление contador v2 (contador_v2 DB)
+// ─────────────────────────────────────────────
+
+router.get("/v2/dashboard", async (_req: Request, res: Response) => {
+  const [userCount, orgCount, proCount, freeCount, txStats] = await Promise.all([
+    prismaV2.user.count(),
+    prismaV2.organization.count(),
+    prismaV2.subscription.count({ where: { plan: "PRO" } }),
+    prismaV2.subscription.count({ where: { plan: "FREE" } }),
+    prismaV2.stagedTransaction.groupBy({
+      by: ["status"],
+      _count: { id: true }
+    })
+  ]);
+  const txByStatus: Record<string, number> = {};
+  for (const r of txStats) txByStatus[r.status] = r._count.id;
+  res.json({ users: userCount, organizations: orgCount, pro_count: proCount, free_count: freeCount, tx_by_status: txByStatus });
+});
+
+router.get("/v2/users", async (req: Request, res: Response) => {
+  const search = req.query.search as string;
+  const users = await prismaV2.user.findMany({
+    where: search
+      ? { OR: [{ email: { contains: search, mode: "insensitive" } }, { name: { contains: search, mode: "insensitive" } }] }
+      : {},
+    include: {
+      memberships: {
+        include: {
+          org: { include: { subscription: true } }
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50
+  });
+  res.json(users);
+});
+
+router.post("/v2/users", async (req: Request, res: Response) => {
+  const { email, password, name, orgName } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prismaV2.user.create({
+      data: {
+        email,
+        passwordHash,
+        name: name || null,
+        ...(orgName ? {
+          memberships: {
+            create: {
+              role: "OWNER",
+              org: { create: { name: orgName } }
+            }
+          }
+        } : {})
+      }
+    });
+    res.json({ success: true, user });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to create user" });
+  }
+});
+
+router.delete("/v2/users/:userId", async (req: Request, res: Response) => {
+  try {
+    await prismaV2.user.delete({ where: { id: req.params.userId } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
+router.patch("/v2/users/:userId/credentials", async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const { email, password } = req.body;
+  const updateData: any = {};
+  if (email) updateData.email = email;
+  if (password) updateData.passwordHash = await bcrypt.hash(password, 10);
+  try {
+    await prismaV2.user.update({ where: { id: userId }, data: updateData });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to update user" });
+  }
+});
+
+router.patch("/v2/orgs/:orgId/plan", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { plan } = req.body;
+  if (!["FREE", "PRO"].includes(plan)) return res.status(400).json({ error: "Invalid plan. Use FREE or PRO." });
+  const updated = await prismaV2.subscription.upsert({
+    where: { orgId },
+    update: { plan },
+    create: { orgId, plan }
+  });
+  res.json({ success: true, subscription: updated });
+});
+
+router.patch("/v2/orgs/:orgId/api-key", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { apiKey } = req.body;
+  const updated = await prismaV2.subscription.upsert({
+    where: { orgId },
+    update: { customApiKey: apiKey || null },
+    create: { orgId, plan: "FREE", customApiKey: apiKey || null }
+  });
+  res.json({ success: true, subscription: updated });
+});
+
+router.post("/v2/orgs/:orgId/upgrade", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { days } = req.body;
+  const daysToAdd = parseInt(days) || 30;
+  const sub = await prismaV2.subscription.findUnique({ where: { orgId } });
+  const baseDate = (sub?.plan === "PRO" && sub.validUntil && sub.validUntil > new Date()) ? sub.validUntil : new Date();
+  const newValidUntil = new Date(baseDate);
+  newValidUntil.setDate(newValidUntil.getDate() + daysToAdd);
+  const updated = await prismaV2.subscription.upsert({
+    where: { orgId },
+    update: { plan: "PRO", validUntil: newValidUntil },
+    create: { orgId, plan: "PRO", validUntil: newValidUntil }
+  });
+  res.json({ success: true, subscription: updated });
+});
+
+router.delete("/v2/orgs/:orgId", async (req: Request, res: Response) => {
+  try {
+    await prismaV2.organization.delete({ where: { id: req.params.orgId } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete organization" });
+  }
+});
+
+// ─── V2 EXTENDED ROUTES ───────────────────────────────────────────────────────
+
+// Enhanced stats: registration dynamics, transaction backlog, risk items
+router.get("/v2/stats", async (req: Request, res: Response) => {
+  const days = parseInt(req.query.days as string) || 30;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const [rawRegs, backlogCount, riskCount, orgCount, proCount] = await Promise.all([
+    prismaV2.user.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } }),
+    prismaV2.stagedTransaction.count({ where: { status: { in: ["IMPORTED", "NEEDS_CLARIFICATION"] } } }),
+    prismaV2.openItem.count({ where: { status: "RISK" } }),
+    prismaV2.organization.count(),
+    prismaV2.subscription.count({ where: { plan: "PRO" } })
+  ]);
+
+  const regsByDay: Record<string, number> = {};
+  for (const u of rawRegs) {
+    const day = new Date(u.createdAt).toISOString().slice(0, 10);
+    regsByDay[day] = (regsByDay[day] || 0) + 1;
+  }
+  const regsSeries = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    regsSeries.push({ date: key, count: regsByDay[key] || 0 });
+  }
+
+  res.json({ backlog: backlogCount, riskItems: riskCount, freeOrgs: orgCount - proCount, regsSeries });
+});
+
+// List all V2 orgs with search, plan and tax regime filter, pagination
+router.get("/v2/orgs", async (req: Request, res: Response) => {
+  const { search, plan, taxRegime, page = "1" } = req.query;
+  const take = 50;
+  const skip = (parseInt(page as string) - 1) * take;
+
+  const where: any = {};
+  if (search) where.OR = [
+    { name: { contains: search as string, mode: "insensitive" } },
+    { inn: { contains: search as string } }
+  ];
+  if (taxRegime) where.taxRegime = taxRegime;
+
+  if (plan === "PRO") {
+    const ids = await prismaV2.subscription.findMany({ where: { plan: "PRO" }, select: { orgId: true } });
+    where.id = { in: ids.map((s: any) => s.orgId) };
+  } else if (plan === "FREE") {
+    const ids = await prismaV2.subscription.findMany({ where: { plan: "PRO" }, select: { orgId: true } });
+    where.NOT = { id: { in: ids.map((s: any) => s.orgId) } };
+  }
+
+  const [orgs, total] = await Promise.all([
+    prismaV2.organization.findMany({
+      where,
+      include: { subscription: { select: { plan: true, validUntil: true } }, _count: { select: { members: true } } },
+      orderBy: { createdAt: "desc" },
+      take, skip
+    }),
+    prismaV2.organization.count({ where })
+  ]);
+
+  const orgIds = orgs.map((o: any) => o.id);
+  const txStats = await prismaV2.stagedTransaction.groupBy({
+    by: ["orgId", "status"],
+    where: { orgId: { in: orgIds }, status: { in: ["IMPORTED", "NEEDS_CLARIFICATION"] } },
+    _count: { id: true }
+  });
+  const backlogByOrg: Record<string, number> = {};
+  for (const r of txStats) backlogByOrg[r.orgId] = (backlogByOrg[r.orgId] || 0) + r._count.id;
+
+  res.json({
+    orgs: orgs.map((o: any) => ({ ...o, txBacklog: backlogByOrg[o.id] || 0 })),
+    total,
+    page: parseInt(page as string),
+    pages: Math.ceil(total / take)
+  });
+});
+
+// Full org detail: members, bank accounts, periods, tx stats, recent audit
+router.get("/v2/orgs/:orgId/detail", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const [org, periods, txStats, auditLogs] = await Promise.all([
+    prismaV2.organization.findUnique({
+      where: { id: orgId },
+      include: {
+        subscription: true,
+        members: { include: { user: { select: { id: true, email: true, name: true, createdAt: true } } } },
+        bankAccounts: true
+      }
+    }),
+    prismaV2.period.findMany({
+      where: { orgId },
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+      include: { _count: { select: { stagedTransactions: true, documents: true } } }
+    }),
+    prismaV2.stagedTransaction.groupBy({ by: ["status"], where: { orgId }, _count: { id: true } }),
+    prismaV2.auditLog.findMany({ where: { orgId }, orderBy: { createdAt: "desc" }, take: 10 })
+  ]);
+
+  if (!org) return res.status(404).json({ error: "Org not found" });
+
+  const txByStatus: Record<string, number> = {};
+  for (const r of txStats) txByStatus[r.status] = r._count.id;
+
+  res.json({ org, periods, txByStatus, auditLogs });
+});
+
+// Edit org core settings
+router.patch("/v2/orgs/:orgId/settings", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { name, inn, taxRegime, isVatPayer, aiConfidenceThreshold, maxClarificationQuestions } = req.body;
+  const data: any = {};
+  if (name !== undefined) data.name = name;
+  if (inn !== undefined) data.inn = inn;
+  if (taxRegime !== undefined) data.taxRegime = taxRegime;
+  if (isVatPayer !== undefined) data.isVatPayer = Boolean(isVatPayer);
+  if (aiConfidenceThreshold !== undefined) data.aiConfidenceThreshold = parseInt(aiConfidenceThreshold);
+  if (maxClarificationQuestions !== undefined) data.maxClarificationQuestions = parseInt(maxClarificationQuestions);
+  const org = await prismaV2.organization.update({ where: { id: orgId }, data });
+  res.json({ success: true, org });
+});
+
+// Remove user from org (OrgMember only, user account stays)
+router.delete("/v2/orgs/:orgId/members/:userId", async (req: Request, res: Response) => {
+  const { orgId, userId } = req.params;
+  try {
+    await prismaV2.orgMember.delete({ where: { userId_orgId: { userId, orgId } } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to remove member" });
+  }
+});
+
+// Delete bank account (admin override)
+router.delete("/v2/bank-accounts/:accountId", async (req: Request, res: Response) => {
+  try {
+    await prismaV2.bankAccount.delete({ where: { id: req.params.accountId } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete bank account" });
+  }
+});
+
+// List PRO subscriptions expiring within N days
+router.get("/v2/subscriptions/expiring", async (req: Request, res: Response) => {
+  const days = parseInt(req.query.days as string) || 30;
+  const now = new Date();
+  const until = new Date(); until.setDate(until.getDate() + days);
+  const subs = await prismaV2.subscription.findMany({
+    where: { plan: "PRO", validUntil: { gte: now, lte: until } },
+    include: { org: true },
+    orderBy: { validUntil: "asc" }
+  });
+  res.json(subs);
+});
+
+// List classification rules for an org
+router.get("/v2/orgs/:orgId/rules", async (req: Request, res: Response) => {
+  const rules = await prismaV2.rule.findMany({
+    where: { orgId: req.params.orgId },
+    include: { documentType: { select: { name: true, code: true } } },
+    orderBy: { order: "asc" }
+  });
+  res.json(rules);
+});
+
+// Delete a classification rule
+router.delete("/v2/rules/:ruleId", async (req: Request, res: Response) => {
+  try {
+    await prismaV2.rule.delete({ where: { id: req.params.ruleId } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete rule" });
+  }
+});
+
+// Audit log with optional org filter and pagination
+router.get("/v2/audit-logs", async (req: Request, res: Response) => {
+  const { orgId, from, to, page = "1" } = req.query;
+  const take = 50;
+  const skip = (parseInt(page as string) - 1) * take;
+  const where: any = {};
+  if (orgId) where.orgId = orgId;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from as string);
+    if (to) where.createdAt.lte = new Date(to as string);
+  }
+  const [logs, total] = await Promise.all([
+    prismaV2.auditLog.findMany({ where, include: { org: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take, skip }),
+    prismaV2.auditLog.count({ where })
+  ]);
+  res.json({ logs, total, page: parseInt(page as string), pages: Math.ceil(total / take) });
+});
+
+// Force-set period status (admin override)
+router.patch("/v2/periods/:periodId/status", async (req: Request, res: Response) => {
+  const { status } = req.body;
+  if (!["OPEN", "CLOSED"].includes(status)) return res.status(400).json({ error: "Invalid status" });
+  try {
+    const period = await prismaV2.period.update({
+      where: { id: req.params.periodId },
+      data: { status, lockDate: status === "CLOSED" ? new Date() : null }
+    });
+    res.json({ success: true, period });
+  } catch (error: any) {
+    res.status(404).json({ error: "Period not found" });
+  }
 });
 
 app.use("/admin/api", router);
