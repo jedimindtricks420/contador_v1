@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search") || undefined;
 
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "50");
+    const limit = Math.min(200, parseInt(searchParams.get("limit") || "50"));
 
     const where: any = { orgId };
 

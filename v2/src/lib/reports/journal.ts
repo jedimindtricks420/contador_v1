@@ -133,13 +133,13 @@ export async function calculateJournal(
       remDebit = remDebit.minus(pairAmount);
       remCredit = remCredit.minus(pairAmount);
 
-      if (remDebit.isZero() || remDebit.lt(0.001)) {
+      if (remDebit.isZero()) {
         dIdx++;
         if (dIdx < debits.length) {
           remDebit = new Decimal(debits[dIdx].debit.toString());
         }
       }
-      if (remCredit.isZero() || remCredit.lt(0.001)) {
+      if (remCredit.isZero()) {
         cIdx++;
         if (cIdx < credits.length) {
           remCredit = new Decimal(credits[cIdx].credit.toString());

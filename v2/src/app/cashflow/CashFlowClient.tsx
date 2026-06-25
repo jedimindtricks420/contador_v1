@@ -139,6 +139,10 @@ export default function CashFlowClient() {
     );
   }
 
+  // Скрываем категории где все значения = 0
+  const visibleIncome = data ? data.income.filter((cat) => cat.amounts.some((a) => a !== 0)) : [];
+  const visibleExpense = data ? data.expense.filter((cat) => cat.amounts.some((a) => a !== 0)) : [];
+
   // Prep chart data
   const chartData = data
     ? data.months.map((m, idx) => {
@@ -299,7 +303,7 @@ export default function CashFlowClient() {
                 </tr>
 
                 {showIncomeDetails &&
-                  data.income.map((cat) => {
+                  visibleIncome.map((cat) => {
                     const percentage = grandTotalIncome > 0 ? Math.round((cat.total / grandTotalIncome) * 100) : 0;
                     return (
                       <tr key={cat.categoryCode} className="hover:bg-gray-50/50 text-gray-600">
@@ -345,7 +349,7 @@ export default function CashFlowClient() {
                 </tr>
 
                 {showExpenseDetails &&
-                  data.expense.map((cat) => {
+                  visibleExpense.map((cat) => {
                     const percentage = grandTotalExpense > 0 ? Math.round((cat.total / grandTotalExpense) * 100) : 0;
                     return (
                       <tr key={cat.categoryCode} className="hover:bg-gray-50/50 text-gray-600">

@@ -26,6 +26,9 @@ const mockPrisma = {
     findMany: vi.fn(),
     count: vi.fn(),
   },
+  journalEntry: {
+    findMany: vi.fn(),
+  },
   $queryRaw: vi.fn(),
 };
 vi.mock("@/lib/prisma", () => ({ default: mockPrisma }));
@@ -40,6 +43,7 @@ function setupDefaults() {
   mockPrisma.taxCalendarEvent.findMany.mockResolvedValue([]);
   mockPrisma.openItem.findMany.mockResolvedValue([]);
   mockPrisma.openItem.count.mockResolvedValue(0);
+  mockPrisma.journalEntry.findMany.mockResolvedValue([]);
   mockPrisma.$queryRaw.mockResolvedValue([]);
 }
 

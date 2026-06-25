@@ -13,7 +13,7 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
       scope[key] = value;
     } else if (typeof value === "number") {
       scope[key] = new Decimal(value);
-    } else if (typeof value === "string" && !isNaN(Number(value))) {
+    } else if (typeof value === "string" && value.trim() !== "" && !isNaN(Number(value))) {
       scope[key] = new Decimal(value);
     } else if (typeof value === "boolean") {
       scope[key] = new Decimal(value ? 1 : 0);

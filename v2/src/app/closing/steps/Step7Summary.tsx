@@ -41,7 +41,7 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
     const timer = setTimeout(() => controller.abort(), 30000);
     try {
       const [dashRes, yearEndRes] = await Promise.all([
-        fetch("/v2/api/dashboard", { signal: controller.signal }),
+        fetch(`/v2/api/dashboard?periodId=${periodId}`, { signal: controller.signal }),
         fetch(`/v2/api/closing/year-end/status?periodId=${periodId}`, { signal: controller.signal })
       ]);
       const d = await dashRes.json();

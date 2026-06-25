@@ -1,7 +1,9 @@
 // Uzbekistan tax rates (NSBU / Tax Code)
 export const TAX_RATES = {
-  NDFL: 0.12,          // Personal income tax (НДФЛ)
-  SOCIAL_TAX: 0.12,    // Social tax (соцналог)
+  NDFL: 0.12,          // Personal income tax total (НДФЛ = НДФЛ_BUDGET + INPS)
+  NDFL_BUDGET: 0.119,  // НДФЛ to state budget (11.9%)
+  INPS: 0.001,         // Individual pension savings (ИНПС 0.1% → Народный банк)
+  SOCIAL_TAX: 0.12,    // Social tax paid by employer (соцналог)
   VAT: 0.12,           // Value-added tax (НДС)
   PROFIT_TAX: 0.15,    // Corporate profit tax
   TURNOVER_TAX: 0.04,  // Turnover tax (налог с оборота)
@@ -16,6 +18,10 @@ export const ACCOUNTS = {
   RECEIVABLES: "4010",
   ADVANCE_PAID_GOODS: "4310",
   ADVANCE_PAID_TRAVEL: "4220",
+  VAT_INPUT: "4410",        // Входящий НДС (НДС к зачёту / аванс по налогам)
+  EMPLOYEE_LOAN_RECEIVABLE: "4720", // Задолженность персонала по займам
+  FIXED_ASSET_ACQUISITION: "0820",  // Приобретение ОС (кап. вложения)
+  BANK_LOAN_SHORT: "6810",          // Краткосрочные банковские кредиты
   PAYABLES: "6010",
   ADVANCE_RECEIVED: "6310",
   TAX_PAYABLE: "6410",
@@ -35,7 +41,15 @@ export const ACCOUNTS = {
   FX_INCOME: "9540",
   FX_EXPENSE: "9620",
   SOCIAL_TAX_PAYABLE: "6520",
+  INPS_PAYABLE: "6530",
   FINAL_RESULT: "9910",
+  PROFIT_TAX_EXPENSE: "9810",    // Расходы по налогу на прибыль
+  RETAINED_EARNINGS: "8710",     // Нераспределённая прибыль (непокрытый убыток)
+  OPENING_BALANCE_EQUITY: "8890", // Сальдо при открытии / балансирующий счёт
+  ASSET_DISPOSAL: "9210",        // Выбытие основных средств
+  SHARE_CAPITAL: "8330",         // Уставный капитал
+  INTEREST_EXPENSE: "9610",      // Расходы по процентам
+  FIXED_ASSET: "0100",           // Основные средства (первоначальная стоимость)
 } as const;
 
 export const BANK_ACCOUNT_CODES = [ACCOUNTS.BANK_UZS, ACCOUNTS.BANK_USD, ACCOUNTS.TRANSIT];
@@ -76,8 +90,8 @@ export const CLOSING = {
 // AI classification
 export const AI = {
   CONFIDENCE_THRESHOLD: 70,
-  BATCH_SIZE: 20,
-  MODEL: "gpt-4o-mini",
+  BATCH_SIZE: 100,
+  get MODEL() { return process.env.OPENAI_MODEL || "gpt-4o-mini"; },
 } as const;
 
 // Dashboard

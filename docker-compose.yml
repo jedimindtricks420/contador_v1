@@ -44,3 +44,19 @@ services:
         condition: service_healthy
     networks:
       - contador-net
+
+  v2:
+    build:
+      context: .
+      dockerfile: Dockerfile.v2
+    image: contador-v2
+    container_name: contador-v2
+    restart: always
+    ports:
+      - "3032:3032"
+    env_file:
+      - ./v2/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - contador-net

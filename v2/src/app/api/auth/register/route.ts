@@ -11,6 +11,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "email, password, orgName обязательны" }, { status: 400 });
     }
 
+    if (password.length < 8) {
+      return NextResponse.json({ error: "Пароль должен быть не менее 8 символов" }, { status: 400 });
+    }
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json({ error: "Email уже используется" }, { status: 409 });
@@ -73,6 +77,6 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (err: any) {
     console.error("REGISTER ERROR:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

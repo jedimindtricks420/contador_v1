@@ -56,27 +56,39 @@ export async function GET(req: NextRequest) {
     let expenses = new Decimal(0);
 
     if (period) {
-      const entries = await prisma.$queryRaw<
-        { type: string; total: string }[]
-      >`
-        SELECT dt.code as type, SUM(je.credit - je.debit) as total
-        FROM "JournalEntry" je
-        JOIN "Document" d ON d.id = je."documentId"
-        JOIN "DocumentType" dt ON dt.id = d."typeId"
-        WHERE d."orgId" = ${orgId}
-          AND d."periodId" = ${period.id}
-          AND d.status = 'POSTED'
-        GROUP BY dt.code
-      `;
+      const entries = await prisma.journalEntry.findMany({
+        where: {
+          document: {
+            orgId,
+            periodId: period.id,
+            status: "POSTED",
+            // PERIOD_CLOSING zeroes out all 9xxx balances — exclude it so closed periods still show real figures
+            type: { code: { not: "PERIOD_CLOSING" } }
+          },
+          account: {
+            code: { startsWith: "9" }
+          }
+        },
+        include: {
+          account: true
+        }
+      });
 
-      for (const row of entries) {
-        const val = new Decimal(row.total || 0);
-        if (["REVENUE_VAT", "REVENUE_NO_VAT"].includes(row.type)) {
-          revenue = revenue.plus(val);
+      for (const entry of entries) {
+        const code = entry.account.code;
+        const credit = new Decimal(entry.credit.toString());
+        const debit = new Decimal(entry.debit.toString());
+
+        if (code.startsWith("90") || code.startsWith("93") || code.startsWith("95")) {
+          // 90xx = выручка, 93xx = прочие операционные доходы, 95xx = FX доходы
+          revenue = revenue.plus(credit).minus(debit);
         } else if (
-          ["SUPPLIER_PAYMENT", "SALARY", "TAX_PAYMENT", "RENT", "ADVERTISING", "OTHER_EXPENSE"].includes(row.type)
+          code.startsWith("91") ||
+          code.startsWith("94") ||
+          code.startsWith("96") ||
+          code.startsWith("98")
         ) {
-          expenses = expenses.plus(val.abs());
+          expenses = expenses.plus(debit).minus(credit);
         }
       }
     }
@@ -111,6 +123,17 @@ export async function GET(req: NextRequest) {
         new Decimal(0)
       );
     }
+
+    // Задолженность по зарплате (кредитовый остаток 6710 = компания должна сотрудникам)
+    type BalRow = { total: string };
+    const salaryDebtRows = await prisma.$queryRaw<BalRow[]>`
+      SELECT COALESCE(SUM(je.credit - je.debit), 0)::text AS total
+      FROM "JournalEntry" je
+      JOIN "Document" d ON d.id = je."documentId"
+      JOIN "Account" a ON a.id = je."accountId"
+      WHERE d."orgId" = ${orgId} AND d.status = 'POSTED' AND a.code = '6710'
+    `;
+    const salaryDebt = Math.max(0, Number(salaryDebtRows[0]?.total || 0));
 
     // Статус месяца
     let monthStatus: "awaiting_data" | "awaiting_action" | "closed" = "awaiting_data";
@@ -183,7 +206,8 @@ export async function GET(req: NextRequest) {
         totalBalance: totalBalance.toFixed(2),
         income: revenue.toFixed(2),
         expense: expenses.toFixed(2),
-        taxesOwed: taxesOwed.toFixed(2)
+        taxesOwed: taxesOwed.toFixed(2),
+        salaryDebt: salaryDebt.toFixed(2)
       },
       upcomingTaxes: upcomingTax,
       riskOpenItems: riskOpenItems.map(item => {

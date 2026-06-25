@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActiveOrgId } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
-import { ensureBaseData } from "@/lib/ensureBaseData";
+
 import { parse1CExchange } from "@/lib/parsers/parser1c";
 import { parseBankExcel } from "@/lib/parsers/parserBankExcel";
 import { ParsedTransaction } from "@/lib/parsers/types";
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureBaseData();
+
     const orgId = await getActiveOrgId();
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     let parsed: ParsedTransaction[] = [];
+    let statementOpeningBalance: number | undefined;
+    let statementClosingBalance: number | undefined;
     let usedParser = "";
 
     // Format detection: check ASCII prefix of the buffer (works for both UTF-8 and CP1251)
@@ -41,11 +43,16 @@ export async function POST(req: NextRequest) {
     const is1CHeader = headerSnippet.includes("1CClientBankExchange");
 
     if (parserType === "1C" || (parserType !== "Asaka" && parserType !== "Kapital" && parserType !== "IpakYoli" && is1CHeader)) {
-      // Pass the raw buffer so the parser can handle CP1251 decoding itself
-      parsed = parse1CExchange(buffer);
+      const result = parse1CExchange(buffer);
+      parsed = result.transactions;
+      statementOpeningBalance = result.openingBalance;
+      statementClosingBalance = result.closingBalance;
       usedParser = "1CClientBankExchange";
     } else {
-      parsed = parseBankExcel(buffer);
+      const result = parseBankExcel(buffer);
+      parsed = result.transactions;
+      statementOpeningBalance = result.openingBalance;
+      statementClosingBalance = result.closingBalance;
       usedParser = "Excel Parser";
     }
 
@@ -58,6 +65,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         parser: usedParser,
         total: parsed.length,
+        openingBalance: statementOpeningBalance ?? null,
+        closingBalance: statementClosingBalance ?? null,
         transactions: parsed.map(tx => ({
           date: tx.date.toISOString().split("T")[0],
           amount: tx.amount,
@@ -71,6 +80,7 @@ export async function POST(req: NextRequest) {
 
     let imported = 0;
     let duplicates = 0;
+    let locked = 0;
     let netDelta = 0;
     const importBatchId = crypto.randomUUID();
 
@@ -86,6 +96,12 @@ export async function POST(req: NextRequest) {
         period = await prisma.period.create({
           data: { orgId, year, month, mode: isPast ? "HISTORICAL" : "ACTIVE", status: "OPEN" },
         });
+      }
+
+      // Skip transactions whose period is already closed — they cannot be classified
+      if (period.status === "CLOSED") {
+        locked++;
+        continue;
       }
 
       // SHA-256 for deduplication
@@ -119,20 +135,45 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update bank balance: add credits, subtract debits from newly imported transactions
+    // Update bank balance.
+    // If the statement provides an opening balance AND the account has never been synced
+    // (lastBalance === 0 and lastSyncedAt is null), seed lastBalance from the statement.
+    // This ensures the first import correctly reflects the real bank opening position.
     if (imported > 0) {
       const current = await prisma.bankAccount.findUnique({
         where: { id: bankAccountId },
-        select: { lastBalance: true }
+        select: { lastBalance: true, lastSyncedAt: true }
       });
-      const newBalance = Number(current?.lastBalance ?? 0) + netDelta;
+      const isFirstSync = !current?.lastSyncedAt && Number(current?.lastBalance ?? 0) === 0;
+      const baseBalance = (isFirstSync && statementOpeningBalance !== undefined)
+        ? statementOpeningBalance
+        : Number(current?.lastBalance ?? 0);
+      const newBalance = baseBalance + netDelta;
       await prisma.bankAccount.update({
         where: { id: bankAccountId },
         data: { lastSyncedAt: new Date(), lastBalance: newBalance }
       });
     }
 
-    return NextResponse.json({ imported, duplicates, total: parsed.length, parser: usedParser, importBatchId: imported > 0 ? importBatchId : null });
+    // Warn if the statement closing balance doesn't match what we computed
+    let balanceDiscrepancy: number | null = null;
+    if (statementClosingBalance !== undefined && imported > 0) {
+      const finalAccount = await prisma.bankAccount.findUnique({
+        where: { id: bankAccountId },
+        select: { lastBalance: true }
+      });
+      const computed = Number(finalAccount?.lastBalance ?? 0);
+      const diff = Math.abs(computed - statementClosingBalance);
+      if (diff > 0.01) balanceDiscrepancy = diff;
+    }
+
+    return NextResponse.json({
+      imported, duplicates, locked, total: parsed.length, parser: usedParser,
+      importBatchId: imported > 0 ? importBatchId : null,
+      openingBalance: statementOpeningBalance ?? null,
+      closingBalance: statementClosingBalance ?? null,
+      balanceDiscrepancy
+    });
   } catch (err: any) {
     console.error("BANK STATEMENT IMPORT ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });

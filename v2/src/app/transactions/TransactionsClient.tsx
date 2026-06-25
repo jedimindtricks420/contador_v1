@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { formatSum, formatDate, periodLabel } from "@/lib/format";
 
@@ -56,6 +56,99 @@ interface Transaction {
   document: Document | null;
 }
 
+// Searchable combobox for category selection.
+// allOption: if provided, adds "All" option with that value (used in filter bar).
+// compact: smaller styling for use inside table rows.
+function CategoryCombobox({
+  options,
+  value,
+  onChange,
+  allOption,
+  compact = false,
+  disabled = false,
+}: {
+  options: DocumentType[];
+  value: string;
+  onChange: (id: string) => void;
+  allOption?: { value: string; label: string };
+  compact?: boolean;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const allOptions = allOption
+    ? [{ id: allOption.value, code: "__all__", name: allOption.label }, ...options]
+    : options;
+
+  const selectedName = allOptions.find(o => o.id === value)?.name ?? "";
+  const filtered = query.length > 0
+    ? options.filter(o =>
+        o.name.toLowerCase().includes(query.toLowerCase()) ||
+        o.code.toLowerCase().includes(query.toLowerCase())
+      )
+    : allOptions;
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  if (disabled) {
+    return (
+      <span className={`text-gray-400 ${compact ? "text-xs px-1" : "text-xs"}`}>
+        {selectedName || "—"}
+      </span>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <input
+        type="text"
+        readOnly={!open}
+        className={compact
+          ? "w-full bg-transparent border-none py-1 px-1 font-semibold text-gray-800 text-xs cursor-pointer outline-none hover:bg-gray-100 transition-colors truncate"
+          : "w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
+        }
+        placeholder={compact ? "— Выберите —" : "Все категории"}
+        value={open ? query : selectedName}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={e => setQuery(e.target.value)}
+      />
+      {open && (
+        <div className="absolute z-50 left-0 w-56 mt-0.5 bg-white border border-gray-200 shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
+          ) : (
+            filtered.map(o => (
+              <div
+                key={o.id}
+                className={`px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 ${o.id === value ? "bg-gray-100 font-semibold" : ""}`}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  onChange(o.id);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                {o.name}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STATUS_CONFIGS: Record<string, { label: string; className: string }> = {
   IMPORTED:            { label: "Импортирован",  className: "bg-gray-50 text-gray-500 border border-gray-200" },
   AUTO_MATCHED:        { label: "Авто",          className: "bg-gray-100 text-gray-700 border border-gray-200" },
@@ -91,10 +184,68 @@ export default function TransactionsClient() {
   const [undoToast, setUndoToast] = useState<{
     ruleId: string; matchValue: string; timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
+
+  // Bulk-apply modal: shown after saving a rule if similar unclassified transactions exist
+  const [bulkApply, setBulkApply] = useState<{
+    ruleId: string;
+    matchType: string;
+    matchValue: string;
+    transactions: Array<{ id: string; date: string; amount: number; direction: string; description: string; counterpartyHint: string | null }>;
+  } | null>(null);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkApplying, setBulkApplying] = useState(false);
   const [updatingTxId, setUpdatingTxId] = useState<string | null>(null);
+  const [voidingDocId, setVoidingDocId] = useState<string | null>(null);
 
   // H-03: inline action error
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiProgress, setAiProgress] = useState<{ processed: number; total: number } | null>(null);
+
+  const handleRunAI = async () => {
+    setAiRunning(true);
+    setAiProgress(null);
+    setActionError(null);
+    try {
+      const res = await fetch("/v2/api/classification/run-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ periodId: selectedPeriod }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setActionError(`Ошибка запуска: ${data.error}`);
+        setAiRunning(false);
+        return;
+      }
+
+      // Poll status every 2s, capture processed/total for progress bar
+      const pollId = setInterval(async () => {
+        try {
+          const stRes = await fetch(`/v2/api/classification/status/${selectedPeriod}`);
+          if (stRes.ok) {
+            const st = await stRes.json();
+            if (st.total > 0) {
+              setAiProgress({ processed: st.processed ?? 0, total: st.total });
+            }
+            if (st.status === "done" || st.status === "failed") {
+              clearInterval(pollId);
+              setAiRunning(false);
+              setAiProgress(null);
+              if (st.status === "failed") setActionError(`Ошибка ИИ: ${st.error}`);
+              loadTransactions();
+            }
+          }
+        } catch {
+          // ignore poll errors
+        }
+      }, 2000);
+    } catch {
+      setActionError("Ошибка сети при запуске ИИ");
+      setAiRunning(false);
+    }
+  };
 
   const loadFilters = async () => {
     try {
@@ -216,6 +367,24 @@ export default function TransactionsClient() {
           if (undoToast) clearTimeout(undoToast.timeoutId);
           const timeoutId = setTimeout(() => setUndoToast(null), 15000);
           setUndoToast({ ruleId: data.id, matchValue: matchValue || "", timeoutId });
+
+          // Check for similar unclassified transactions to bulk-apply this rule
+          try {
+            const previewRes = await fetch(
+              `/v2/api/rules/preview?matchType=${encodeURIComponent(matchType)}&matchValue=${encodeURIComponent(matchValue || "")}&direction=${encodeURIComponent(rulePromptTx.direction)}`
+            );
+            if (previewRes.ok) {
+              const previewData = await previewRes.json();
+              // Exclude the transaction the user just classified
+              const others = (previewData.transactions || []).filter((t: any) => t.id !== rulePromptTx.id);
+              if (others.length > 0) {
+                setBulkApply({ ruleId: data.id, matchType, matchValue: matchValue || "", transactions: others });
+                setBulkSelected(new Set(others.map((t: any) => t.id)));
+              }
+            }
+          } catch {
+            // preview failure is non-critical
+          }
         }
       } catch (err) {
         console.error("Failed to save auto-classification rule:", err);
@@ -223,6 +392,48 @@ export default function TransactionsClient() {
     }
     setRulePromptTx(null);
     setRulePromptCategory("");
+  };
+
+  const handleBulkApply = async () => {
+    if (!bulkApply || bulkSelected.size === 0) return;
+    setBulkApplying(true);
+    try {
+      await fetch(`/v2/api/rules/${bulkApply.ruleId}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionIds: Array.from(bulkSelected) }),
+      });
+    } catch (err) {
+      console.error("Bulk apply failed:", err);
+    } finally {
+      setBulkApplying(false);
+      setBulkApply(null);
+      setBulkSelected(new Set());
+      loadTransactions();
+    }
+  };
+
+  const handleVoidDocument = async (tx: Transaction) => {
+    if (!tx.document) return;
+    setVoidingDocId(tx.document.id);
+    setActionError(null);
+    try {
+      const res = await fetch("/v2/api/posting/void", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: tx.document.id })
+      });
+      if (res.ok) {
+        loadTransactions();
+      } else {
+        const data = await res.json();
+        setActionError(`Ошибка аннулирования: ${data.error}`);
+      }
+    } catch {
+      setActionError("Ошибка сети при аннулировании");
+    } finally {
+      setVoidingDocId(null);
+    }
   };
 
   const handleUndoRule = async () => {
@@ -247,8 +458,35 @@ export default function TransactionsClient() {
           </p>
         </div>
 
-        {/* Status quick tabs */}
-        <div className="flex items-center gap-1 bg-gray-100 p-1 border border-gray-200">
+        {/* AI Action and Status quick tabs */}
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col items-end gap-1">
+            <button
+              onClick={handleRunAI}
+              disabled={aiRunning}
+              className="text-[10px] font-bold bg-black text-white px-4 py-2 uppercase tracking-widest hover:opacity-80 transition-opacity disabled:opacity-50 flex items-center gap-2"
+            >
+              {aiRunning && (
+                <svg className="animate-spin h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+              )}
+              {aiRunning && aiProgress
+                ? `${aiProgress.processed}/${aiProgress.total}`
+                : aiRunning ? "Запуск..." : "Распознать ИИ"}
+            </button>
+            {aiRunning && aiProgress && aiProgress.total > 0 && (
+              <div className="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-1 bg-black transition-all duration-300"
+                  style={{ width: `${Math.min(100, (aiProgress.processed / aiProgress.total) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1 bg-gray-100 p-1 border border-gray-200">
           {(
             [
               { id: "ALL", label: "Все операции" },
@@ -268,6 +506,7 @@ export default function TransactionsClient() {
               {tab.label}
             </button>
           ))}
+          </div>
         </div>
       </div>
 
@@ -322,16 +561,12 @@ export default function TransactionsClient() {
 
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Категория</label>
-            <select
+            <CategoryCombobox
+              options={categories}
               value={selectedCategory}
-              onChange={(e) => { setSelectedCategory(e.target.value); setCurrentPage(1); }}
-              className="w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
-            >
-              <option value="ALL">Все категории</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={id => { setSelectedCategory(id); setCurrentPage(1); }}
+              allOption={{ value: "ALL", label: "Все категории" }}
+            />
           </div>
 
           <div>
@@ -429,17 +664,13 @@ export default function TransactionsClient() {
                         {isDebit ? "−" : "+"}{formatSum(tx.amount)}
                       </td>
                       <td className="py-3 px-5">
-                        <select
-                          disabled={isSkipped || isUpdating}
+                        <CategoryCombobox
+                          options={categories}
                           value={tx.document?.type?.id || ""}
-                          onChange={(e) => handleCategoryChange(tx, e.target.value)}
-                          className="bg-transparent border-none py-1.5 px-1 pr-6 font-semibold text-gray-800 focus:bg-white text-xs cursor-pointer outline-none hover:bg-gray-100 transition-colors"
-                        >
-                          <option value="" disabled>— Выберите категорию —</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+                          onChange={id => handleCategoryChange(tx, id)}
+                          compact
+                          disabled={isSkipped || isUpdating}
+                        />
                       </td>
                       <td className="py-3.5 px-5">
                         <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-semibold ${status.className}`}>
@@ -453,6 +684,16 @@ export default function TransactionsClient() {
                         >
                           Детали
                         </button>
+                        {tx.document && (tx.status === "POSTED" || tx.status === "AUTO_MATCHED" || tx.status === "CONFIRMED") && (
+                          <button
+                            onClick={() => handleVoidDocument(tx)}
+                            disabled={voidingDocId === tx.document!.id}
+                            className="text-xs border border-gray-200 text-rose-500 hover:bg-rose-50 hover:border-rose-200 py-1.5 px-3 font-medium transition-colors disabled:opacity-40"
+                            title="Аннулировать документ и вернуть в очередь"
+                          >
+                            {voidingDocId === tx.document.id ? "..." : "Аннулировать"}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleSkipToggle(tx)}
                           disabled={isUpdating}
@@ -622,6 +863,92 @@ export default function TransactionsClient() {
                 className="bg-black text-white text-xs font-bold py-2 px-5 hover:opacity-80 transition-opacity"
               >
                 Да, запомнить выбор
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk-apply modal: apply saved rule to other similar unclassified transactions */}
+      {bulkApply && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-gray-200 shadow-xl w-full max-w-lg rounded p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest">
+                Применить правило к похожим операциям?
+              </h3>
+              <button onClick={() => { setBulkApply(null); setBulkSelected(new Set()); }} className="text-gray-400 hover:text-gray-600 p-1">
+                <X size={14} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Найдено <strong className="text-gray-800">{bulkApply.transactions.length}</strong> операций с тем же{" "}
+              {bulkApply.matchType === "INN" ? "ИНН" : `словом «${bulkApply.matchValue}»`}.
+              Отметьте те, к которым нужно применить это правило прямо сейчас.
+            </p>
+
+            <div className="border border-gray-200 rounded overflow-hidden max-h-56 overflow-y-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-400 font-bold">
+                    <th className="p-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={bulkSelected.size === bulkApply.transactions.length}
+                        onChange={e => {
+                          if (e.target.checked) setBulkSelected(new Set(bulkApply.transactions.map(t => t.id)));
+                          else setBulkSelected(new Set());
+                        }}
+                        className="rounded"
+                      />
+                    </th>
+                    <th className="p-2">Дата</th>
+                    <th className="p-2">Сумма</th>
+                    <th className="p-2">Описание</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {bulkApply.transactions.map(tx => (
+                    <tr key={tx.id} className="hover:bg-gray-50/50">
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={bulkSelected.has(tx.id)}
+                          onChange={e => {
+                            const next = new Set(bulkSelected);
+                            e.target.checked ? next.add(tx.id) : next.delete(tx.id);
+                            setBulkSelected(next);
+                          }}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="p-2 text-gray-500 whitespace-nowrap">{tx.date}</td>
+                      <td className={`p-2 font-mono whitespace-nowrap ${tx.direction === "CREDIT" ? "text-green-700" : "text-rose-700"}`}>
+                        {tx.direction === "CREDIT" ? "+" : "−"}{Number(tx.amount).toLocaleString("ru")}
+                      </td>
+                      <td className="p-2 text-gray-600 max-w-[200px] truncate" title={tx.description}>
+                        {tx.counterpartyHint || tx.description}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => { setBulkApply(null); setBulkSelected(new Set()); }}
+                disabled={bulkApplying}
+                className="text-xs border border-gray-200 text-gray-700 font-medium py-2 px-4 rounded hover:bg-gray-50 transition"
+              >
+                Пропустить
+              </button>
+              <button
+                onClick={handleBulkApply}
+                disabled={bulkApplying || bulkSelected.size === 0}
+                className="text-xs bg-black text-white font-bold py-2 px-5 rounded hover:opacity-80 transition disabled:opacity-40"
+              >
+                {bulkApplying ? "Применяем..." : `Применить к ${bulkSelected.size} операциям`}
               </button>
             </div>
           </div>

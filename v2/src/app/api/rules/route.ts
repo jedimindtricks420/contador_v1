@@ -19,14 +19,17 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
-    const { matchType, matchValue, categoryId } = await req.json();
+    const { matchType, matchValue, categoryId, direction } = await req.json();
 
     if (!matchType || !matchValue || !categoryId) {
       return NextResponse.json({ error: "matchType, matchValue, categoryId обязательны" }, { status: 400 });
     }
 
     const rule = await prisma.rule.create({
-      data: { orgId, matchType, matchValue, categoryId, createdFrom: "MANUAL" },
+      data: {
+        orgId, matchType, matchValue, categoryId, createdFrom: "MANUAL",
+        direction: direction || null
+      },
     });
     return NextResponse.json(rule, { status: 201 });
   } catch (err: any) {

@@ -39,7 +39,7 @@ export default function Step3Registry({ periodId, onNext, onPrev }: Step3Registr
 
       setDocTypes(docData);
       // Filter in-memory to find only IMPORTED or NEEDS_CLARIFICATION (uncategorized)
-      const uncategorized = (txData.transactions || txData || []).filter(
+      const uncategorized = (txData.items || []).filter(
         (t: Transaction) => t.status === "IMPORTED" || t.status === "NEEDS_CLARIFICATION"
       );
       setTxs(uncategorized);

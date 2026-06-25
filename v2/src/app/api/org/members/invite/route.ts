@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActiveMembership, getActiveOrgId } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { hash } from "bcryptjs";
+import crypto from "crypto";
+import { sendInviteEmail } from "@/lib/mailer";
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,15 +25,16 @@ export async function POST(req: NextRequest) {
     }
 
     let user = await prisma.user.findUnique({ where: { email } });
-    let passwordPlain = null;
+    let passwordPlain: string | null = null;
+    let isNewUser = false;
 
     if (!user) {
-      // Mock email invite: create user with random password
-      passwordPlain = Math.random().toString(36).slice(-8);
+      passwordPlain = crypto.randomBytes(8).toString("hex"); // 16 hex chars, 64 bits entropy
       const passwordHash = await hash(passwordPlain, 12);
       user = await prisma.user.create({
         data: { email, passwordHash, name: email.split("@")[0] },
       });
+      isNewUser = true;
     }
 
     const existingMember = await prisma.orgMember.findUnique({
@@ -42,6 +45,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User is already a member" }, { status: 409 });
     }
 
+    const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } });
+    const orgName = org?.name ?? "Contador";
+
     const newMember = await prisma.orgMember.create({
       data: { userId: user.id, orgId, role: role as any },
       include: {
@@ -51,16 +57,25 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const emailEnabled = !!process.env.SMTP_HOST || !!process.env.SENDGRID_API_KEY;
+    // Send invite email if SMTP configured and this is a new user with a temp password
+    if (isNewUser && passwordPlain) {
+      const sent = await sendInviteEmail(email, orgName, passwordPlain).catch(() => false);
+      if (!sent) {
+        // SMTP failed or not configured — log password server-side only
+        console.log(`[invite] SMTP not configured. Temp password for ${email} (server-only):`, passwordPlain);
+      }
+    }
+
+    const emailEnabled = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
     return NextResponse.json({
       member: newMember,
-      // Only expose plaintext password in dev/mock mode (no email configured)
+      // Only expose plaintext password when SMTP is not configured (dev mode)
       mockInvitePassword: emailEnabled ? null : passwordPlain,
     });
   } catch (err: any) {
     if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG" || err.message === "FORBIDDEN") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

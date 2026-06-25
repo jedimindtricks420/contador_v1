@@ -6,3 +6,12 @@ export interface ParsedTransaction {
   counterpartyHint?: string;
   counterpartyInn?: string;
 }
+
+export interface ParsedBankStatement {
+  transactions: ParsedTransaction[];
+  openingBalance?: number;
+  closingBalance?: number;
+  periodStart?: Date;
+  periodEnd?: Date;
+  accountNumber?: string;
+}

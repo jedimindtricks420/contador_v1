@@ -51,7 +51,8 @@ export async function GET(req: NextRequest) {
         openingDocument: { include: { type: true } },
         closingDocument: { include: { type: true } }
       },
-      orderBy: { dateOpened: "desc" }
+      orderBy: { dateOpened: "desc" },
+      take: 1000
     });
 
     // Filter in-memory for search query matching counterparty, INN, or description
@@ -80,7 +81,8 @@ export async function GET(req: NextRequest) {
       },
       include: {
         account: true
-      }
+      },
+      take: 5000
     });
 
     const totalOpen = allUnresolved.length;

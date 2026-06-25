@@ -2,9 +2,10 @@ import { jwtVerify } from "jose";
 
 export const COOKIE_NAME = "v2_session";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "fallback-secret-change-in-prod"
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET env variable is required but not set");
+}
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export interface SessionPayload {
   userId: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Wrench, Pencil, Bot, X, Trash2, AlertTriangle } from "lucide-react";
+import { Wrench, Pencil, Bot, X, Trash2, AlertTriangle, Zap } from "lucide-react";
 import ClientLayout from "@/components/Layout/ClientLayout";
 import { formatDate } from "@/lib/format";
 
@@ -16,7 +16,8 @@ interface Rule {
   matchType: "INN" | "KEYWORD" | "AMOUNT_RANGE" | "TREASURY_ACCOUNT";
   matchValue: string;
   categoryId: string;
-  createdFrom: "USER_ANSWER" | "MANUAL";
+  direction: "DEBIT" | "CREDIT" | null;
+  createdFrom: "USER_ANSWER" | "MANUAL" | "AI_SUGGESTED";
   createdAt: string;
   documentType: {
     name: string;
@@ -63,6 +64,11 @@ const SOURCE_LABELS: Record<string, { label: string; bg: string; text: string }>
     bg: "bg-gray-100 border-gray-200",
     text: "text-gray-700",
   },
+  AI_SUGGESTED: {
+    label: "AI",
+    bg: "bg-violet-50 border-violet-200",
+    text: "text-violet-700",
+  },
 };
 
 export default function RulesPage() {
@@ -77,6 +83,16 @@ export default function RulesPage() {
   const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
 
+  // Bulk-apply after creating a new rule
+  const [bulkApply, setBulkApply] = useState<{
+    ruleId: string;
+    matchType: string;
+    matchValue: string;
+    transactions: Array<{ id: string; date: string; amount: number; direction: string; description: string; counterpartyHint: string | null }>;
+  } | null>(null);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkApplying, setBulkApplying] = useState(false);
+
   // Delete confirm
   const [deleteRuleTarget, setDeleteRuleTarget] = useState<Rule | null>(null);
   const [deleteError, setDeleteError] = useState<string>("");
@@ -90,6 +106,7 @@ export default function RulesPage() {
   const [formType, setFormType] = useState<Rule["matchType"]>("INN");
   const [formValue, setFormValue] = useState("");
   const [formCategory, setFormCategory] = useState("");
+  const [formDirection, setFormDirection] = useState<"" | "DEBIT" | "CREDIT">("");
 
   const loadData = async () => {
     setLoading(true);
@@ -124,6 +141,7 @@ export default function RulesPage() {
     setEditingRule(null);
     setFormType("INN");
     setFormValue("");
+    setFormDirection("");
     if (categories.length > 0) {
       setFormCategory(categories[0].id);
     }
@@ -136,6 +154,7 @@ export default function RulesPage() {
     setFormType(rule.matchType);
     setFormValue(rule.matchValue);
     setFormCategory(rule.categoryId);
+    setFormDirection((rule.direction as "" | "DEBIT" | "CREDIT") || "");
     setModalError(null);
     setIsModalOpen(true);
   };
@@ -163,6 +182,7 @@ export default function RulesPage() {
       matchType: formType,
       matchValue: formValue.trim(),
       categoryId: formCategory,
+      direction: formDirection || null,
     };
 
     try {
@@ -182,8 +202,33 @@ export default function RulesPage() {
       }
 
       if (res.ok) {
+        const savedRule = await res.json();
         setIsModalOpen(false);
         loadData();
+
+        // For new rules only: check if similar unclassified transactions exist
+        if (!editingRule && (formType === "INN" || formType === "KEYWORD")) {
+          try {
+            const dirParam = formDirection ? `&direction=${encodeURIComponent(formDirection)}` : "";
+            const previewRes = await fetch(
+              `/v2/api/rules/preview?matchType=${encodeURIComponent(formType)}&matchValue=${encodeURIComponent(formValue.trim())}${dirParam}`
+            );
+            if (previewRes.ok) {
+              const previewData = await previewRes.json();
+              if ((previewData.transactions || []).length > 0) {
+                setBulkApply({
+                  ruleId: savedRule.id,
+                  matchType: formType,
+                  matchValue: formValue.trim(),
+                  transactions: previewData.transactions,
+                });
+                setBulkSelected(new Set(previewData.transactions.map((t: any) => t.id)));
+              }
+            }
+          } catch {
+            // non-critical
+          }
+        }
       } else {
         const errData = await res.json();
         setModalError(errData.error || "Произошла ошибка при сохранении правила");
@@ -255,6 +300,24 @@ export default function RulesPage() {
     const matchesType = filterType === "ALL" || rule.matchType === filterType;
     return matchesSearch && matchesType;
   });
+
+  const handleBulkApply = async () => {
+    if (!bulkApply || bulkSelected.size === 0) return;
+    setBulkApplying(true);
+    try {
+      await fetch(`/v2/api/rules/${bulkApply.ruleId}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionIds: Array.from(bulkSelected) }),
+      });
+    } catch (err) {
+      console.error("Bulk apply failed:", err);
+    } finally {
+      setBulkApplying(false);
+      setBulkApply(null);
+      setBulkSelected(new Set());
+    }
+  };
 
   const manualCount = rules.filter((r) => r.createdFrom === "MANUAL").length;
   const autoCount = rules.filter((r) => r.createdFrom === "USER_ANSWER").length;
@@ -366,6 +429,7 @@ export default function RulesPage() {
                   <th className="py-3 px-5">Тип сопоставления</th>
                   <th className="py-3 px-5">Искомый шаблон / Значение</th>
                   <th className="py-3 px-5">Категория (Document Type)</th>
+                  <th className="py-3 px-4">Направление</th>
                   <th className="py-3 px-5">Источник</th>
                   <th className="py-3 px-5">Дата создания</th>
                   <th className="py-3 px-5 text-right">Действия</th>
@@ -374,7 +438,7 @@ export default function RulesPage() {
               <tbody className="text-xs text-gray-700 divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-gray-400 font-medium">
+                    <td colSpan={7} className="py-12 text-center text-gray-400 font-medium">
                       <div className="flex justify-center items-center gap-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-300"></div>
                         Загрузка правил...
@@ -383,7 +447,7 @@ export default function RulesPage() {
                   </tr>
                 ) : filteredRules.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-gray-400 space-y-2">
+                    <td colSpan={7} className="py-16 text-center text-gray-400 space-y-2">
                       <div className="text-3xl">⚙️</div>
                       {rules.length === 0 ? (
                         <>
@@ -432,6 +496,15 @@ export default function RulesPage() {
                           <div className="text-[10px] text-gray-400 uppercase font-mono mt-0.5">
                             {rule.documentType.code}
                           </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {rule.direction ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${rule.direction === "CREDIT" ? "bg-green-50 border-green-200 text-green-700" : "bg-rose-50 border-rose-200 text-rose-700"}`}>
+                              {rule.direction === "CREDIT" ? "Вход" : "Выход"}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-gray-300">—</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-5">
                           <span
@@ -594,6 +667,23 @@ export default function RulesPage() {
                 />
               </div>
 
+              {/* Direction filter */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500">Направление (опционально)</label>
+                <select
+                  value={formDirection}
+                  onChange={(e) => setFormDirection(e.target.value as "" | "DEBIT" | "CREDIT")}
+                  className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-hidden focus:border-black"
+                >
+                  <option value="">Любое (входящие и исходящие)</option>
+                  <option value="CREDIT">Только входящие (CREDIT)</option>
+                  <option value="DEBIT">Только исходящие (DEBIT)</option>
+                </select>
+                <p className="text-[10px] text-gray-400 font-medium">
+                  Если задано, правило сработает только для операций нужного направления
+                </p>
+              </div>
+
               {/* Document Type Category */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500">Назначить категорию операции</label>
@@ -628,6 +718,93 @@ export default function RulesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk-apply modal: shown after creating a new rule if unclassified transactions match */}
+      {bulkApply && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-gray-200 shadow-xl w-full max-w-lg rounded p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <Zap size={16} className="text-amber-500 shrink-0" />
+                <h3 className="text-sm font-bold text-gray-900">Применить правило к похожим операциям?</h3>
+              </div>
+              <button onClick={() => { setBulkApply(null); setBulkSelected(new Set()); }} className="text-gray-400 hover:text-gray-600 p-1">
+                <X size={14} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Найдено <strong className="text-gray-800">{bulkApply.transactions.length}</strong> необработанных операций с{" "}
+              {bulkApply.matchType === "INN" ? `ИНН «${bulkApply.matchValue}»` : `ключевым словом «${bulkApply.matchValue}»`}.
+              Отметьте те, к которым применить правило прямо сейчас.
+            </p>
+
+            <div className="border border-gray-200 rounded overflow-hidden max-h-56 overflow-y-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    <th className="p-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={bulkSelected.size === bulkApply.transactions.length}
+                        onChange={e => {
+                          if (e.target.checked) setBulkSelected(new Set(bulkApply.transactions.map(t => t.id)));
+                          else setBulkSelected(new Set());
+                        }}
+                        className="rounded"
+                      />
+                    </th>
+                    <th className="p-2">Дата</th>
+                    <th className="p-2">Сумма</th>
+                    <th className="p-2">Описание</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 font-medium">
+                  {bulkApply.transactions.map(tx => (
+                    <tr key={tx.id} className="hover:bg-gray-50/50">
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={bulkSelected.has(tx.id)}
+                          onChange={e => {
+                            const next = new Set(bulkSelected);
+                            e.target.checked ? next.add(tx.id) : next.delete(tx.id);
+                            setBulkSelected(next);
+                          }}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="p-2 text-gray-500 whitespace-nowrap">{tx.date}</td>
+                      <td className={`p-2 font-mono whitespace-nowrap ${tx.direction === "CREDIT" ? "text-green-700" : "text-rose-700"}`}>
+                        {tx.direction === "CREDIT" ? "+" : "−"}{Number(tx.amount).toLocaleString("ru")}
+                      </td>
+                      <td className="p-2 text-gray-600 max-w-[180px] truncate" title={tx.description}>
+                        {tx.counterpartyHint || tx.description}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-1">
+              <button
+                onClick={() => { setBulkApply(null); setBulkSelected(new Set()); }}
+                disabled={bulkApplying}
+                className="text-xs border border-gray-200 text-gray-700 font-medium py-2 px-4 rounded hover:bg-gray-50 transition"
+              >
+                Пропустить
+              </button>
+              <button
+                onClick={handleBulkApply}
+                disabled={bulkApplying || bulkSelected.size === 0}
+                className="text-xs bg-black text-white font-bold py-2 px-5 rounded hover:opacity-80 transition disabled:opacity-40"
+              >
+                {bulkApplying ? "Применяем..." : `Применить к ${bulkSelected.size} операциям`}
+              </button>
+            </div>
           </div>
         </div>
       )}

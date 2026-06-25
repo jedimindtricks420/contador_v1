@@ -21,6 +21,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
   const [reconciliationFileName, setReconciliationFileName] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [aiMatching, setAiMatching] = useState(false);
 
   const handleUpload = async () => {
     if (!soliqFile) return;
@@ -51,18 +52,16 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
   };
 
   const handleConfirm = async () => {
-    if (!reconciliation) {
-      // If skipped or not uploaded, default to initial or zeros
-      onNext({ soliqMatched: initialSoliqMatched });
-      return;
-    }
-
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = {
+      const payload = reconciliation ? {
         matched: reconciliation.matched,
-        unmatched: reconciliation.unmatched
+        unmatched: reconciliation.unmatched,
+        parsedPayload: reconciliation.parsedPayload
+      } : {
+        matched: initialSoliqMatched?.matched || 0,
+        unmatched: initialSoliqMatched?.unmatched || 0
       };
 
       const res = await fetch(`/v2/api/closing/${periodId}/step/6/complete`, {
@@ -84,6 +83,70 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
     }
   };
 
+  const handleAiMatch = async () => {
+    if (!reconciliation || reconciliation.bankOnly.length === 0 || reconciliation.soliqOnly.length === 0) return;
+    
+    setAiMatching(true);
+    try {
+      const res = await fetch("/v2/api/classification/ai-reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankOnly: reconciliation.bankOnly,
+          soliqOnly: reconciliation.soliqOnly
+        })
+      });
+      
+      const data = await res.json();
+      if (res.ok && data.matches && data.matches.length > 0) {
+        const newReconciliation = { ...reconciliation };
+        
+        data.matches.forEach((match: any) => {
+          const bankItemIndex = newReconciliation.bankOnly.findIndex((b: any) => b.id === match.bankId);
+          const soliqItemIndex = newReconciliation.soliqOnly.findIndex((s: any) => s.id === match.soliqId);
+          
+          if (bankItemIndex >= 0 && soliqItemIndex >= 0) {
+            const bankItem = newReconciliation.bankOnly[bankItemIndex];
+            const soliqItem = newReconciliation.soliqOnly[soliqItemIndex];
+
+            // Update parsed payload BEFORE splice so bankItem reference is still valid
+            if (newReconciliation.parsedPayload && newReconciliation.parsedPayload.esfItems) {
+              const esfPayloadItem = newReconciliation.parsedPayload.esfItems.find(
+                (e: any) => e.inn === soliqItem.inn && (e.amount + e.vatAmount) === soliqItem.amount && e.matchStatus === "UNMATCHED"
+              );
+              if (esfPayloadItem) {
+                esfPayloadItem.matchStatus = "MATCHED";
+                esfPayloadItem.matchedOpenItemId = match.bankId;
+                esfPayloadItem.matchedAmount = bankItem.amount;
+                esfPayloadItem.matchedAccountCode = bankItem.accountCode ?? "6310";
+              }
+            }
+
+            // Move to matches
+            newReconciliation.matches.push({
+              counterpartyName: `${bankItem.counterpartyName} ⚡ ${soliqItem.counterpartyName}`,
+              amount: bankItem.amount
+            });
+
+            // Remove from unmatched
+            newReconciliation.bankOnly.splice(bankItemIndex, 1);
+            newReconciliation.soliqOnly.splice(soliqItemIndex, 1);
+
+            // Update counts
+            newReconciliation.matched++;
+            newReconciliation.unmatched--;
+          }
+        });
+        
+        setReconciliation(newReconciliation);
+      }
+    } catch (err) {
+      console.error("AI Match error:", err);
+    } finally {
+      setAiMatching(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -100,7 +163,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
             <input
               type="file"
               id="wizardSoliqFile"
-              accept=".xlsx,.xls"
+              accept=".xlsx,.xls,.xltx"
               onChange={(e) => setSoliqFile(e.target.files?.[0] || null)}
               className="hidden"
             />
@@ -154,6 +217,18 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
             {reconciliation.taxSummary && (
               <div className="text-gray-600 border-l border-gray-350 pl-6 font-semibold">
                 НДС (Soliq): {formatSum(reconciliation.taxSummary.vat)}
+              </div>
+            )}
+            
+            {reconciliation.bankOnly.length > 0 && reconciliation.soliqOnly.length > 0 && (
+              <div className="ml-auto">
+                <button
+                  onClick={handleAiMatch}
+                  disabled={aiMatching}
+                  className="text-[10px] font-bold bg-black text-white px-4 py-2 uppercase tracking-widest hover:opacity-80 transition-opacity disabled:opacity-50"
+                >
+                  {aiMatching ? "Распознавание..." : "Распознать ИИ"}
+                </button>
               </div>
             )}
           </div>

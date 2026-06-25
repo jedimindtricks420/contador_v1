@@ -7,6 +7,7 @@ import Step3Registry from "./steps/Step3Registry";
 import Step4Accruals from "./steps/Step4Accruals";
 import Step5FxDiff from "./steps/Step5FxDiff";
 import Step6Soliq from "./steps/Step6Soliq";
+import Step7EInvoices from "./steps/Step7EInvoices";
 import Step7Summary from "./steps/Step7Summary";
 
 interface Period {
@@ -30,22 +31,32 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
   const [wizardState, setWizardState] = useState<any>(null);
   const [closureStats, setClosureStats] = useState<any>(null);
 
+  const [hasPendingInvoices, setHasPendingInvoices] = useState<boolean>(false);
+
   const loadWizardState = async () => {
     setLoadError(false);
     try {
+      const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
+      let hasPending = false;
+      if (pendingRes.ok) {
+        const pendingData = await pendingRes.json();
+        hasPending = pendingData && pendingData.length > 0;
+        setHasPendingInvoices(hasPending);
+      }
+
       const res = await fetch(`/v2/api/closing/${period.id}/state`);
       const data = await res.json();
       setWizardState(data);
 
-      // Select step: priority is initialStepParam, fallback is saved state's currentStep
-      if (initialStepParam && initialStepParam >= 1 && initialStepParam <= 7) {
+      const maxStep = hasPending ? 8 : 7;
+      if (initialStepParam && initialStepParam >= 1 && initialStepParam <= maxStep) {
         setActiveStep(initialStepParam);
       } else {
-        setActiveStep(data.currentStep || 1);
+        setActiveStep(Math.min(data.currentStep || 1, maxStep));
       }
 
       // Load dashboard/stats
-      const statsRes = await fetch("/v2/api/dashboard");
+      const statsRes = await fetch(`/v2/api/dashboard?periodId=${period.id}`);
       const statsData = await statsRes.json();
       setClosureStats(statsData.stats);
     } catch (err) {
@@ -62,7 +73,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
 
   const refreshStats = async () => {
     try {
-      const statsRes = await fetch("/v2/api/dashboard");
+      const statsRes = await fetch(`/v2/api/dashboard?periodId=${period.id}`);
       const statsData = await statsRes.json();
       setClosureStats(statsData.stats);
     } catch (err) {
@@ -70,15 +81,38 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
     }
   };
 
-  const handleNextStep = (stepPayload?: any) => {
+  const handleNextStep = async (stepPayload?: any) => {
     if (stepPayload) {
       setWizardState((prev: any) => ({ ...prev, ...stepPayload }));
     }
-    setActiveStep((prev) => Math.min(prev + 1, 7));
+
+    const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
+    let hasPending = false;
+    if (pendingRes.ok) {
+      const pendingData = await pendingRes.json();
+      hasPending = pendingData && pendingData.length > 0;
+      setHasPendingInvoices(hasPending);
+    }
+
+    const nextStep = activeStep + 1;
+    const maxStep = hasPending ? 8 : 7;
+    setActiveStep(Math.min(nextStep, maxStep));
   };
 
-  const handlePrevStep = () => {
-    setActiveStep((prev) => Math.max(prev - 1, 1));
+  const handlePrevStep = async () => {
+    const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
+    let hasPending = false;
+    if (pendingRes.ok) {
+      const pendingData = await pendingRes.json();
+      hasPending = pendingData && pendingData.length > 0;
+      setHasPendingInvoices(hasPending);
+    }
+
+    if (activeStep === (hasPending ? 8 : 7)) {
+      setActiveStep(hasPending ? 7 : 6);
+    } else {
+      setActiveStep((prev) => Math.max(prev - 1, 1));
+    }
   };
 
   if (loading) {
@@ -113,7 +147,12 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
     { num: 4, title: "Начисления периода", desc: "ФОТ, амортизация, аренда" },
     { num: 5, title: "Курсовые разницы", desc: "Переоценка валютных счетов" },
     { num: 6, title: "Сверка с Soliq", desc: "Сравнение ЭСФ и авансов" },
-    { num: 7, title: "Финализация", desc: "Блокировка и расчет налогов" }
+    ...(hasPendingInvoices ? [
+      { num: 7, title: "Подтверждение ЭСФ", desc: "Ручное закрытие авансов" },
+      { num: 8, title: "Финализация", desc: "Блокировка и расчет налогов" }
+    ] : [
+      { num: 7, title: "Финализация", desc: "Блокировка и расчет налогов" }
+    ])
   ];
 
   return (
@@ -204,7 +243,14 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
             initialSoliqMatched={wizardState.soliqMatched}
           />
         )}
-        {activeStep === 7 && (
+        {activeStep === 7 && hasPendingInvoices && (
+          <Step7EInvoices
+            periodId={period.id}
+            onNext={handleNextStep}
+            onPrev={handlePrevStep}
+          />
+        )}
+        {((activeStep === 7 && !hasPendingInvoices) || activeStep === 8) && (
           <Step7Summary
             periodId={period.id}
             onPrev={handlePrevStep}

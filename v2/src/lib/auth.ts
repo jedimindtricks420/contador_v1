@@ -2,9 +2,10 @@ import { SignJWT } from "jose";
 import { cookies } from "next/headers";
 export { COOKIE_NAME, verifySession, type SessionPayload } from "./auth-edge";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "fallback-secret-change-in-prod"
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET env variable is required but not set");
+}
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export async function createSession(payload: { userId: string; email: string; activeOrgId: string | null }): Promise<string> {
   return new SignJWT({ ...payload })

@@ -19,6 +19,10 @@ export async function GET(req: NextRequest) {
     const startDate = fromParam ? new Date(fromParam) : new Date(currentYear, 0, 1);
     const endDate = toParam ? new Date(toParam) : new Date(currentYear, 11, 31, 23, 59, 59);
 
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return NextResponse.json({ error: "Неверный формат даты (from/to)" }, { status: 400 });
+    }
+
     let accountCodes = [...BANK_ACCOUNT_CODES];
     if (accountId && accountId !== "ALL") {
       const bankAccount = await prisma.bankAccount.findFirst({
@@ -71,17 +75,24 @@ export async function GET(req: NextRequest) {
       { code: "REVENUE", name: "Выручка от продаж" },
       { code: "ADVANCE_RECEIVED", name: "Авансы полученные" },
       { code: "FOUNDER_LOAN", name: "Займы от учредителя" },
+      { code: "CAPITAL_CONTRIBUTION", name: "Пополнение уставного капитала" },
+      { code: "BANK_LOAN", name: "Банковские кредиты" },
       { code: "OTHER_INFLOW", name: "Прочие поступления" }
     ];
 
     const expenseCategories = [
       { code: "SUPPLIER_PAYMENT", name: "Закупка товаров / услуг" },
       { code: "ADVANCE_PAID", name: "Авансы выданные" },
-      { code: "SALARY_TAX", name: "Зарплата и налоги" },
+      { code: "SALARY", name: "Выплата зарплаты (нетто)" },
+      { code: "TAXES", name: "Налоги в бюджет (НДФЛ, НДС, НнП, НсО)" },
+      { code: "INPS", name: "ИНПС (накопительная пенсия)" },
+      { code: "SOCIAL_TAX", name: "Соцналог" },
       { code: "RENT", name: "Аренда" },
       { code: "ADVERTISING", name: "Реклама" },
       { code: "ACCOUNTABLE", name: "Подотчётные суммы" },
       { code: "DEPOSIT", name: "Гарантийный депозит" },
+      { code: "CAPEX", name: "Капитальные расходы (ОС)" },
+      { code: "LOAN_REPAYMENT", name: "Погашение кредитов / займов" },
       { code: "OTHER_OUTFLOW", name: "Прочие расходы" }
     ];
 
@@ -102,6 +113,7 @@ export async function GET(req: NextRequest) {
     for (const entry of entries) {
       const doc = entry.document;
       if (doc.type.code === "INTERNAL_TRANSFER") continue;
+      if (doc.type.code === "FX_DIFFERENCE") continue;
 
       const dateStr = `${doc.date.getFullYear()}-${String(doc.date.getMonth() + 1).padStart(2, "0")}`;
       const monthIdx = months.indexOf(dateStr);
@@ -113,28 +125,50 @@ export async function GET(req: NextRequest) {
       if (debit.gt(0)) {
         // Inflow
         let catCode = "OTHER_INFLOW";
-        if (["REVENUE_VAT", "REVENUE_NO_VAT"].includes(doc.type.code)) {
+        if (["REVENUE_VAT", "REVENUE_NO_VAT", "MARKETPLACE_INCOME"].includes(doc.type.code)) {
           catCode = "REVENUE";
         } else if (doc.type.code === "ADVANCE_RECEIVED") {
           catCode = "ADVANCE_RECEIVED";
         } else if (doc.type.code === "FOUNDER_LOAN") {
           catCode = "FOUNDER_LOAN";
+        } else if (doc.type.code === "CAPITAL_CONTRIBUTION") {
+          catCode = "CAPITAL_CONTRIBUTION";
+        } else if (doc.type.code === "BANK_LOAN_RECEIVED") {
+          catCode = "BANK_LOAN";
+        } else if (["SUPPLIER_REFUND", "EMPLOYEE_LOAN_REPAYMENT"].includes(doc.type.code)) {
+          // Supplier refund — money returned, treat as Other Inflow (balance op)
+          catCode = "OTHER_INFLOW";
         }
-        
-        const arr = incomeMap.get(catCode)!;
-        arr[monthIdx] = arr[monthIdx].plus(debit);
-        netFlow[monthIdx] = netFlow[monthIdx].plus(debit);
+
+        const arr = incomeMap.get(catCode);
+        if (arr) {
+          arr[monthIdx] = arr[monthIdx].plus(debit);
+          netFlow[monthIdx] = netFlow[monthIdx].plus(debit);
+        }
       }
 
       if (credit.gt(0)) {
         // Outflow
         let catCode = "OTHER_OUTFLOW";
-        if (doc.type.code === "SUPPLIER_PAYMENT") {
+        // Игнорируем балансовые операции (не денежный поток)
+        if (doc.type.code === "EMPLOYEE_LOAN") {
+          // Займ сотруднику — балансовая операция, отображаем отдельно
+          catCode = "OTHER_OUTFLOW";
+        } else if (["SUPPLIER_PAYMENT", "SUPPLIER_PAYMENT_GOODS", "SUPPLIER_PAYMENT_SERVICES", "SUPPLIER_PAYMENT_OTHER", "SUPPLIER_PAYMENT_VAT"].includes(doc.type.code)) {
           catCode = "SUPPLIER_PAYMENT";
         } else if (doc.type.code === "ADVANCE_PAID") {
           catCode = "ADVANCE_PAID";
-        } else if (["SALARY", "TAX_PAYMENT"].includes(doc.type.code)) {
-          catCode = "SALARY_TAX";
+        } else if (doc.type.code === "SALARY") {
+          catCode = "SALARY";
+        } else if (doc.type.code === "TAX_PAYMENT") {
+          // TAX_PAYMENT covers: НДФЛ, НДС, налог на прибыль, налог с оборота — all go to "Налоги в бюджет"
+          catCode = "TAXES";
+        } else if (doc.type.code === "INPS_PAYMENT") {
+          catCode = "INPS";
+        } else if (doc.type.code === "SOCIAL_TAX_PAYMENT") {
+          catCode = "SOCIAL_TAX";
+        } else if (doc.type.code === "FOUNDER_LOAN_REPAYMENT") {
+          catCode = "LOAN_REPAYMENT";
         } else if (doc.type.code === "RENT") {
           catCode = "RENT";
         } else if (doc.type.code === "ADVERTISING") {
@@ -143,11 +177,17 @@ export async function GET(req: NextRequest) {
           catCode = "ACCOUNTABLE";
         } else if (doc.type.code === "DEPOSIT") {
           catCode = "DEPOSIT";
+        } else if (doc.type.code === "FIXED_ASSET_PURCHASE") {
+          catCode = "CAPEX";
+        } else if (doc.type.code === "BANK_LOAN_REPAYMENT") {
+          catCode = "LOAN_REPAYMENT";
         }
 
-        const arr = expenseMap.get(catCode)!;
-        arr[monthIdx] = arr[monthIdx].plus(credit);
-        netFlow[monthIdx] = netFlow[monthIdx].minus(credit);
+        const arr = expenseMap.get(catCode);
+        if (arr) {
+          arr[monthIdx] = arr[monthIdx].plus(credit);
+          netFlow[monthIdx] = netFlow[monthIdx].minus(credit);
+        }
       }
     }
 
@@ -250,7 +290,10 @@ export async function GET(req: NextRequest) {
       closingBalanceUSD: Number(closeRowsUSD[0]?.total || 0)
     });
   } catch (err: any) {
+    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("GET CASHFLOW ERROR:", err);
-    return NextResponse.json({ error: err.message || "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

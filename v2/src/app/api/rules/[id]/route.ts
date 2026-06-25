@@ -10,7 +10,7 @@ export async function PUT(
   try {
     const { id } = await params;
     const orgId = await getActiveOrgId();
-    const { matchType, matchValue, categoryId } = await req.json();
+    const { matchType, matchValue, categoryId, direction } = await req.json();
 
     // Verify ownership
     const rule = await prisma.rule.findFirst({
@@ -26,7 +26,8 @@ export async function PUT(
       data: {
         matchType: matchType || undefined,
         matchValue: matchValue || undefined,
-        categoryId: categoryId || undefined
+        categoryId: categoryId || undefined,
+        direction: direction !== undefined ? (direction || null) : undefined
       }
     });
 

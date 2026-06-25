@@ -139,7 +139,9 @@ function parseRevenueSheet(sheet: XLSX.WorkSheet): SoliqEsf[] {
     if (!inn || inn.length < 9) continue;
 
     const amount = parseExcelAmount(row[6]);
-    const vat = parseExcelAmount(row[7]);
+    // column I [8] = "Стоимость с НДС" — authoritative total; avoids floating-point drift from [6]+[7]
+    const totalWithVat = parseExcelAmount(row[8]);
+    const vat = totalWithVat > 0 ? totalWithVat - amount : parseExcelAmount(row[7]);
     if (amount === 0 && vat === 0) continue;
 
     items.push({
@@ -154,13 +156,19 @@ function parseRevenueSheet(sheet: XLSX.WorkSheet): SoliqEsf[] {
   return items;
 }
 
+// Find sheet by canonical name (case-insensitive); fall back to positional index.
+function findSheet(workbook: XLSX.WorkBook, name: string, fallbackIndex: number): XLSX.WorkSheet | undefined {
+  const match = workbook.SheetNames.find(s => s.toLowerCase() === name.toLowerCase());
+  return match ? workbook.Sheets[match] : workbook.Sheets[workbook.SheetNames[fallbackIndex]];
+}
+
 export function parseSoliqExcel(buffer: Buffer): SoliqParsedData {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
 
-  // my.soliq.uz always exports list01 (expenses) and list02 (revenues) as the first two sheets.
-  // We use sheet index rather than name to stay robust across different ilova numbers.
-  const sheet1 = workbook.Sheets[workbook.SheetNames[0]];
-  const sheet2 = workbook.Sheets[workbook.SheetNames[1]];
+  // my.soliq.uz exports list01 (expenses) and list02 (revenues). Prefer name-based lookup
+  // so the order of sheets doesn't matter if Soliq adds extra sheets in future exports.
+  const sheet1 = findSheet(workbook, "list01", 0);
+  const sheet2 = findSheet(workbook, "list02", 1);
 
   const expenses = sheet1 ? parseExpenseSheet(sheet1) : [];
   const revenues = sheet2 ? parseRevenueSheet(sheet2) : [];

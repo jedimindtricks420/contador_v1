@@ -12,10 +12,12 @@ interface PnLData {
   months: string[];
   revenue: PnLLine[];
   expenses: PnLLine[];
+  vatInputLines: PnLLine[];
+  netVat: number[];
   profitBeforeTax: number[];
   tax: number[];
   netProfit: number[];
-  taxRegime?: string;
+  taxRegime: "VAT" | "TURNOVER_TAX";
 }
 
 const MONTH_NAMES_RU: Record<string, string> = {
@@ -60,10 +62,13 @@ export default function PnLClient() {
       } else if (periodType === "QUARTER") {
         const currentMonth = now.getMonth();
         const quarter = Math.floor(currentMonth / 3);
-        const startMonth = String(quarter * 3 + 1).padStart(2, "0");
-        const endMonth = String(quarter * 3 + 3).padStart(2, "0");
+        const startMonthNum = quarter * 3 + 1;
+        const endMonthNum = quarter * 3 + 3;
+        const startMonth = String(startMonthNum).padStart(2, "0");
+        const endMonth = String(endMonthNum).padStart(2, "0");
+        const lastDay = new Date(year, endMonthNum, 0).getDate();
         fromDate = `${year}-${startMonth}-01`;
-        toDate = `${year}-${endMonth}-31`;
+        toDate = `${year}-${endMonth}-${String(lastDay).padStart(2, "0")}`;
       }
 
       const params = new URLSearchParams();
@@ -94,13 +99,18 @@ export default function PnLClient() {
   }
 
   // Row selectors
-  const salesRevenue = data?.revenue.find((r) => r.line === "Выручка от продаж") || { amounts: [], total: 0 };
-  const salesVat = data?.revenue.find((r) => r.line === "НДС к уплате") || { amounts: [], total: 0 };
-  const netRevenue = data?.revenue.find((r) => r.line === "Выручка без НДС") || { amounts: [], total: 0 };
+  const salesRevenue = data?.revenue.find((r) => r.line === "Выручка от продаж") || { amounts: [] as number[], total: 0 };
   const otherIncome = data?.revenue.find((r) => r.line === "Прочие операционные доходы") || { amounts: [] as number[], total: 0 };
+  const vatInputLine = data?.vatInputLines?.find((v) => v.total !== 0) ?? null;
+  const netVatTotal = data?.netVat?.reduce((s, v) => s + v, 0) ?? 0;
 
+  // Исключаем "Налог на прибыль (начислен)" из суммы расходов — он стоит ниже "Прибыль до налогов"
+  // И скрываем строки где все значения = 0
+  const operatingExpenses = (data?.expenses ?? [])
+    .filter((cat) => cat.line !== "Налог на прибыль (начислен)")
+    .filter((cat) => cat.amounts.some((a) => a !== 0));
   const totalExpenseByMonth = data
-    ? data.months.map((_, idx) => data.expenses.reduce((sum, cat) => sum + cat.amounts[idx], 0))
+    ? data.months.map((_, idx) => operatingExpenses.reduce((sum, cat) => sum + cat.amounts[idx], 0))
     : [];
   const grandTotalExpense = totalExpenseByMonth.reduce((sum, val) => sum + val, 0);
 
@@ -114,7 +124,14 @@ export default function PnLClient() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-gray-200">
         <div>
           <h1 className="text-xl font-bold text-gray-900 uppercase">P&L (Прибыли и убытки)</h1>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Отчет о финансовых результатах (метод начисления)</p>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+            Отчет о финансовых результатах (метод начисления)
+            {data && (
+              <span className={`ml-2 px-1.5 py-0.5 rounded ${data.taxRegime === "VAT" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"}`}>
+                {data.taxRegime === "VAT" ? "НДС + Налог на прибыль" : "Налог с оборота (УСН)"}
+              </span>
+            )}
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-gray-700 w-full md:w-auto">
@@ -186,28 +203,6 @@ export default function PnLClient() {
                     {formatPnLSum(salesRevenue.total)}
                   </td>
                 </tr>
-                <tr className="hover:bg-gray-50/50 text-gray-700">
-                  <td className="p-3.5 pl-6 font-semibold">НДС к уплате</td>
-                  {salesVat.amounts.map((amt, idx) => (
-                    <td key={idx} className="p-3.5 text-right font-mono">
-                      {formatPnLSum(-amt)}
-                    </td>
-                  ))}
-                  <td className="p-3.5 text-right font-bold text-gray-800 bg-gray-50/20">
-                    {formatPnLSum(-salesVat.total)}
-                  </td>
-                </tr>
-                <tr className="bg-gray-50/20 text-gray-800 font-bold border-t border-gray-200">
-                  <td className="p-3.5 pl-6 font-bold text-gray-800">Выручка без НДС</td>
-                  {netRevenue.amounts.map((amt, idx) => (
-                    <td key={idx} className="p-3.5 text-right font-bold">
-                      {formatPnLSum(amt)}
-                    </td>
-                  ))}
-                  <td className="p-3.5 text-right font-extrabold text-gray-900 bg-gray-50/40">
-                    {formatPnLSum(netRevenue.total)}
-                  </td>
-                </tr>
                 {otherIncome.total !== 0 && (
                   <tr className="hover:bg-gray-50/50 text-gray-700">
                     <td className="p-3.5 pl-6 font-semibold">Прочие доходы (курсовые, операционные)</td>
@@ -222,14 +217,41 @@ export default function PnLClient() {
                   </tr>
                 )}
 
+                {/* НДС входящий — только для НДС-плательщиков когда есть данные */}
+                {data.taxRegime === "VAT" && vatInputLine && vatInputLine.total !== 0 && (
+                  <tr className="hover:bg-blue-50/30 text-blue-700">
+                    <td className="p-3.5 pl-6 font-semibold text-blue-700">НДС входящий (к вычету)</td>
+                    {vatInputLine.amounts.map((amt, idx) => (
+                      <td key={idx} className="p-3.5 text-right font-mono">
+                        {formatPnLSum(amt)}
+                      </td>
+                    ))}
+                    <td className="p-3.5 text-right font-bold bg-blue-50/20">
+                      {formatPnLSum(vatInputLine.total)}
+                    </td>
+                  </tr>
+                )}
+                {data.taxRegime === "VAT" && netVatTotal !== 0 && (
+                  <tr className="hover:bg-blue-50/30 text-blue-600 border-t border-blue-100">
+                    <td className="p-3.5 pl-6 font-semibold text-blue-600">НДС к уплате (исходящий − входящий)</td>
+                    {(data.netVat ?? []).map((amt, idx) => (
+                      <td key={idx} className="p-3.5 text-right font-mono">
+                        {formatPnLSum(-amt)}
+                      </td>
+                    ))}
+                    <td className="p-3.5 text-right font-bold bg-blue-50/20">
+                      {formatPnLSum(-netVatTotal)}
+                    </td>
+                  </tr>
+                )}
+
                 {/* EXPENSES SECTION */}
                 <tr className="bg-gray-50/30">
                   <td className="p-3.5 font-black text-gray-800 text-[13px] uppercase tracking-wider" colSpan={data.months.length + 2}>
                     Расходы
                   </td>
                 </tr>
-                {data.expenses
-                  .filter((cat) => !(cat.line === "Налог на прибыль (начислен)" && data.taxRegime === "TURNOVER_TAX"))
+                {operatingExpenses
                   .map((cat) => (
                   <tr key={cat.line} className="hover:bg-gray-50/50 text-gray-600">
                     <td className="p-3.5 pl-6 font-semibold text-gray-700">{cat.line}</td>
@@ -268,7 +290,9 @@ export default function PnLClient() {
                   </td>
                 </tr>
                 <tr className="hover:bg-gray-50/50 text-gray-700">
-                  <td className="p-3.5 pl-6 font-semibold text-gray-700">Налог на прибыль / с оборота</td>
+                  <td className="p-3.5 pl-6 font-semibold text-gray-700">
+                    {data.taxRegime === "VAT" ? "Налог на прибыль (15%)" : "Налог с оборота (4%)"}
+                  </td>
                   {data.tax.map((amt, idx) => (
                     <td key={idx} className="p-3.5 text-right font-mono">
                       {formatPnLSum(-amt)}

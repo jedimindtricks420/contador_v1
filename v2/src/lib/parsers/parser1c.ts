@@ -1,4 +1,4 @@
-import { ParsedTransaction } from "./types";
+import { ParsedBankStatement, ParsedTransaction } from "./types";
 
 // Windows-1251 code points for bytes 0x80–0xFF
 const CP1251_MAP = [
@@ -45,29 +45,43 @@ function decodeCP1251(buf: Buffer): string {
  *   - CREDIT: payer (Плательщик / ПлательщикИНН)
  *   - DEBIT:  recipient (Получатель / ПолучательИНН)
  */
-export function parse1CExchange(input: string | Buffer): ParsedTransaction[] {
+export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
   const text = Buffer.isBuffer(input) ? decodeCP1251(input) : input;
   const lines = text.split(/\r?\n/);
   const transactions: ParsedTransaction[] = [];
 
-  // Extract our account from the top-level header (first РасчСчет before any section)
+  // Statement-level metadata extracted from СекцияРасчСчет
   let ourAccount = "";
+  let openingBalance: number | undefined;
+  let closingBalance: number | undefined;
+  let periodStart: Date | undefined;
+  let periodEnd: Date | undefined;
+
+  // Extract our account from the top-level header (first РасчСчет before any section)
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith("СекцияРасчСчет") || trimmed.startsWith("СекцияДокумент")) break;
+    if (trimmed.startsWith("СекцияДокумент")) break;
     if (trimmed.startsWith("РасчСчет=")) {
       ourAccount = trimmed.slice("РасчСчет=".length).trim();
-      break;
     }
   }
 
   let current: Record<string, string> = {};
   let inSection = false;
+  let inAccSection = false;
 
   for (const line of lines) {
     const eqIdx = line.indexOf("=");
     if (eqIdx === -1) {
       const k = line.trim();
+
+      // Parse bank account section for opening/closing balances
+      if (k === "СекцияРасчСчет") { inAccSection = true; continue; }
+      if (k === "КонецРасчСчет" && inAccSection) {
+        inAccSection = false;
+        continue;
+      }
+
       if (k === "КонецДокумента" && inSection) {
         inSection = false;
 
@@ -111,13 +125,28 @@ export function parse1CExchange(input: string | Buffer): ParsedTransaction[] {
           if (/^0+$/.test(counterpartyInn)) counterpartyInn = undefined;
         }
 
+        let description = current["НазначениеПлатежа"] || current["Назначение"] || "";
+
+        let finalCounterpartyHint = counterpartyHint || undefined;
+        let finalCounterpartyInn = counterpartyInn || undefined;
+
+        // Smart extraction for Transit/Exchange/Treasury
+        const innRegex = /(?:ИНН|СТИР|INN)\s*:?\s*(\d{9,14})\b(?:\s*\(([^)]+)\))?/i;
+        const match = description.match(innRegex);
+        if (match) {
+          finalCounterpartyInn = match[1];
+          if (match[2]) {
+            finalCounterpartyHint = match[2].trim();
+          }
+        }
+
         transactions.push({
           date,
           amount,
           direction,
-          description: current["НазначениеПлатежа"] || current["Назначение"] || "",
-          counterpartyHint: counterpartyHint || undefined,
-          counterpartyInn: counterpartyInn || undefined,
+          description,
+          counterpartyHint: finalCounterpartyHint,
+          counterpartyInn: finalCounterpartyInn,
         });
 
         current = {};
@@ -131,10 +160,25 @@ export function parse1CExchange(input: string | Buffer): ParsedTransaction[] {
     if (k === "СекцияДокумент") {
       inSection = true;
       current = {};
+    } else if (inAccSection) {
+      // Balance section: НачальныйОстаток, КонечныйОстаток, ДатаНачала, ДатаКонца
+      if (k === "НачальныйОстаток") {
+        openingBalance = parseFloat(v.replace(",", ".")) || 0;
+      } else if (k === "КонечныйОстаток") {
+        closingBalance = parseFloat(v.replace(",", ".")) || 0;
+      } else if (k === "ДатаНачала") {
+        const parts = v.split(".");
+        if (parts.length === 3) periodStart = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      } else if (k === "ДатаКонца") {
+        const parts = v.split(".");
+        if (parts.length === 3) periodEnd = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+      } else if (k === "РасчСчет" && !ourAccount) {
+        ourAccount = v;
+      }
     } else if (inSection) {
       current[k] = v;
     }
   }
 
-  return transactions;
+  return { transactions, openingBalance, closingBalance, periodStart, periodEnd, accountNumber: ourAccount || undefined };
 }

@@ -3,6 +3,45 @@ import { getClosingState, saveClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ periodId: string }> }
+) {
+  try {
+    const { periodId } = await params;
+    const orgId = await getActiveOrgId();
+
+    const period = await prisma.period.findFirst({ where: { id: periodId, orgId } });
+    if (!period) {
+      return NextResponse.json({ error: "Период не найден" }, { status: 404 });
+    }
+
+    // Sum posted SALARY_ACCRUAL docs for this period to suggest prefill
+    const salaryDocs = await prisma.document.findMany({
+      where: { orgId, periodId, type: { code: "SALARY_ACCRUAL" }, status: "POSTED" }
+    });
+    const depDocs = await prisma.document.findMany({
+      where: { orgId, periodId, type: { code: "DEPRECIATION_ACCRUAL" }, status: "POSTED" }
+    });
+    const rentDocs = await prisma.document.findMany({
+      where: { orgId, periodId, type: { code: "RENT_ACCRUAL" }, status: "POSTED" }
+    });
+
+    const sumPayload = (docs: any[], field: string) =>
+      docs.reduce((s, d) => s + (Number((d.payload as any)?.[field]) || 0), 0);
+
+    return NextResponse.json({
+      postedSalaryAmount: sumPayload(salaryDocs, "salaryAmount"),
+      postedDepreciationAmount: sumPayload(depDocs, "depreciationAmount"),
+      postedRentAmount: sumPayload(rentDocs, "rentAmount"),
+      hasPostedDocs: salaryDocs.length + depDocs.length + rentDocs.length > 0
+    });
+  } catch (err: any) {
+    console.error("GET ACCRUALS ERROR:", err);
+    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ periodId: string }> }

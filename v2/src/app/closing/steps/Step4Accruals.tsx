@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatSum } from "@/lib/format";
 import { TAX_RATES } from "@/lib/constants";
-import { RotateCcw, CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { Info } from "lucide-react";
+import { RotateCcw, CheckCircle2, AlertTriangle, X, Zap } from "lucide-react";
 
 interface Step4AccrualsProps {
   periodId: string;
@@ -24,6 +25,21 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [postedHint, setPostedHint] = useState<{ salary: number; dep: number; rent: number } | null>(null);
+
+  useEffect(() => {
+    // Fetch already-posted accrual docs so we can show a prefill hint
+    if (!initialAccruals.salaryAmount && !initialAccruals.depreciationAmount && !initialAccruals.rentAmount) {
+      fetch(`/v2/api/closing/${periodId}/accruals`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data && data.hasPostedDocs) {
+            setPostedHint({ salary: data.postedSalaryAmount, dep: data.postedDepreciationAmount, rent: data.postedRentAmount });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [periodId, initialAccruals]);
 
   const hasSavedData =
     (initialAccruals.salaryAmount || 0) > 0 ||
@@ -32,8 +48,11 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
 
   // Live calculations
   const salVal = parseFloat(salaryAmount) || 0;
-  const pitVal = salVal * TAX_RATES.NDFL;
-  const socVal = salVal * TAX_RATES.SOCIAL_TAX;
+  const inpsVal   = salVal * TAX_RATES.INPS;
+  const ndflVal   = salVal * TAX_RATES.NDFL_BUDGET;
+  const pitVal    = salVal * TAX_RATES.NDFL;   // total withholding (ИНПС + НДФЛ)
+  const socVal    = salVal * TAX_RATES.SOCIAL_TAX;
+  const netSalary = salVal * (1 - TAX_RATES.NDFL);
 
   const handleReset = async () => {
     setShowResetConfirm(false);
@@ -115,6 +134,31 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
         </div>
       )}
 
+      {!hasSavedData && postedHint && (postedHint.salary > 0 || postedHint.dep > 0 || postedHint.rent > 0) && (
+        <div className="flex items-center justify-between max-w-xl p-3 bg-blue-50 border border-blue-200 rounded text-xs">
+          <div className="flex items-start gap-2 text-blue-800 font-semibold">
+            <Zap size={14} className="shrink-0 mt-0.5" />
+            <div>
+              Обнаружены проведённые начисления за этот период:
+              {postedHint.salary > 0 && <span className="ml-1">ЗП {formatSum(postedHint.salary)}</span>}
+              {postedHint.dep > 0 && <span className="ml-1">Амортизация {formatSum(postedHint.dep)}</span>}
+              {postedHint.rent > 0 && <span className="ml-1">Аренда {formatSum(postedHint.rent)}</span>}
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              if (postedHint.salary > 0) setSalaryAmount(String(postedHint.salary));
+              if (postedHint.dep > 0) setDepreciationAmount(String(postedHint.dep));
+              if (postedHint.rent > 0) setRentAmount(String(postedHint.rent));
+              setPostedHint(null);
+            }}
+            className="ml-4 shrink-0 text-xs bg-blue-700 hover:bg-blue-800 text-white font-bold py-1 px-3 rounded transition"
+          >
+            Подставить
+          </button>
+        </div>
+      )}
+
       {resetError && (
         <div className="flex items-center justify-between max-w-xl p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 font-semibold">
           <span>{resetError}</span>
@@ -136,14 +180,38 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
             />
           </div>
           <div className="space-y-1 bg-gray-50 p-2.5 rounded border border-gray-100 text-[11px] font-semibold text-gray-500">
-            <div className="flex justify-between">
-              <span>НДФЛ ({TAX_RATES.NDFL * 100}%):</span>
-              <span className="font-bold text-gray-750">{formatSum(pitVal)}</span>
+            <div className="flex justify-between text-gray-400 italic">
+              <span>Удержания из зарплаты работника:</span>
             </div>
-            <div className="flex justify-between">
-              <span>Соц. налог ({TAX_RATES.SOCIAL_TAX * 100}%):</span>
-              <span className="font-bold text-gray-750">{formatSum(socVal)}</span>
+            <div className="flex justify-between pl-2">
+              <span>ИНПС ({TAX_RATES.INPS * 100}%):</span>
+              <span className="font-bold text-gray-700">{formatSum(inpsVal)}</span>
             </div>
+            <div className="flex justify-between pl-2">
+              <span>НДФЛ в бюджет ({+(TAX_RATES.NDFL_BUDGET * 100).toFixed(2)}%):</span>
+              <span className="font-bold text-gray-700">{formatSum(ndflVal)}</span>
+            </div>
+            <div className="flex justify-between border-t border-gray-200 pt-1 mt-1">
+              <span>Нетто на руки ({(1 - TAX_RATES.NDFL) * 100}%):</span>
+              <span className="font-bold text-gray-900">{formatSum(netSalary)}</span>
+            </div>
+            <div className="flex justify-between text-gray-400 italic mt-1">
+              <span>Расход работодателя сверху:</span>
+            </div>
+            <div className="flex justify-between pl-2">
+              <span>Соцналог ({TAX_RATES.SOCIAL_TAX * 100}%):</span>
+              <span className="font-bold text-gray-700">{formatSum(socVal)}</span>
+            </div>
+            <div className="flex justify-between border-t border-gray-200 pt-1 mt-1 text-gray-800">
+              <span>Итого расход компании:</span>
+              <span className="font-bold">{formatSum(salVal + socVal)}</span>
+            </div>
+            {salVal > 0 && (
+              <div className="flex items-start gap-1 mt-2 text-[10px] text-blue-600 bg-blue-50 rounded p-1.5">
+                <Info size={10} className="shrink-0 mt-0.5" />
+                <span>Налоги (НДФЛ, ИНПС, Соцналог) будут видны в банковской выписке следующего месяца</span>
+              </div>
+            )}
           </div>
         </div>
 

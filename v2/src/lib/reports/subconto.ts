@@ -34,10 +34,6 @@ export async function calculateSubconto(
   to: Date,
   accountId?: string
 ) {
-  const accountFilter = accountId && accountId !== "ALL"
-    ? `AND a.id = ${JSON.stringify(accountId)}`
-    : "";
-
   const [openingAgg, turnoverAgg] = await Promise.all([
     prisma.$queryRaw<AggRow[]>`
       SELECT
@@ -87,7 +83,9 @@ export async function calculateSubconto(
     const op = openMap.get(key);
     const turn = turnMap.get(key);
     const meta = op || turn!;
-    const isAssetOrExpense = ["ASSET", "EXPENSE"].includes(meta.accountType);
+    // Debit-normal: ASSET, CONTRA_LIABILITY, ACTIVE_PASSIVE, TRANSIT
+    // Credit-normal: LIABILITY, CONTRA_ASSET only — mirrors calcBalance() in osv.ts
+    const isDebitNormal = !["LIABILITY", "CONTRA_ASSET"].includes(meta.accountType);
 
     const opDb = new Decimal(op?.sumDebit || 0);
     const opCr = new Decimal(op?.sumCredit || 0);
@@ -97,7 +95,7 @@ export async function calculateSubconto(
     let openingDebit = new Decimal(0);
     let openingCredit = new Decimal(0);
 
-    if (isAssetOrExpense) {
+    if (isDebitNormal) {
       const netDr = opDb.minus(opCr);
       if (netDr.gt(0)) openingDebit = netDr;
       else if (netDr.lt(0)) openingCredit = netDr.abs();
@@ -110,7 +108,7 @@ export async function calculateSubconto(
     let closingDebit = new Decimal(0);
     let closingCredit = new Decimal(0);
 
-    if (isAssetOrExpense) {
+    if (isDebitNormal) {
       const netDr = openingDebit.minus(openingCredit).plus(dbTurnover).minus(crTurnover);
       if (netDr.gt(0)) closingDebit = netDr;
       else if (netDr.lt(0)) closingCredit = netDr.abs();

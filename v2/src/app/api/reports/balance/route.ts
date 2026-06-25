@@ -64,6 +64,22 @@ export async function GET(req: NextRequest) {
       GROUP BY je."accountId"
     `;
 
+    // Current financial result = net of ALL TRANSIT accounts (9xxx income/expense).
+    // For closed periods this equals the 9910 balance after reformation.
+    // For open periods it shows the accumulated interim P&L.
+    type TransitNetRow = { netResult: string };
+    const transitNetRows = await prisma.$queryRaw<TransitNetRow[]>`
+      SELECT (COALESCE(SUM(je.credit), 0) - COALESCE(SUM(je.debit), 0))::text AS "netResult"
+      FROM "JournalEntry" je
+      JOIN "Document" d ON d.id = je."documentId"
+      JOIN "Account"   a ON a.id = je."accountId"
+      WHERE d."orgId" = ${orgId}
+        AND d.status  = 'POSTED'
+        AND d.date   <= ${endDate}
+        AND a.type    = 'TRANSIT'
+    `;
+    const transitNet = new Decimal(transitNetRows[0]?.netResult ?? "0");
+
     const cumulMap = new Map(cumulative.map((r) => [r.accountId, r]));
 
     // Balance sheet sections by account code prefix
@@ -117,6 +133,20 @@ export async function GET(req: NextRequest) {
       if (!placed && !liabDelta.isZero()) totalLiabEquity = totalLiabEquity.plus(liabDelta);
     }
 
+    // Inject current-year P&L (net of all TRANSIT 9xxx accounts) into the currentResult equity section.
+    // Positive = profit (credit > debit), negative = loss.
+    if (!transitNet.isZero()) {
+      sections.currentResult.items.push({
+        code: "9910",
+        name: "Финансовый результат текущего года",
+        type: "TRANSIT",
+        assetValue: 0,
+        liabValue: transitNet.toNumber()
+      });
+      sections.currentResult.total = sections.currentResult.total.plus(transitNet);
+      totalLiabEquity = totalLiabEquity.plus(transitNet);
+    }
+
     const balance = {
       asOf: endDate,
       assets: {
@@ -138,6 +168,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(balance);
   } catch (err: any) {
     console.error("GET BALANCE ERROR:", err);
-    return NextResponse.json({ error: err.message || "Unauthorized" }, { status: 401 });
+    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
   }
 }

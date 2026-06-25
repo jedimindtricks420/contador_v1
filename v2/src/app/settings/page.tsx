@@ -108,7 +108,7 @@ export default function OrgSettingsPage() {
                 value={settings.inn || ""}
                 onChange={(e) => setSettings({ ...settings, inn: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black"
-                pattern="\\d{9}"
+                pattern="[0-9]{9}"
                 title="ИНН должен состоять из 9 цифр"
               />
             </div>

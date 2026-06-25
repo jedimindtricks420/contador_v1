@@ -47,6 +47,8 @@ export default function JournalClient() {
 
   const [data, setData] = useState<JournalData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [voidingDocId, setVoidingDocId] = useState<string | null>(null);
+  const [voidError, setVoidError] = useState<string | null>(null);
 
   const loadJournal = async () => {
     setLoading(true);
@@ -75,6 +77,29 @@ export default function JournalClient() {
   useEffect(() => {
     loadJournal();
   }, [from, to, accountId, counterpartyId, documentTypeId]);
+
+  const handleVoid = async (documentId: string) => {
+    if (!confirm("Аннулировать этот документ? Все проводки будут удалены.")) return;
+    setVoidingDocId(documentId);
+    setVoidError(null);
+    try {
+      const res = await fetch("/v2/api/posting/void", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId })
+      });
+      if (res.ok) {
+        loadJournal();
+      } else {
+        const err = await res.json();
+        setVoidError(err.error || "Ошибка аннулирования");
+      }
+    } catch {
+      setVoidError("Ошибка сети при аннулировании");
+    } finally {
+      setVoidingDocId(null);
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -121,6 +146,12 @@ export default function JournalClient() {
         onChangeDocumentTypeId={setDocumentTypeId}
       />
 
+      {voidError && (
+        <div style={{ padding: "10px 14px", background: "#fff1f2", border: "1px solid #fecdd3", borderRadius: 6, fontSize: 12, color: "#be123c", fontWeight: 600, display: "flex", justifyContent: "space-between" }}>
+          {voidError}
+          <button onClick={() => setVoidError(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "#be123c" }}>✕</button>
+        </div>
+      )}
       {loading ? (
         <div style={{ padding: 48, textAlign: "center", color: "#64748b", fontSize: 14 }}>
           Загрузка журнала проводок...
@@ -140,6 +171,7 @@ export default function JournalClient() {
                 <th style={{ padding: 10, textAlign: "center", color: "#475569", fontWeight: 700, width: 100 }}>Дт счёт</th>
                 <th style={{ padding: 10, textAlign: "center", color: "#475569", fontWeight: 700, width: 100 }}>Кт счёт</th>
                 <th style={{ padding: 10, textAlign: "right", color: "#475569", fontWeight: 700, width: 140 }}>Сумма</th>
+                <th style={{ padding: 10, width: 110 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -160,6 +192,24 @@ export default function JournalClient() {
                   <td style={{ padding: 10, textAlign: "right", fontWeight: 600 }}>
                     {formatReportSum(row.amount)}
                   </td>
+                  <td style={{ padding: 10, textAlign: "right" }}>
+                    {index === 0 || data.rows[index - 1]?.documentId !== row.documentId ? (
+                      <button
+                        onClick={() => handleVoid(row.documentId)}
+                        disabled={voidingDocId === row.documentId}
+                        style={{
+                          fontSize: 11, fontWeight: 600, padding: "4px 10px",
+                          background: "none", border: "1px solid #fca5a5",
+                          color: "#ef4444", borderRadius: 4, cursor: "pointer",
+                          opacity: voidingDocId === row.documentId ? 0.4 : 1,
+                          transition: "all 0.15s"
+                        }}
+                        title="Аннулировать документ"
+                      >
+                        {voidingDocId === row.documentId ? "..." : "Аннулировать"}
+                      </button>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
               <tr style={{ background: "#f1f5f9", fontWeight: 700, borderTop: "2px solid #cbd5e1" }}>
@@ -167,6 +217,7 @@ export default function JournalClient() {
                 <td style={{ padding: 12, textAlign: "center" }}>—</td>
                 <td style={{ padding: 12, textAlign: "center" }}>—</td>
                 <td style={{ padding: 12, textAlign: "right" }}>{formatReportSum(data.totals.totalDebit)}</td>
+                <td></td>
               </tr>
             </tbody>
           </table>

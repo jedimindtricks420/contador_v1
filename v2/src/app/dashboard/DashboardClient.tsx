@@ -21,7 +21,7 @@ interface DashboardData {
   upcomingTaxes: { id: string; type: string; dueDate: string; estimatedAmount: string | null }[];
   importStatus: { bankTransactions: number; soliqMatched: number };
   closingChecklist: { step: number; done: boolean; label: string }[];
-  kpi: { totalBalance: string; income: string; expense: string; taxesOwed: string };
+  kpi: { totalBalance: string; income: string; expense: string; taxesOwed: string; salaryDebt: string };
   riskOpenItems: { id: string; counterpartyName: string; accountCode: string; amount: number; dateOpened: string; overdueDays: number }[];
 }
 
@@ -50,6 +50,7 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
 const TAX_TYPE_LABELS: Record<string, string> = {
   VAT: "НДС",
   PERSONAL_INCOME_TAX: "НДФЛ",
+  INPS: "ИНПС (накопительная пенсия)",
   TURNOVER_TAX: "Налог с оборота",
   PROFIT_TAX: "Налог на прибыль",
   STATISTICS: "Статистика",
@@ -154,7 +155,11 @@ export default function DashboardClient() {
   };
 
   const handlePreview = async () => {
-    if (!uploadFile || !selectedBankAccountId) return;
+    if (!uploadFile) return;
+    if (!selectedBankAccountId) {
+      setUploadResult("Выберите банковский счёт для предпросмотра");
+      return;
+    }
     setPreviewLoading(true);
     setUploadResult("");
     setPreviewTransactions(null);
@@ -319,14 +324,15 @@ export default function DashboardClient() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: "Остаток на счетах", value: formatSum(kpi.totalBalance) },
-          { label: "Доходы", value: formatSum(kpi.income) },
-          { label: "Расходы", value: formatSum(kpi.expense) },
-          { label: "Налоги к уплате", value: formatSum(kpi.taxesOwed) },
+          { label: "Остаток на счетах", value: formatSum(kpi.totalBalance), warn: false },
+          { label: "Доходы", value: formatSum(kpi.income), warn: false },
+          { label: "Расходы", value: formatSum(kpi.expense), warn: false },
+          { label: "Налоги к уплате", value: formatSum(kpi.taxesOwed), warn: Number(kpi.taxesOwed) > 0 },
+          ...(Number(kpi.salaryDebt) > 0 ? [{ label: "Задолженность по зарплате", value: formatSum(kpi.salaryDebt), warn: true }] : []),
         ].map((card, i) => (
-          <div key={i} className="bg-white border border-gray-200 p-6 shadow-sm">
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">{card.label}</div>
-            <div className="text-2xl font-bold text-black tracking-tight">{card.value}</div>
+          <div key={i} className={`bg-white border p-6 shadow-sm ${card.warn ? "border-amber-300" : "border-gray-200"}`}>
+            <div className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${card.warn ? "text-amber-600" : "text-gray-400"}`}>{card.label}</div>
+            <div className={`text-2xl font-bold tracking-tight ${card.warn ? "text-amber-700" : "text-black"}`}>{card.value}</div>
           </div>
         ))}
       </div>
@@ -508,7 +514,7 @@ export default function DashboardClient() {
                 <input
                   type="file"
                   id="soliqFile"
-                  accept=".xlsx,.xls"
+                  accept=".xlsx,.xls,.xltx"
                   onChange={(e) => {
                     setSoliqFile(e.target.files?.[0] || null);
                     setSoliqData(null);

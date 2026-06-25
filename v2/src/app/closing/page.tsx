@@ -35,6 +35,7 @@ function ClosingPageContent() {
   const [creating, setCreating] = useState(false);
   const [deletingPeriod, setDeletingPeriod] = useState<Period | null>(null);
   const [periodDeleteLoading, setPeriodDeleteLoading] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
   const loadPeriods = async (autoSelectId?: string) => {
     try {
@@ -131,6 +132,25 @@ function ClosingPageContent() {
       console.error(err);
     } finally {
       setPeriodDeleteLoading(false);
+    }
+  };
+
+  const handleReopenPeriod = async () => {
+    if (!selectedPeriod) return;
+    if (!confirm(`Переоткрыть период ${periodLabel(selectedPeriod.year, selectedPeriod.month)}? Проводки закрытия будут удалены.`)) return;
+    setReopening(true);
+    try {
+      const res = await fetch(`/v2/api/periods/${selectedPeriod.id}/reopen`, { method: "POST" });
+      if (res.ok) {
+        await loadPeriods(selectedPeriod.id);
+      } else {
+        const data = await res.json();
+        alert(`Ошибка: ${data.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setReopening(false);
     }
   };
 
@@ -303,13 +323,20 @@ function ClosingPageContent() {
                     {periodLabel(selectedPeriod.year, selectedPeriod.month)} — проводки зафиксированы и защищены от изменений.
                   </p>
                 </div>
-                <div className="flex gap-3 justify-center pt-2">
+                <div className="flex gap-3 justify-center pt-2 flex-wrap">
                   <a
                     href="/v2/reports/osv"
                     className="flex items-center gap-1.5 text-xs border border-gray-200 text-gray-700 font-bold py-2 px-5 hover:bg-gray-50 transition"
                   >
                     <FileText size={13} />Перейти к отчётам
                   </a>
+                  <button
+                    onClick={handleReopenPeriod}
+                    disabled={reopening}
+                    className="text-xs border border-amber-200 text-amber-600 hover:bg-amber-50 font-semibold py-2 px-5 transition disabled:opacity-50"
+                  >
+                    {reopening ? "Открываем..." : "↩ Переоткрыть"}
+                  </button>
                   <a
                     href={`/v2/closing?createPeriod=${selectedPeriod.month === 12 ? selectedPeriod.year + 1 : selectedPeriod.year}-${String(selectedPeriod.month === 12 ? 1 : selectedPeriod.month + 1).padStart(2, "0")}`}
                     className="flex items-center gap-1.5 text-xs bg-black text-white font-bold py-2 px-5 hover:opacity-80 transition"

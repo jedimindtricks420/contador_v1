@@ -23,6 +23,10 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
+  if (/\.(png|jpg|jpeg|gif|svg|ico|webp|woff2?|ttf|otf)$/.test(pathname)) {
+    return NextResponse.next();
+  }
+
   const token = req.cookies.get(COOKIE_NAME)?.value;
   if (!token) {
     return NextResponse.redirect(new URL("/v2/login", req.url));

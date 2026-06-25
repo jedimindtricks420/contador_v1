@@ -1,13 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { getActiveOrgId } from "@/lib/context";
 import prisma from "@/lib/prisma";
-import { ensureBaseData } from "@/lib/ensureBaseData";
+
 import { parseSoliqExcel } from "@/lib/parsers/parserSoliq";
+import { postDocument } from "@/lib/posting/postingEngine";
 import Decimal from "decimal.js";
+
+const MARKETPLACE_INNS = ["302179836", "302061230", "309532578", "205370258"];
+
+function isMarketplace(inn?: string, name?: string): boolean {
+  if (inn && MARKETPLACE_INNS.includes(inn)) return true;
+  const n = (name || "").toLowerCase();
+  return (
+    n.includes("click") ||
+    n.includes("payme") ||
+    n.includes("uzum") ||
+    n.includes("paynet") ||
+    n.includes("inspired")
+  );
+}
+
+// Normalise an organisation name for fuzzy comparison.
+// Strips legal form suffixes (MCHJ, OAJ, ХК, МЧЖ, XK, LLC, etc.) and common noise words.
+function normalizeOrgName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\b(mchj|oaj|хк|мчж|xk|llc|ojsc|jsc|zao|ooo|ip|sp|ип|пк|ак)\b/gi, "")
+    .replace(/["\'.,()\-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Bigram similarity (Sørensen–Dice coefficient) — fast and language-agnostic.
+function nameSimilarity(a: string, b: string): number {
+  const na = normalizeOrgName(a);
+  const nb = normalizeOrgName(b);
+  if (na === nb) return 1;
+  if (na.length < 2 || nb.length < 2) return 0;
+
+  const bigrams = (s: string) => {
+    const set: Record<string, number> = {};
+    for (let i = 0; i < s.length - 1; i++) {
+      const bg = s.slice(i, i + 2);
+      set[bg] = (set[bg] || 0) + 1;
+    }
+    return set;
+  };
+
+  const ba = bigrams(na);
+  const bb = bigrams(nb);
+  let intersection = 0;
+  for (const bg of Object.keys(ba)) {
+    if (bb[bg]) intersection += Math.min(ba[bg], bb[bg]);
+  }
+  return (2 * intersection) / (Object.keys(ba).length + Object.keys(bb).length - 1 || 1);
+}
+
+const FUZZY_THRESHOLD = 0.5; // ≥ 50% bigram similarity → treat as same counterparty
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureBaseData();
+
     const orgId = await getActiveOrgId();
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -34,47 +88,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Не удалось распознать данные в файле" }, { status: 422 });
     }
 
-    // Ensure SOLIQ_IMPORT document type exists
-    let soliqDocType = await prisma.documentType.findUnique({
-      where: { code: "SOLIQ_IMPORT" }
-    });
-    if (!soliqDocType) {
-      soliqDocType = await prisma.documentType.create({
-        data: {
-          code: "SOLIQ_IMPORT",
-          name: "Импорт отчёта Soliq",
-          postingTemplate: {}
-        }
-      });
-    }
-
-    // Create the Soliq Import document
-    const soliqDocument = await prisma.document.create({
-      data: {
-        orgId,
-        periodId,
-        typeId: soliqDocType.id,
-        date: new Date(),
-        status: "POSTED",
-        payload: {
-          taxSummary: {
-            vat: parsed.taxSummary.vat,
-            outputVat: parsed.taxSummary.outputVat,
-            inputVat: parsed.taxSummary.inputVat,
-            turnoverTax: parsed.taxSummary.turnoverTax,
-            incomeTax: parsed.taxSummary.incomeTax
-          },
-          expenses: parsed.expenses.length,
-          revenues: parsed.revenues.length,
-          totalEsfItems: parsed.esfItems.length
-        } as any
-      }
-    });
-
     // Fetch all currently OPEN items for the org
     const openItems = await prisma.openItem.findMany({
       where: { orgId, status: "OPEN" },
-      include: { counterparty: true }
+      include: { counterparty: true, account: true, openingDocument: true }
     });
 
     let matched = 0;
@@ -82,48 +99,118 @@ export async function POST(req: NextRequest) {
     const matchesList: any[] = [];
     const soliqOnlyList: any[] = [];
 
-    // Reconciliation loop
+    // We will augment the parsed items with match information so the frontend can pass it to /complete
+    const processedEsfItems = [];
+
+    // ── Pass 1: exact INN match ─────────────────────────────────────────────
+    // We use a mutable copy of openItems so matched items are not reused.
+    const remainingOpenItems = [...openItems];
+
+    const unmatchedEsfItems: typeof parsed.esfItems = [];
+
     for (const esf of parsed.esfItems) {
-      // Find a matching open item in memory
-      const matchIndex = openItems.findIndex(item => {
+      const grossAmount = esf.amount + esf.vatAmount;
+      const esfInn = esf.inn;
+      const isMarket = isMarketplace(esf.inn, esf.counterpartyName);
+
+      const matchIndex = remainingOpenItems.findIndex(item => {
         const itemInn = item.counterparty?.inn;
-        const esfInn = esf.inn;
+        if (itemInn !== esfInn) return false;
+
         const itemAmt = new Decimal(item.amount.toString()).toNumber();
-        const esfAmt = esf.amount;
-        return itemInn === esfInn && Math.abs(itemAmt - esfAmt) < 0.01;
+
+        // Marketplace: amount tolerance up to 15% (commission case)
+        if (esf.direction === "REVENUE" && isMarket && item.account.code === "6310") {
+          return itemAmt <= grossAmount && (grossAmount - itemAmt) < grossAmount * 0.15;
+        }
+
+        return Math.abs(itemAmt - grossAmount) < 1.01 || Math.abs(itemAmt - esf.amount) < 1.01;
       });
 
       if (matchIndex !== -1) {
-        const matchedItem = openItems[matchIndex];
-        // Remove from memory list so it's not matched twice
-        openItems.splice(matchIndex, 1);
+        const matchedItem = remainingOpenItems[matchIndex];
+        remainingOpenItems.splice(matchIndex, 1);
 
-        // Update database
-        await prisma.openItem.update({
-          where: { id: matchedItem.id },
-          data: {
-            status: "CLOSED",
-            closingDocumentId: soliqDocument.id,
-            dateClosed: esf.date
-          }
-        });
         matched++;
-        matchesList.push({
-          counterpartyName: matchedItem.counterparty?.name || esf.counterpartyName,
-          amount: esf.amount
+        matchesList.push({ counterpartyName: esf.counterpartyName, amount: grossAmount });
+        processedEsfItems.push({
+          ...esf,
+          matchStatus: "MATCHED",
+          matchedOpenItemId: matchedItem.id,
+          matchedAccountCode: matchedItem.account.code,
+          matchedAmount: new Decimal(matchedItem.amount.toString()).toNumber()
         });
+      } else {
+        unmatchedEsfItems.push(esf);
+        processedEsfItems.push({ ...esf, matchStatus: "UNMATCHED" });
+      }
+    }
+
+    // ── Pass 2: fuzzy name match for unmatched ESF items ───────────────────
+    // Re-scan unmatchedEsfItems against remainingOpenItems using name similarity.
+    // Only applies when INN is absent in the bank record.
+    for (const esf of unmatchedEsfItems) {
+      const grossAmount = esf.amount + esf.vatAmount;
+
+      const matchIndex = remainingOpenItems.findIndex(item => {
+        // Skip if counterparty has an INN that differs from ESF (would have been caught in pass 1)
+        if (item.counterparty?.inn && item.counterparty.inn !== esf.inn) return false;
+
+        const itemAmt = new Decimal(item.amount.toString()).toNumber();
+        const amountClose =
+          Math.abs(itemAmt - grossAmount) < 1.01 ||
+          Math.abs(itemAmt - esf.amount) < 1.01;
+        if (!amountClose) return false;
+
+        const bankName = item.counterparty?.name || "";
+        return nameSimilarity(bankName, esf.counterpartyName) >= FUZZY_THRESHOLD;
+      });
+
+      if (matchIndex !== -1) {
+        const matchedItem = remainingOpenItems[matchIndex];
+        remainingOpenItems.splice(matchIndex, 1);
+
+        matched++;
+        unmatched = Math.max(0, unmatched - 1); // undo earlier unmatched count
+        matchesList.push({ counterpartyName: esf.counterpartyName, amount: grossAmount });
+
+        // Update the processedEsfItem that was originally marked UNMATCHED
+        const idx = processedEsfItems.findIndex(
+          p => p.inn === esf.inn && p.counterpartyName === esf.counterpartyName && p.matchStatus === "UNMATCHED"
+        );
+        if (idx !== -1) {
+          processedEsfItems[idx] = {
+            ...esf,
+            matchStatus: "MATCHED",
+            matchedOpenItemId: matchedItem.id,
+            matchedAccountCode: matchedItem.account.code,
+            matchedAmount: new Decimal(matchedItem.amount.toString()).toNumber(),
+            fuzzyMatch: true
+          };
+          // remove from soliqOnlyList (not yet added there — it will be added below)
+        }
       } else {
         unmatched++;
         soliqOnlyList.push({
+          id: randomUUID(),
           counterpartyName: esf.counterpartyName,
-          amount: esf.amount
+          inn: esf.inn,
+          amount: grossAmount,
+          netAmount: esf.amount,
+          vatAmount: esf.vatAmount
         });
       }
     }
 
-    const bankOnlyList = openItems.map(item => ({
+    // bankOnly: remaining open items that had no matching ESF.
+    // Include inn so the AI reconcile prompt can use it for smarter matching.
+    const bankOnlyList = remainingOpenItems.map(item => ({
+      id: item.id,
       counterpartyName: item.counterparty?.name || "Неизвестный контрагент",
-      amount: item.amount
+      inn: item.counterparty?.inn || null,
+      amount: new Decimal(item.amount.toString()).toNumber(),
+      description: (item.openingDocument?.payload as any)?.description || "",
+      accountCode: item.account.code
     }));
 
     return NextResponse.json({
@@ -132,7 +219,14 @@ export async function POST(req: NextRequest) {
       taxSummary: parsed.taxSummary,
       matches: matchesList,
       bankOnly: bankOnlyList,
-      soliqOnly: soliqOnlyList
+      soliqOnly: soliqOnlyList,
+      // Pass the fully processed payload to the frontend to submit on save
+      parsedPayload: {
+        taxSummary: parsed.taxSummary,
+        expenses: parsed.expenses,
+        revenues: parsed.revenues,
+        esfItems: processedEsfItems
+      }
     });
   } catch (err: any) {
     console.error("SOLIQ IMPORT ERROR:", err);

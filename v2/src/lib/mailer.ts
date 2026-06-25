@@ -72,6 +72,64 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
   return true;
 }
 
+export async function sendInviteEmail(
+  to: string,
+  orgName: string,
+  tempPassword: string
+): Promise<boolean> {
+  const transport = createTransport();
+  if (!transport) return false;
+
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://contador.uz";
+  const loginUrl = `${appUrl}/v2/login`;
+
+  await transport.sendMail({
+    from: `"Contador" <${from}>`,
+    to,
+    subject: `Вас пригласили в ${orgName} — Contador`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:sans-serif;background:#f9fafb;padding:40px 0;margin:0">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;padding:40px">
+    <h1 style="font-size:18px;font-weight:800;text-transform:uppercase;letter-spacing:0.05em;margin:0 0 8px">
+      Contador
+    </h1>
+    <p style="font-size:11px;color:#9ca3af;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 32px">
+      Приглашение в организацию
+    </p>
+
+    <p style="font-size:14px;color:#374151;line-height:1.6;margin:0 0 16px">
+      Вас добавили в организацию <strong>${orgName}</strong>.
+      Войдите в систему, используя эти данные:
+    </p>
+
+    <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:16px;margin:0 0 24px">
+      <p style="margin:0 0 8px;font-size:13px;color:#6b7280">Email</p>
+      <p style="margin:0 0 16px;font-size:14px;font-weight:600;color:#111827">${to}</p>
+      <p style="margin:0 0 8px;font-size:13px;color:#6b7280">Временный пароль</p>
+      <p style="margin:0;font-size:14px;font-weight:600;color:#111827;font-family:monospace">${tempPassword}</p>
+    </div>
+
+    <a href="${loginUrl}"
+       style="display:block;text-align:center;background:#000;color:#fff;padding:14px 24px;text-decoration:none;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin:0 0 24px">
+      Войти в Contador
+    </a>
+
+    <p style="font-size:12px;color:#9ca3af;line-height:1.5;margin:0">
+      Рекомендуем сменить пароль сразу после входа.
+    </p>
+  </div>
+</body>
+</html>`,
+    text: `Вас пригласили в ${orgName} — Contador\n\nEmail: ${to}\nВременный пароль: ${tempPassword}\n\nВойдите: ${loginUrl}\n\nРекомендуем сменить пароль сразу после входа.`,
+  });
+
+  return true;
+}
+
 export function isMailConfigured(): boolean {
   return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }

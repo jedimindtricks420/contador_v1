@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { ParsedTransaction } from "./types";
+import { ParsedBankStatement, ParsedTransaction } from "./types";
 
 function parseExcelDate(val: any): Date | null {
   if (val instanceof Date) return val;
@@ -37,7 +37,7 @@ function parseExcelAmount(val: any): number {
   return 0;
 }
 
-export function parseBankExcel(buffer: Buffer): ParsedTransaction[] {
+export function parseBankExcel(buffer: Buffer): ParsedBankStatement {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -122,6 +122,24 @@ export function parseBankExcel(buffer: Buffer): ParsedTransaction[] {
   }
 
   const transactions: ParsedTransaction[] = [];
+  let openingBalance: number | undefined;
+  let closingBalance: number | undefined;
+
+  // Scan pre-header rows for balance lines: "Остаток на начало" / "Остаток на конец" etc.
+  const openingKeywords = ["остаток на начало", "начальный остаток", "opening balance", "бошланғич қолдиқ"];
+  const closingKeywords = ["остаток на конец", "конечный остаток", "closing balance", "якуний қолдиқ"];
+  for (let i = 0; i < Math.min(rows.length, headerRowIndex + 2); i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+    const firstCell = String(row[0] || "").toLowerCase().trim();
+    if (openingKeywords.some(k => firstCell.includes(k))) {
+      const amtCell = row.find((c: any) => typeof c === "number" || (typeof c === "string" && parseFloat(c.replace(/\s/g, "").replace(",", ".")) > 0));
+      if (amtCell !== undefined) openingBalance = Math.abs(parseFloat(String(amtCell).replace(/\s/g, "").replace(",", ".")));
+    } else if (closingKeywords.some(k => firstCell.includes(k))) {
+      const amtCell = row.find((c: any) => typeof c === "number" || (typeof c === "string" && parseFloat(c.replace(/\s/g, "").replace(",", ".")) > 0));
+      if (amtCell !== undefined) closingBalance = Math.abs(parseFloat(String(amtCell).replace(/\s/g, "").replace(",", ".")));
+    }
+  }
 
   // 2. Parse data rows after header row
   for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -175,15 +193,29 @@ export function parseBankExcel(buffer: Buffer): ParsedTransaction[] {
     const counterpartyInnVal = colIndices.inn !== -1 ? row[colIndices.inn] : undefined;
     const counterpartyInn = counterpartyInnVal ? String(counterpartyInnVal).trim().replace(/[^\d]/g, "") : undefined;
 
+    let finalCounterpartyHint = counterpartyHint || undefined;
+    let finalCounterpartyInn = counterpartyInn || undefined;
+
+    // Smart extraction for Transit/Exchange/Treasury
+    // Look for INN/СТИР in description: e.g. "ИНН: 200981397(Министерство иностранных дел РУз)"
+    const innRegex = /(?:ИНН|СТИР|INN)\s*:?\s*(\d{9,14})\b(?:\s*\(([^)]+)\))?/i;
+    const match = description.match(innRegex);
+    if (match) {
+      finalCounterpartyInn = match[1];
+      if (match[2]) {
+        finalCounterpartyHint = match[2].trim();
+      }
+    }
+
     transactions.push({
       date,
       amount,
       direction,
       description,
-      counterpartyHint: counterpartyHint || undefined,
-      counterpartyInn: counterpartyInn || undefined,
+      counterpartyHint: finalCounterpartyHint,
+      counterpartyInn: finalCounterpartyInn,
     });
   }
 
-  return transactions;
+  return { transactions, openingBalance, closingBalance };
 }

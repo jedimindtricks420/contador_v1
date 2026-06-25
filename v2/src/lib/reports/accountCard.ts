@@ -28,7 +28,10 @@ export async function calculateAccountCard(
     throw new Error("Счёт не найден");
   }
 
-  const isAssetOrExpense = ["ASSET", "EXPENSE"].includes(account.type);
+  // Debit-normal: ASSET, CONTRA_LIABILITY, ACTIVE_PASSIVE, TRANSIT, OFF_BALANCE
+  // Credit-normal: LIABILITY, CONTRA_ASSET only
+  // Matches calcBalance() in osv.ts — "EXPENSE" type does not exist in the schema.
+  const isDebitNormal = !["LIABILITY", "CONTRA_ASSET"].includes(account.type);
 
   // 1. Calculate opening balance (date < from)
   const openingEntries = await prisma.journalEntry.findMany({
@@ -42,7 +45,7 @@ export async function calculateAccountCard(
   const totalOpCr = openingEntries.reduce((sum, e) => sum.plus(new Decimal(e.credit.toString())), new Decimal(0));
 
   let openingBalance = new Decimal(0);
-  if (isAssetOrExpense) {
+  if (isDebitNormal) {
     openingBalance = totalOpDb.minus(totalOpCr);
   } else {
     openingBalance = totalOpCr.minus(totalOpDb);
@@ -75,7 +78,7 @@ export async function calculateAccountCard(
     const dbVal = new Decimal(entry.debit.toString());
     const crVal = new Decimal(entry.credit.toString());
 
-    if (isAssetOrExpense) {
+    if (isDebitNormal) {
       currentBalance = currentBalance.plus(dbVal).minus(crVal);
     } else {
       currentBalance = currentBalance.plus(crVal).minus(dbVal);

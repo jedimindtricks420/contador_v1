@@ -15,6 +15,9 @@ export async function POST(
     if (!period) {
       return NextResponse.json({ error: "Период не найден" }, { status: 404 });
     }
+    if (period.status === "CLOSED") {
+      return NextResponse.json({ error: "Период уже закрыт. Повторное выполнение шагов невозможно." }, { status: 400 });
+    }
 
     const stepNum = parseInt(stepNumber);
     const body = await req.json();
@@ -35,6 +38,154 @@ export async function POST(
         }
       });
     } else if (stepNum === 6) {
+      // Execute the Soliq reconciliation if payload is provided
+      if (body.parsedPayload) {
+        const { postDocument } = await import("@/lib/posting/postingEngine");
+        
+        // Prevent double execution
+        const existingSoliqDoc = await prisma.document.findFirst({
+          where: { periodId, type: { code: "SOLIQ_IMPORT" } }
+        });
+        
+        if (existingSoliqDoc) {
+          return NextResponse.json({ error: "Сверка Soliq уже была выполнена для этого периода. Отмените предыдущую загрузку, если хотите загрузить новый файл." }, { status: 400 });
+        }
+        
+        let soliqDocType = await prisma.documentType.findUnique({
+          where: { code: "SOLIQ_IMPORT" }
+        });
+        if (!soliqDocType) {
+          soliqDocType = await prisma.documentType.create({
+            data: {
+              code: "SOLIQ_IMPORT",
+              name: "Импорт отчёта Soliq",
+              postingTemplate: {},
+              mode: "MANUAL_ONLY"
+            }
+          });
+        }
+        
+        const docTypes = await prisma.documentType.findMany();
+        const getType = (code: string) => docTypes.find(t => t.code === code);
+        
+        const parsed = body.parsedPayload;
+        
+        // Wrap everything in a massive transaction
+        await prisma.$transaction(async (tx) => {
+          // 1. Create the main SOLIQ_IMPORT document
+          await tx.document.create({
+            data: {
+              orgId,
+              periodId,
+              typeId: soliqDocType!.id,
+              date: new Date(period.year, period.month, 0),
+              status: "POSTED",
+              payload: {
+                taxSummary: parsed.taxSummary,
+                expenses: parsed.expenses?.length || 0,
+                revenues: parsed.revenues?.length || 0,
+                totalEsfItems: parsed.esfItems?.length || 0
+              } as any
+            }
+          });
+          
+          // 2. Process each ESF item
+          for (const esf of parsed.esfItems) {
+            const grossAmount = esf.amount + esf.vatAmount;
+            
+            if (esf.matchStatus === "MATCHED") {
+              let docTypeCode = "INVOICE_CONFIRMED_PREPAID";
+              let payload: any = {
+                amount: grossAmount,
+                vatAmount: esf.vatAmount,
+                counterpartyInn: esf.inn,
+                counterpartyHint: esf.counterpartyName
+              };
+              
+              if (esf.direction === "REVENUE") {
+                if (esf.matchedAccountCode === "6310" && (grossAmount - esf.matchedAmount > 0) && (grossAmount - esf.matchedAmount < grossAmount * 0.15)) {
+                  docTypeCode = "MARKETPLACE_REVENUE";
+                  payload = {
+                    netAmount: esf.matchedAmount,
+                    commissionAmount: parseFloat((grossAmount - esf.matchedAmount).toFixed(2)),
+                    amount: grossAmount,
+                    vatAmount: esf.vatAmount,
+                    counterpartyInn: esf.inn,
+                    counterpartyHint: esf.counterpartyName
+                  };
+                } else {
+                  docTypeCode = "INVOICE_CONFIRMED_PREPAID";
+                }
+              } else {
+                docTypeCode = "GOODS_RECEIVED_PREPAID";
+              }
+              
+              const type = getType(docTypeCode);
+              if (!type) throw new Error(`Document type ${docTypeCode} not found`);
+              
+              const doc = await tx.document.create({
+                data: {
+                  orgId,
+                  periodId,
+                  typeId: type.id,
+                  date: new Date(esf.date),
+                  status: "POSTED",
+                  payload: payload as any
+                }
+              });
+              
+              await postDocument(doc.id, tx, "system");
+              
+              // Close the open item — verify it belongs to this org before updating (IDOR prevention)
+              const openItem = await tx.openItem.findFirst({
+                where: { id: esf.matchedOpenItemId, orgId }
+              });
+              if (!openItem) {
+                throw new Error(`Open item ${esf.matchedOpenItemId} not found for this organization`);
+              }
+              await tx.openItem.update({
+                where: { id: esf.matchedOpenItemId },
+                data: {
+                  status: "CLOSED",
+                  closingDocumentId: doc.id,
+                  dateClosed: new Date(esf.date)
+                }
+              });
+            } else if (esf.matchStatus === "UNMATCHED") {
+              // Postpaid case
+              let docTypeCode = "INVOICE_CONFIRMED";
+              if (esf.direction === "EXPENSE") {
+                docTypeCode = "GOODS_RECEIVED";
+              }
+              
+              const type = getType(docTypeCode);
+              if (!type) throw new Error(`Document type ${docTypeCode} not found`);
+              
+              const doc = await tx.document.create({
+                data: {
+                  orgId,
+                  periodId,
+                  typeId: type.id,
+                  date: new Date(esf.date),
+                  status: "POSTED",
+                  payload: {
+                    amount: grossAmount,
+                    vatAmount: esf.vatAmount,
+                    counterpartyInn: esf.inn,
+                    counterpartyHint: esf.counterpartyName
+                  } as any
+                }
+              });
+              
+              await postDocument(doc.id, tx, "system");
+            }
+          }
+        }, {
+          maxWait: 5000,
+          timeout: 20000
+        });
+      }
+
       await saveClosingState(periodId, {
         soliqMatched: {
           matched: parseInt(body.matched) || 0,

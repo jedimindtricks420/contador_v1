@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
-import { ensureBaseData } from "@/lib/ensureBaseData";
+
 import Decimal from "decimal.js";
 
 export async function GET() {
   try {
-    await ensureBaseData();
+
     const orgId = await getActiveOrgId();
     const accounts = await prisma.bankAccount.findMany({
       where: { orgId },
@@ -21,7 +21,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureBaseData();
+
     const orgId = await getActiveOrgId();
     const { name, bankName, accountNumber, lastBalance, currency } = await req.json();
 

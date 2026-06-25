@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -146,7 +146,7 @@
 <body class="antialiased">
     <div id="root"></div>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react" data-plugins="transform-class-properties,proposal-optional-chaining,proposal-nullish-coalescing-operator">
         const { useState, useEffect, useCallback } = React;
 
         // ─── SVG Inline Icons lookup ──────────────────────────────────────────
@@ -384,27 +384,17 @@
 
         // ─── Main App Component ───────────────────────────────────────────────
         const App = () => {
-            const [tab, setTab] = useState('dashboard');
-            const [stats, setStats] = useState({ users: 0, organizations: 0, total_payments_usd: 0, ai_transactions: 0, avg_latency_ms: 0 });
-            const [users, setUsers] = useState([]);
-            const [payments, setPayments] = useState([]);
-            const [vouchers, setVouchers] = useState([]);
-            const [usage, setUsage] = useState([]);
-            const [funnel, setFunnel] = useState([]);
-            const [payments_log, setPaymentsLog] = useState([]);
+            const [tab, setTab] = useState('v2_dashboard');
             const [password, setPassword] = useState(localStorage.getItem('admin_pass') || '');
             const [config, setConfig] = useState(null);
             const [isAuthed, setIsAuthed] = useState(false);
             const [loading, setLoading] = useState(false);
-            const [search, setSearch] = useState('');
-            const [showAddUser, setShowAddUser] = useState(false);
-            const [newUser, setNewUser] = useState({ email: '', password: '', name: '', orgName: '' });
-            const [editUser, setEditUser] = useState(null);
+            const [loginLoading, setLoginLoading] = useState(false);
+            const [loginError, setLoginError] = useState('');
             const [notification, setNotification] = useState(null);
 
             // Modals states
             const [confirmState, setConfirmState] = useState({ show: false, title: '', message: '', onConfirm: null });
-            const [upgradeState, setUpgradeState] = useState({ show: false, orgId: '', orgName: '' });
 
             // V2 state
             const [v2Stats, setV2Stats] = useState({ users: 0, organizations: 0, pro_count: 0, free_count: 0, tx_by_status: {} });
@@ -433,6 +423,37 @@
             const [v2Rules, setV2Rules] = useState([]);
             const [v2RulesOrgId, setV2RulesOrgId] = useState('');
             const [v2RulesOrgName, setV2RulesOrgName] = useState('');
+            // V2 Edit user name modal
+            const [v2EditUserName, setV2EditUserName] = useState(null);
+            // V2 Add user to org modal
+            const [v2AddToOrgState, setV2AddToOrgState] = useState(null);
+            const [v2AddToOrgSearch, setV2AddToOrgSearch] = useState('');
+            const [v2AddToOrgRole, setV2AddToOrgRole] = useState('ACCOUNTANT');
+            // V2 Create org modal
+            const [v2ShowCreateOrg, setV2ShowCreateOrg] = useState(false);
+            const [v2NewOrg, setV2NewOrg] = useState({ name: '', inn: '', taxRegime: 'TURNOVER_TAX', isVatPayer: false });
+            // V2 Add member to org modal
+            const [v2AddMemberState, setV2AddMemberState] = useState(null);
+            const [v2AddMemberEmail, setV2AddMemberEmail] = useState('');
+            const [v2AddMemberRole, setV2AddMemberRole] = useState('ACCOUNTANT');
+            // V2 Change member role modal
+            const [v2EditMemberRole, setV2EditMemberRole] = useState(null);
+            // V2 Bank account modals
+            const [v2ShowAddBankAccount, setV2ShowAddBankAccount] = useState(false);
+            const [v2NewBankAccount, setV2NewBankAccount] = useState({ name: '', currency: 'UZS', bankName: '', accountNumber: '' });
+            const [v2EditBankAccountData, setV2EditBankAccountData] = useState(null);
+            // V2 Create period modal
+            const [v2ShowCreatePeriod, setV2ShowCreatePeriod] = useState(false);
+            const [v2NewPeriod, setV2NewPeriod] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1, mode: 'ACTIVE' });
+            // V2 Counterparties
+            const [v2Counterparties, setV2Counterparties] = useState([]);
+            // V2 Billing
+            const [v2BillingPayments, setV2BillingPayments] = useState([]);
+            const [v2BillingPaymentsTotal, setV2BillingPaymentsTotal] = useState(0);
+            const [v2BillingVouchers, setV2BillingVouchers] = useState([]);
+            const [v2NewVoucher, setV2NewVoucher] = useState({ count: 10, daysGranted: 365 });
+            const [v2ApplyVoucherCode, setV2ApplyVoucherCode] = useState('');
+            const [v2ApplyVoucherOrgId, setV2ApplyVoucherOrgId] = useState('');
 
             const notify = (msg, type = 'success') => {
                 setNotification({ msg, type });
@@ -477,40 +498,16 @@
             };
 
             const loadDashboard = async () => {
-                const data = await apiFetch('/api/dashboard');
-                if (data) { 
-                    setStats(data); 
-                    setIsAuthed(true); 
+                setLoginLoading(true);
+                setLoginError('');
+                const data = await apiFetch('/api/v2/dashboard');
+                setLoginLoading(false);
+                if (data) {
+                    setV2Stats(data);
+                    setIsAuthed(true);
+                } else {
+                    setLoginError('Неверный пароль или ошибка соединения');
                 }
-            };
-
-            const loadUsers = async () => {
-                const data = await apiFetch(`/api/users?search=${search}`);
-                if (data) setUsers(data);
-            };
-
-            const loadBilling = async () => {
-                const [payData, vData] = await Promise.all([
-                    apiFetch('/api/payments'),
-                    apiFetch('/api/vouchers')
-                ]);
-                if (payData) setPayments(payData);
-                if (vData) setVouchers(vData);
-            };
-
-            const loadFunnel = async () => {
-                const data = await apiFetch('/api/admin/analytics/funnel');
-                if (data) setFunnel(data);
-            };
-
-            const loadAI = async () => {
-                const data = await apiFetch('/api/ai-usage');
-                if (data) setUsage(data);
-            };
-
-            const loadPaymentsLog = async () => {
-                const data = await apiFetch('/api/payments');
-                if (data) setPaymentsLog(data);
             };
 
             const loadSettings = async () => {
@@ -565,6 +562,21 @@
                 if (data && Array.isArray(data)) setV2Rules(data);
             };
 
+            const loadV2Counterparties = async (orgId) => {
+                const data = await apiFetch(`/api/v2/orgs/${orgId}/counterparties`);
+                if (data && Array.isArray(data)) setV2Counterparties(data);
+            };
+
+            const loadV2BillingPayments = async () => {
+                const data = await apiFetch('/api/v2/payments');
+                if (data) { setV2BillingPayments(data.payments || []); setV2BillingPaymentsTotal(data.total || 0); }
+            };
+
+            const loadV2BillingVouchers = async () => {
+                const data = await apiFetch('/api/v2/vouchers');
+                if (data && Array.isArray(data)) setV2BillingVouchers(data);
+            };
+
             const saveSettings = async () => {
                 setLoading(true);
                 const r = await apiFetch('/api/payment-settings', 'POST', config);
@@ -574,20 +586,21 @@
 
             useEffect(() => {
                 if (isAuthed) {
-                    if (tab === 'dashboard') { loadDashboard(); loadFunnel(); }
-                    if (tab === 'users') loadUsers();
-                    if (tab === 'billing') loadBilling();
-                    if (tab === 'payments_log') loadPaymentsLog();
-                    if (tab === 'ai') loadAI();
-                    if (tab === 'settings') loadSettings();
                     if (tab === 'v2_dashboard') { loadV2Dashboard(); loadV2ExtraStats(); loadV2ExpiringPro(); }
                     if (tab === 'v2_users') loadV2Users();
                     if (tab === 'v2_orgs') loadV2Orgs(1, '', '', '');
                     if (tab === 'v2_audit') loadV2AuditLogs(1, '');
+                    if (tab === 'v2_billing') { loadV2BillingPayments(); loadV2BillingVouchers(); loadSettings(); }
                 }
-            }, [tab, isAuthed, search, v2Search]);
+            }, [tab, isAuthed, v2Search]);
+
+            useEffect(() => {
+                const saved = localStorage.getItem('admin_pass');
+                if (saved) loadDashboard();
+            }, []);
 
             const login = () => {
+                if (!password.trim()) { setLoginError('Введите пароль'); return; }
                 localStorage.setItem('admin_pass', password);
                 loadDashboard();
             };
@@ -610,17 +623,20 @@
                                     <input
                                         type="password"
                                         placeholder="Введите пароль"
-                                        className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold"
+                                        className={`w-full px-4 py-3.5 rounded-xl border focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-sm font-bold ${loginError ? 'border-rose-400 bg-rose-50' : 'border-slate-200'}`}
                                         value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        onKeyDown={(e) => e.key === 'Enter' && login()}
+                                        onChange={(e) => { setPassword(e.target.value); setLoginError(''); }}
+                                        onKeyDown={(e) => e.key === 'Enter' && !loginLoading && login()}
+                                        disabled={loginLoading}
                                     />
+                                    {loginError && <p className="text-xs text-rose-500 font-semibold pl-1 mt-1">{loginError}</p>}
                                 </div>
                                 <button
                                     onClick={login}
-                                    className="w-full py-4 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-[0.98] text-sm"
+                                    disabled={loginLoading}
+                                    className="w-full py-4 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-[0.98] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    Войти в систему
+                                    {loginLoading ? 'Проверяем...' : 'Войти в систему'}
                                 </button>
                             </div>
                         </div>
@@ -648,36 +664,11 @@
                             </h1>
                         </div>
                         <nav className="flex-1 space-y-1 overflow-y-auto">
-                            <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest px-4 pb-1 pt-1">V1 — Legacy</p>
-                            {[
-                                { id: 'dashboard', label: 'Дашборд', icon: 'Layout' },
-                                { id: 'users', label: 'Клиенты V1', icon: 'Users' },
-                                { id: 'billing', label: 'Биллинг и Ваучеры', icon: 'CreditCard' },
-                                { id: 'payments_log', label: 'Журнал платежей', icon: 'History' },
-                                { id: 'ai', label: 'Мониторинг AI', icon: 'Zap' },
-                                { id: 'settings', label: 'Настройки шлюзов', icon: 'Settings' }
-                            ].map(item => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => setTab(item.id)}
-                                    className={`w-full flex items-center space-x-3.5 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all ${
-                                        tab === item.id
-                                            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
-                                            : 'text-slate-600 hover:bg-slate-50'
-                                    }`}
-                                >
-                                    <LucideIcon name={item.icon} size={18} />
-                                    <span>{item.label}</span>
-                                </button>
-                            ))}
-                            <div className="pt-3 pb-1">
-                                <div className="h-px bg-slate-100 mx-2 mb-3"></div>
-                                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest px-4 pb-1">V2 — Новая версия</p>
-                            </div>
                             {[
                                 { id: 'v2_dashboard', label: 'V2 Обзор', icon: 'Layout' },
                                 { id: 'v2_users', label: 'V2 Клиенты', icon: 'Users' },
                                 { id: 'v2_orgs', label: 'V2 Организации', icon: 'Building' },
+                                { id: 'v2_billing', label: 'V2 Биллинг', icon: 'CreditCard' },
                                 { id: 'v2_audit', label: 'V2 Аудит', icon: 'History' },
                                 { id: 'v2_rules', label: 'V2 Правила', icon: 'Settings' }
                             ].map(item => (
@@ -707,680 +698,11 @@
                     {/* Main Content */}
                     <div className="flex-1 overflow-auto bg-slate-50/40">
                         <div className="p-10 max-w-7xl mx-auto space-y-8">
-                            {tab === 'dashboard' && (
-                                <div className="space-y-8 fade-in">
-                                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Обзор системы</h2>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                                        <StatCard label="Пользователи" value={stats.users} />
-                                        <StatCard label="Организации" value={stats.organizations} />
-                                        <StatCard label="Выручка (USD)" value={`$${Number(stats.total_payments_usd).toFixed(0)}`} accent />
-                                        <StatCard label="ИИ Транзакций" value={stats.ai_transactions} />
-                                        <StatCard 
-                                            label="AI Latency" 
-                                            value={`${(stats.avg_latency_ms / 1000).toFixed(1)}s`} 
-                                            sub={stats.avg_latency_ms < 10000 ? 'Стабильно' : stats.avg_latency_ms < 20000 ? 'Замедление' : 'Критично'} 
-                                        />
-                                    </div>
 
-                                    {/* Funnel Section */}
-                                    <div className="premium-card p-8 space-y-6">
-                                        <div className="flex justify-between items-center">
-                                            <div>
-                                                <h3 className="text-lg font-bold text-slate-800">Воронка конверсии</h3>
-                                                <p className="text-xs text-slate-400 mt-0.5">Аналитика прохождения по этапам в реальном времени</p>
-                                            </div>
-                                            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full uppercase tracking-wider">Analytics v3.0</span>
-                                        </div>
-                                        
-                                        <div className="flex items-center space-x-2 h-56 bg-slate-50/50 p-6 rounded-2xl border border-slate-100/50">
-                                            {funnel.map((item, i) => {
-                                                const next = funnel[i + 1];
-                                                const cr = next ? ((next.count / item.count) * 100 || 0).toFixed(1) : null;
-                                                const height = funnel[0]?.count > 0 ? (item.count / funnel[0].count) * 100 : 0;
-                                                return (
-                                                    <React.Fragment key={i}>
-                                                        <div className="flex-1 h-full flex flex-col justify-end group cursor-help relative">
-                                                            <div className="flex flex-col items-center justify-end h-full">
-                                                                <div 
-                                                                    className="bg-gradient-to-t from-indigo-500 to-indigo-400 hover:from-indigo-600 hover:to-indigo-500 rounded-2xl w-full transition-all duration-500 shadow-sm group-hover:shadow-lg flex items-start justify-center pt-2 relative overflow-hidden" 
-                                                                    style={{ height: `${Math.max(height, 8)}%` }}
-                                                                >
-                                                                    <span className="text-[9px] font-black text-white/95 bg-black/20 px-2 py-0.5 rounded-full select-none">{Math.round(height)}%</span>
-                                                                </div>
-                                                                <div className="mt-4 text-center">
-                                                                    <p className="text-[9px] font-bold text-slate-400 uppercase truncate px-1 tracking-wider">{item.label}</p>
-                                                                    <p className="text-2xl font-black text-slate-800 mt-1">{item.count.toLocaleString()}</p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        {cr && (
-                                                            <div className="flex flex-col items-center justify-center px-2 text-slate-300">
-                                                                <div className="w-8 h-8 rounded-full bg-white border border-slate-100 flex items-center justify-center shadow-sm">
-                                                                    <LucideIcon name="ArrowRight" size={14} className="text-indigo-500 animate-pulse" />
-                                                                </div>
-                                                                <span className="text-[11px] font-extrabold mt-2 text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">{cr}%</span>
-                                                            </div>
-                                                        )}
-                                                    </React.Fragment>
-                                                )
-                                            })}
-                                        </div>
-                                    </div>
 
-                                    <div className="bg-indigo-50/30 border border-indigo-100/50 p-6 rounded-2xl flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-indigo-950 font-bold text-sm">Справочная информация</h3>
-                                            <p className="text-indigo-700/70 text-xs mt-1">Все финансовые данные и ИИ транзакции обновляются мгновенно. Расчеты стоимости производятся на основе тарифов OpenAI API.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
-                            {tab === 'users' && (
-                                <div className="space-y-6 fade-in">
-                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                        <div>
-                                            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Клиенты</h2>
-                                            <p className="text-xs text-slate-400 mt-0.5">Управление организациями и тарифами пользователей</p>
-                                        </div>
-                                        <div className="flex items-center space-x-3 w-full sm:w-auto">
-                                            <button
-                                                onClick={() => setShowAddUser(true)}
-                                                className="flex items-center space-x-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all text-xs font-bold shrink-0"
-                                            >
-                                                <LucideIcon name="Plus" size={14} />
-                                                <span>Добавить клиента</span>
-                                            </button>
-                                            <div className="relative w-full sm:w-72">
-                                                <input
-                                                    type="text"
-                                                    placeholder="Поиск по Email..."
-                                                    className="px-4 py-2.5 border border-slate-200 rounded-xl w-full focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm transition-all pl-10 text-xs"
-                                                    value={search}
-                                                    onChange={(e) => setSearch(e.target.value)}
-                                                />
-                                                <LucideIcon name="Search" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    <div className="premium-card overflow-hidden">
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left">
-                                                <thead className="bg-slate-50 border-b border-slate-100">
-                                                    <tr>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Пользователь</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Тариф</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Действия</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {users.flatMap(u => (u.organizations || []).map(o => ({
-                                                        ...o,
-                                                        userEmail: u.email,
-                                                        userCreatedAt: u.createdAt,
-                                                        userId: u.id,
-                                                        lastPaymentDate: o.lastPayment?.created_at
-                                                    }))).map(item => {
-                                                        const now = new Date();
-                                                        const validUntil = item.subscription?.valid_until ? new Date(item.subscription.valid_until) : null;
-                                                        const plan = item.subscription?.plan || 'FREE';
 
-                                                        let statusText = 'Бессрочно';
-                                                        let statusColor = 'text-slate-400 bg-slate-100/60';
-
-                                                        if (plan === 'PRO') {
-                                                            if (validUntil && validUntil > now) {
-                                                                const diff = Math.ceil((validUntil - now) / (1000 * 60 * 60 * 24));
-                                                                statusText = `Активен (${diff} дн.)`;
-                                                                statusColor = 'text-emerald-700 bg-emerald-50 border border-emerald-100';
-                                                            } else {
-                                                                statusText = 'Истек';
-                                                                statusColor = 'text-rose-700 bg-rose-50 border border-rose-100';
-                                                            }
-                                                        } else if (plan === 'MYAPI') {
-                                                            statusText = 'Manual API';
-                                                            statusColor = 'text-blue-700 bg-blue-50 border border-blue-100';
-                                                        }
-
-                                                        return (
-                                                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                                                <td className="px-6 py-4.5 align-middle">
-                                                                    <div className="flex flex-col">
-                                                                        <span className="font-mono text-xs font-bold text-slate-900 truncate max-w-[180px]" title={item.userEmail}>{item.userEmail}</span>
-                                                                        <span className="text-[10px] text-slate-400 mt-1 whitespace-nowrap">Рег: {new Date(item.userCreatedAt).toLocaleDateString()}</span>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-4.5 align-middle">
-                                                                    <div className="flex flex-col">
-                                                                        <span className="font-bold text-sm text-slate-800 truncate max-w-[180px]">{item.name}</span>
-                                                                        <span className="text-[10px] text-slate-400 mt-0.5">ИНН: {item.inn || '—'}</span>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-4.5 align-middle">
-                                                                    <div className="flex flex-col space-y-1.5 min-w-[110px]">
-                                                                        <select
-                                                                            className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all outline-none cursor-pointer border ${
-                                                                                plan === 'PRO' 
-                                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                                                                                    : plan === 'MYAPI' 
-                                                                                        ? 'bg-white text-blue-600 border-blue-200' 
-                                                                                        : 'bg-white text-slate-500 border-slate-200'
-                                                                            }`}
-                                                                            value={plan}
-                                                                            onChange={async (e) => {
-                                                                                const newPlan = e.target.value;
-                                                                                await apiFetch(`/api/users/${item.id}/plan`, 'PATCH', { plan: newPlan });
-                                                                                loadUsers();
-                                                                                notify(`Тариф изменен на ${newPlan}`);
-                                                                            }}
-                                                                        >
-                                                                            <option value="FREE">FREE</option>
-                                                                            <option value="PRO">PRO</option>
-                                                                            <option value="MYAPI">MYAPI</option>
-                                                                        </select>
-                                                                        {item.lastPaymentDate && (
-                                                                            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider text-center block">
-                                                                                {new Date(item.lastPaymentDate).toLocaleDateString()}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-4.5 align-middle">
-                                                                    <div className="flex flex-col space-y-1">
-                                                                        <span className={`inline-flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${statusColor}`}>
-                                                                            {statusText}
-                                                                        </span>
-                                                                        {validUntil && plan === 'PRO' && (
-                                                                            <span className="text-[9px] text-slate-400 text-center font-semibold mt-0.5">{validUntil.toLocaleDateString()}</span>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-4.5 align-middle">
-                                                                    <div className="flex flex-col gap-1.5 min-w-[200px] items-end">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setUpgradeState({ show: true, orgId: item.id, orgName: item.name });
-                                                                            }}
-                                                                            className="w-full flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all text-[10px] font-extrabold uppercase tracking-wider shadow-sm shadow-indigo-100"
-                                                                        >
-                                                                            <LucideIcon name="Zap" size={11} />
-                                                                            <span>Продлить PRO</span>
-                                                                        </button>
-
-                                                                        <div className="grid grid-cols-2 gap-1.5 w-full">
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    triggerConfirm(
-                                                                                        'Сбросить лимит ИИ',
-                                                                                        `Вы действительно хотите сбросить использованный лимит ИИ ресурсов для организации "${item.name}"?`,
-                                                                                        async () => {
-                                                                                            await apiFetch(`/api/users/${item.id}/reset-ai`, 'POST');
-                                                                                            notify('Лимит ИИ успешно сброшен');
-                                                                                        }
-                                                                                    );
-                                                                                }}
-                                                                                className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
-                                                                            >
-                                                                                <LucideIcon name="History" size={10} />
-                                                                                <span>Лимит ИИ</span>
-                                                                            </button>
-
-                                                                            <button
-                                                                                onClick={() => setEditUser({ id: item.userId, email: item.userEmail })}
-                                                                                className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
-                                                                            >
-                                                                                <LucideIcon name="Edit" size={10} />
-                                                                                <span>Доступ</span>
-                                                                            </button>
-                                                                        </div>
-
-                                                                        <div className="grid grid-cols-2 gap-1.5 w-full">
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    triggerConfirm(
-                                                                                        'УДАЛИТЬ ПОЛЬЗОВАТЕЛЯ',
-                                                                                        `ВНИМАНИЕ! Вы хотите безвозвратно удалить пользователя "${item.userEmail}" и ВСЕ его связанные организации? Данное действие невозможно отменить!`,
-                                                                                        async () => {
-                                                                                            await apiFetch(`/api/users/${item.userId}`, 'DELETE');
-                                                                                            loadUsers();
-                                                                                            notify('Пользователь и его орг. удалены', 'error');
-                                                                                        }
-                                                                                    );
-                                                                                }}
-                                                                                className="flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-rose-600 border border-rose-100 rounded-lg hover:bg-rose-50 transition-all text-[9px] font-bold uppercase"
-                                                                            >
-                                                                                <LucideIcon name="UserX" size={10} />
-                                                                                <span>Удалить</span>
-                                                                            </button>
-
-                                                                            <button
-                                                                                onClick={() => {
-                                                                                    triggerConfirm(
-                                                                                        'УДАЛИТЬ ОРГАНИЗАЦИЮ',
-                                                                                        `ВНИМАНИЕ! Вы хотите удалить организацию "${item.name}"? Все сохраненные данные организации будут полностью стерты!`,
-                                                                                        async () => {
-                                                                                            await apiFetch(`/api/organizations/${item.id}`, 'DELETE');
-                                                                                            loadUsers();
-                                                                                            notify('Организация удалена', 'error');
-                                                                                        }
-                                                                                    );
-                                                                                }}
-                                                                                className="flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-rose-400 border border-slate-200 rounded-lg hover:text-rose-600 hover:border-rose-200 transition-all text-[9px] font-bold uppercase"
-                                                                            >
-                                                                                <LucideIcon name="Trash2" size={10} />
-                                                                                <span>Удалить орг.</span>
-                                                                            </button>
-                                                                        </div>
-
-                                                                        {plan === 'MYAPI' && (
-                                                                            <div className="w-full flex items-center space-x-1.5 bg-slate-50/50 px-2 py-1 rounded-lg border border-slate-100 h-[30px] mt-0.5">
-                                                                                <input
-                                                                                    type="password"
-                                                                                    placeholder="Введите API KEY"
-                                                                                    defaultValue={item.subscription?.custom_api_key || ''}
-                                                                                    className="text-[10px] font-mono border-none bg-transparent w-full outline-none focus:ring-0 px-0 py-0"
-                                                                                    onBlur={async (e) => {
-                                                                                        if (e.target.value !== item.subscription?.custom_api_key) {
-                                                                                            await apiFetch(`/api/users/${item.id}/api-key`, 'PATCH', { apiKey: e.target.value });
-                                                                                            loadUsers();
-                                                                                            notify('Custom API Key успешно сохранен');
-                                                                                        }
-                                                                                    }}
-                                                                                />
-                                                                                <span className="text-[8px] font-black text-indigo-500 bg-indigo-50 px-1 rounded uppercase select-none">KEY</span>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        {users.length === 0 && (
-                                            <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
-                                                Клиенты не найдены
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {tab === 'billing' && (
-                                <div className="space-y-10 fade-in">
-                                    {/* Voucher Generator */}
-                                    <div className="space-y-4">
-                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Генерация ваучеров</h2>
-                                        <div className="premium-card p-8 flex flex-col md:flex-row items-end gap-6">
-                                            <div className="w-full md:w-36">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Количество</label>
-                                                <input id="v_count" type="number" defaultValue="5" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2" />
-                                            </div>
-                                            <div className="w-full md:w-36">
-                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Срок (дней)</label>
-                                                <input id="v_days" type="number" defaultValue="30" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2" />
-                                            </div>
-                                            <button
-                                                onClick={async () => {
-                                                    const count = document.getElementById('v_count').value;
-                                                    const days = document.getElementById('v_days').value;
-                                                    await apiFetch('/api/vouchers/generate', 'POST', { count, days });
-                                                    loadBilling();
-                                                    notify(`Пакет из ${count} ваучеров сгенерирован`);
-                                                }}
-                                                className="w-full md:w-auto px-8 py-3.5 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95 text-sm"
-                                            >
-                                                Создать пакет ваучеров
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Voucher List */}
-                                    <div className="space-y-4">
-                                        <h3 className="text-lg font-bold text-slate-500">Последние сгенерированные ваучеры</h3>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                            {vouchers.map(v => (
-                                                <div 
-                                                    key={v.id} 
-                                                    className={`p-5 rounded-2xl border transition-all text-center ${
-                                                        v.is_used 
-                                                            ? 'bg-slate-50 text-slate-300 border-slate-200' 
-                                                            : 'bg-white border-indigo-200/60 text-slate-800 shadow-sm hover:shadow-md border-dashed border-2'
-                                                    }`}
-                                                >
-                                                    <div className="text-md font-mono font-bold tracking-wide select-all">{v.code}</div>
-                                                    <div className="text-[10px] uppercase font-extrabold tracking-wider mt-2 text-slate-400">
-                                                        {v.days_granted} дней · {v.is_used ? 'Использован' : 'Активен'}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {vouchers.length === 0 && (
-                                            <div className="text-center text-slate-400 uppercase tracking-widest py-8 font-bold text-xs bg-white rounded-2xl border border-dashed">
-                                                Ваучеров пока нет
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Payments Table */}
-                                    <div className="space-y-4">
-                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">История оплат (Payme / Click)</h2>
-                                        <div className="premium-card overflow-hidden">
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left">
-                                                    <thead className="bg-slate-50 border-b border-slate-100">
-                                                        <tr>
-                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата</th>
-                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID Орг.</th>
-                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Шлюз</th>
-                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Сумма</th>
-                                                            <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                                                        {payments.map(p => (
-                                                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                                                                <td className="px-6 py-4 text-xs font-semibold text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
-                                                                <td className="px-6 py-4 text-xs font-mono text-slate-400">{p.organization_id.substring(0, 8)}...</td>
-                                                                <td className="px-6 py-4">
-                                                                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-slate-100 text-slate-600 rounded-full border border-slate-200/50 uppercase">
-                                                                        {p.provider}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-6 py-4 font-bold text-indigo-600">{Number(p.amount).toLocaleString()} UZS</td>
-                                                                <td className="px-6 py-4">
-                                                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                                                                        p.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-amber-50 text-amber-700 border border-amber-100'
-                                                                    }`}>{p.status}</span>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            {payments.length === 0 && (
-                                                <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
-                                                    Платежи отсутствуют
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {tab === 'payments_log' && (
-                                <div className="space-y-6 fade-in">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Журнал Транзакций</h2>
-                                            <p className="text-xs text-slate-400 mt-0.5">Полный список платежей всех организаций системы</p>
-                                        </div>
-                                        <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest bg-indigo-50 border border-indigo-100 px-3.5 py-1.5 rounded-full">
-                                            Audit Mode v3.0
-                                        </div>
-                                    </div>
-
-                                    <div className="premium-card overflow-hidden">
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left">
-                                                <thead className="bg-slate-50 border-b border-slate-100">
-                                                    <tr>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID Транзакции / Ваучера</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Сумма</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Провайдер</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {payments_log.map(p => (
-                                                        <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                                                            <td className="px-6 py-4 font-mono text-[10px] text-slate-400">{p.external_id || p.id.substring(0, 18)}</td>
-                                                            <td className="px-6 py-4 font-bold text-sm text-slate-800">{p.org_name}</td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="font-extrabold text-slate-900">{Number(p.amount).toLocaleString()} UZS</div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full inline-block border ${
-                                                                    p.provider === 'PAYME' ? 'bg-cyan-50 text-cyan-700 border-cyan-100' :
-                                                                    p.provider === 'CLICK' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                                                                    p.provider === 'VOUCHER' ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-100 text-slate-500 border-slate-200/50'
-                                                                }`}>{p.provider}</span>
-                                                            </td>
-                                                            <td className="px-6 py-4 text-xs text-slate-400 font-semibold">{new Date(p.created_at).toLocaleString()}</td>
-                                                            <td className="px-6 py-4">
-                                                                <span className={`text-[10px] font-black uppercase inline-flex items-center space-x-1.5 ${
-                                                                    p.status === 'SUCCESS' ? 'text-emerald-600' :
-                                                                    p.status === 'PENDING' ? 'text-amber-600' : 'text-rose-600'
-                                                                }`}>
-                                                                    <div className={`w-1.5 h-1.5 rounded-full ${
-                                                                        p.status === 'SUCCESS' ? 'bg-emerald-500' :
-                                                                        p.status === 'PENDING' ? 'bg-amber-500' : 'bg-rose-500'
-                                                                    }`}></div>
-                                                                    <span>{p.status}</span>
-                                                                </span>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        {payments_log.length === 0 && (
-                                            <div className="p-20 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
-                                                Транзакции не найдены
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {tab === 'ai' && (
-                                <div className="space-y-6 fade-in">
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Расход ИИ Ресурсов</h2>
-                                        <p className="text-xs text-slate-400 mt-0.5">Статистика затрат токенов по организациям</p>
-                                    </div>
-
-                                    <div className="premium-card overflow-hidden">
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-left">
-                                                <thead className="bg-slate-50 border-b border-slate-100">
-                                                    <tr>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Запросов</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Токены (Вход / Выход)</th>
-                                                        <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Затраты (USD)</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100 bg-white">
-                                                    {usage.map(u => (
-                                                        <tr key={u.organization_id} className="hover:bg-slate-50/50 transition-colors">
-                                                            <td className="px-6 py-5 font-bold text-sm text-slate-800">{u.org_name}</td>
-                                                            <td className="px-6 py-5 text-sm text-slate-600 font-bold">{u._count.id}</td>
-                                                            <td className="px-6 py-5 text-xs text-slate-500 font-mono font-semibold">
-                                                                {u._sum.tokens_input?.toLocaleString()} / {u._sum.tokens_output?.toLocaleString()}
-                                                            </td>
-                                                            <td className="px-6 py-5 font-black text-rose-600 text-right text-sm">${Number(u._sum.cost_usd).toFixed(4)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        {usage.length === 0 && (
-                                            <div className="p-20 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">
-                                                ИИ запросы отсутствуют
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {tab === 'settings' && config && (
-                                <div className="space-y-8 fade-in">
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Настройки шлюзов</h2>
-                                            <p className="text-xs text-slate-400 mt-0.5">Управление тарификацией и ключами интеграций</p>
-                                        </div>
-                                        <button 
-                                            onClick={saveSettings} 
-                                            disabled={loading} 
-                                            className="px-8 py-3.5 btn-premium rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg active:scale-95 text-sm disabled:opacity-50"
-                                        >
-                                            {loading ? 'Сохранение...' : 'Сохранить настройки'}
-                                        </button>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                        {/* Plan Pricing */}
-                                        <div className="premium-card p-8 space-y-6">
-                                            <div className="flex items-center space-x-3 mb-2">
-                                                <div className="w-10 h-10 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm">
-                                                    <LucideIcon name="Zap" size={20} />
-                                                </div>
-                                                <h3 className="text-lg font-bold text-slate-800">Тариф PRO</h3>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Стоимость (UZS / Год)</label>
-                                                    <input 
-                                                        type="number" 
-                                                        value={config.pro_price_yearly || 0} 
-                                                        onChange={e => setConfig({ ...config, pro_price_yearly: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-bold text-lg text-slate-800" 
-                                                    />
-                                                </div>
-                                                <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100/30">
-                                                    <p className="text-[10px] text-indigo-700 font-semibold leading-relaxed italic">
-                                                        Стоимость тарифа используется в личном кабинете клиентов, а также для автоматической генерации счетов в Payme и Click.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Payme */}
-                                        <div className="premium-card p-8 space-y-6">
-                                            <div className="flex items-center space-x-3 mb-2">
-                                                <div className="w-10 h-10 bg-cyan-50 rounded-2xl flex items-center justify-center text-cyan-600 shadow-sm">
-                                                    <LucideIcon name="CreditCard" size={20} />
-                                                </div>
-                                                <h3 className="text-lg font-bold text-slate-800">Payme Бизнес</h3>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Merchant ID</label>
-                                                    <input 
-                                                        type="text" 
-                                                        value={config.payme_merchant_id || ''} 
-                                                        onChange={e => setConfig({ ...config, payme_merchant_id: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Secret Key (Production)</label>
-                                                    <input 
-                                                        type="password" 
-                                                        value={config.payme_key || ''} 
-                                                        onChange={e => setConfig({ ...config, payme_key: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Secret Key (Test)</label>
-                                                    <input 
-                                                        type="password" 
-                                                        value={config.payme_test_key || ''} 
-                                                        onChange={e => setConfig({ ...config, payme_test_key: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Окружение</label>
-                                                    <select 
-                                                        value={config.payme_env} 
-                                                        onChange={e => setConfig({ ...config, payme_env: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-xs font-bold text-slate-700"
-                                                    >
-                                                        <option value="test">TEST MODE</option>
-                                                        <option value="prod">PRODUCTION</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Click */}
-                                        <div className="premium-card p-8 space-y-6">
-                                            <div className="flex items-center space-x-3 mb-2">
-                                                <div className="w-10 h-10 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 shadow-sm">
-                                                    <LucideIcon name="CreditCard" size={20} />
-                                                </div>
-                                                <h3 className="text-lg font-bold text-slate-800">Click Evolution</h3>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Merchant ID</label>
-                                                        <input 
-                                                            type="text" 
-                                                            value={config.click_merchant_id || ''} 
-                                                            onChange={e => setConfig({ ...config, click_merchant_id: e.target.value })} 
-                                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Service ID</label>
-                                                        <input 
-                                                            type="text" 
-                                                            value={config.click_service_id || ''} 
-                                                            onChange={e => setConfig({ ...config, click_service_id: e.target.value })} 
-                                                            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Secret Key</label>
-                                                    <input 
-                                                        type="password" 
-                                                        value={config.click_secret_key || ''} 
-                                                        onChange={e => setConfig({ ...config, click_secret_key: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none font-mono text-xs text-slate-700" 
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block pl-1">Окружение</label>
-                                                    <select 
-                                                        value={config.click_env} 
-                                                        onChange={e => setConfig({ ...config, click_env: e.target.value })} 
-                                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 outline-none text-xs font-bold text-slate-700"
-                                                    >
-                                                        <option value="test">TEST MODE</option>
-                                                        <option value="prod">PRODUCTION</option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-amber-50 border border-amber-100 p-6 rounded-2xl flex items-start space-x-4">
-                                        <LucideIcon name="AlertTriangle" className="text-amber-600 mt-0.5 shrink-0" size={20} />
-                                        <div>
-                                            <h3 className="text-amber-900 font-bold text-sm">Безопасность конфигураций</h3>
-                                            <p className="text-amber-700 text-xs mt-1 leading-relaxed">
-                                                Все секретные ключи платежных провайдеров хранятся в зашифрованном виде. Для защиты ваших данных они скрыты в интерфейсе. Если вы оставите поля пустыми, старые ключи останутся без изменений.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
                             {/* ── V2 Dashboard Tab ── */}
                             {tab === 'v2_dashboard' && (
@@ -1586,10 +908,18 @@
                                                             <td className="px-6 py-4 align-middle text-xs text-slate-400">—</td>
                                                             <td className="px-6 py-4 align-middle text-xs text-slate-400">—</td>
                                                             <td className="px-6 py-4 align-middle">
-                                                                <div className="flex gap-1.5 justify-end">
+                                                                <div className="flex flex-col gap-1.5 items-end">
+                                                                    <button onClick={() => setV2EditUserName({ id: u.id, name: u.name || '' })}
+                                                                        className="text-[9px] font-bold px-2 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all uppercase">
+                                                                        Имя
+                                                                    </button>
                                                                     <button onClick={() => setV2EditUser({ id: u.id, email: u.email })}
                                                                         className="text-[9px] font-bold px-2 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all uppercase">
                                                                         Пароль
+                                                                    </button>
+                                                                    <button onClick={() => { setV2AddToOrgState({ userId: u.id, userEmail: u.email }); setV2AddToOrgSearch(''); setV2AddToOrgRole('ACCOUNTANT'); }}
+                                                                        className="text-[9px] font-bold px-2 py-1.5 bg-white border border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-all uppercase">
+                                                                        + В орг.
                                                                     </button>
                                                                     <button onClick={() => triggerConfirm('Удалить пользователя', `Удалить "${u.email}"?`, async () => { await apiFetch(`/api/v2/users/${u.id}`, 'DELETE'); loadV2Users(); notify('Удалён', 'error'); })}
                                                                         className="text-[9px] font-bold px-2 py-1.5 bg-white border border-rose-100 text-rose-600 rounded-lg hover:bg-rose-50 transition-all uppercase">
@@ -1710,6 +1040,13 @@
                                                                         </button>
                                                                         <div className="grid grid-cols-2 gap-1.5 w-full">
                                                                             <button
+                                                                                onClick={() => setV2EditUserName({ id: item.userId, name: item.userName || '' })}
+                                                                                className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
+                                                                            >
+                                                                                <LucideIcon name="User" size={10} />
+                                                                                <span>Имя</span>
+                                                                            </button>
+                                                                            <button
                                                                                 onClick={() => setV2EditUser({ id: item.userId, email: item.userEmail })}
                                                                                 className="flex items-center justify-center space-x-1.5 px-2 py-1.5 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all text-[9px] font-bold uppercase"
                                                                             >
@@ -1734,6 +1071,13 @@
                                                                                 <span>Удалить</span>
                                                                             </button>
                                                                         </div>
+                                                                        <button
+                                                                            onClick={() => { setV2AddToOrgState({ userId: item.userId, userEmail: item.userEmail }); setV2AddToOrgSearch(''); setV2AddToOrgRole('ACCOUNTANT'); }}
+                                                                            className="w-full flex items-center justify-center space-x-1 px-2 py-1.5 bg-white text-emerald-600 border border-emerald-200 rounded-lg hover:bg-emerald-50 transition-all text-[9px] font-bold uppercase"
+                                                                        >
+                                                                            <LucideIcon name="Plus" size={10} />
+                                                                            <span>Добавить в орг.</span>
+                                                                        </button>
                                                                         <button
                                                                             onClick={() => {
                                                                                 triggerConfirm(
@@ -1883,6 +1227,11 @@
                                             <p className="text-xs text-slate-400 mt-0.5 ml-3.5">Всего: {v2OrgsTotal}</p>
                                         </div>
                                         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                                            <button onClick={() => { setV2NewOrg({ name: '', inn: '', taxRegime: 'TURNOVER_TAX', isVatPayer: false }); setV2ShowCreateOrg(true); }}
+                                                className="flex items-center space-x-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all shadow-sm shrink-0">
+                                                <LucideIcon name="Plus" size={14} />
+                                                <span>Создать орг.</span>
+                                            </button>
                                             <div className="relative">
                                                 <input type="text" placeholder="Поиск по назв. / ИНН..."
                                                     className="pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 outline-none w-56"
@@ -2015,10 +1364,10 @@
                                                 </div>
                                                 {/* Sub-tabs */}
                                                 <div className="flex border-b border-slate-100 px-6 shrink-0">
-                                                    {['info', 'members', 'accounts', 'periods', 'txstats'].map(t => (
-                                                        <button key={t} onClick={() => setV2OrgDetailTab(t)}
+                                                    {['info', 'members', 'accounts', 'periods', 'counterparties', 'txstats'].map(t => (
+                                                        <button key={t} onClick={() => { setV2OrgDetailTab(t); if (t === 'counterparties') loadV2Counterparties(v2OrgDetail.org.id); }}
                                                             className={`px-4 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all mr-1 ${v2OrgDetailTab === t ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-                                                            {t === 'info' ? 'Общее' : t === 'members' ? 'Участники' : t === 'accounts' ? 'Счета' : t === 'periods' ? 'Периоды' : 'Транзакции'}
+                                                            {t === 'info' ? 'Общее' : t === 'members' ? 'Участники' : t === 'accounts' ? 'Счета' : t === 'periods' ? 'Периоды' : t === 'counterparties' ? 'Контрагенты' : 'Транзакции'}
                                                         </button>
                                                     ))}
                                                 </div>
@@ -2076,24 +1425,33 @@
                                                     {/* TAB: members */}
                                                     {v2OrgDetailTab === 'members' && (
                                                         <div className="space-y-3">
+                                                            <div className="flex justify-end">
+                                                                <button onClick={() => { setV2AddMemberEmail(''); setV2AddMemberRole('ACCOUNTANT'); setV2AddMemberState({ orgId: v2OrgDetail.org.id }); }}
+                                                                    className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                                    <LucideIcon name="Plus" size={12} />
+                                                                    <span>Добавить участника</span>
+                                                                </button>
+                                                            </div>
                                                             {v2OrgDetail.org.members.map(m => (
                                                                 <div key={m.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                                                     <div>
                                                                         <p className="font-bold text-sm text-slate-800">{m.user.email}</p>
-                                                                        <p className="text-[10px] text-slate-400 mt-0.5">{m.user.name || '—'}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">{m.user.name || '—'} · {new Date(m.user.createdAt).toLocaleDateString('ru-RU')}</p>
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
                                                                         <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border uppercase ${m.role === 'OWNER' ? 'text-amber-700 bg-amber-50 border-amber-100' : m.role === 'ADMIN' ? 'text-indigo-700 bg-indigo-50 border-indigo-100' : 'text-slate-500 bg-slate-100 border-slate-200'}`}>{m.role}</span>
-                                                                        {m.role !== 'OWNER' && (
-                                                                            <button onClick={() => triggerConfirm('Удалить участника', `Удалить "${m.user.email}" из орг.?`, async () => {
-                                                                                await apiFetch(`/api/v2/orgs/${v2OrgDetail.org.id}/members/${m.user.id}`, 'DELETE');
-                                                                                notify('Участник удалён');
-                                                                                await loadV2OrgDetail(v2OrgDetail.org.id);
-                                                                            })}
-                                                                                className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
-                                                                                Удалить
-                                                                            </button>
-                                                                        )}
+                                                                        <button onClick={() => setV2EditMemberRole({ orgId: v2OrgDetail.org.id, userId: m.user.id, email: m.user.email, currentRole: m.role })}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all uppercase">
+                                                                            Роль
+                                                                        </button>
+                                                                        <button onClick={() => triggerConfirm('Удалить участника', `Удалить "${m.user.email}" из орг.?`, async () => {
+                                                                            await apiFetch(`/api/v2/orgs/${v2OrgDetail.org.id}/members/${m.user.id}`, 'DELETE');
+                                                                            notify('Участник удалён');
+                                                                            await loadV2OrgDetail(v2OrgDetail.org.id);
+                                                                        })}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                            Удалить
+                                                                        </button>
                                                                     </div>
                                                                 </div>
                                                             ))}
@@ -2103,20 +1461,33 @@
                                                     {/* TAB: accounts */}
                                                     {v2OrgDetailTab === 'accounts' && (
                                                         <div className="space-y-3">
+                                                            <div className="flex justify-end">
+                                                                <button onClick={() => { setV2NewBankAccount({ name: '', currency: 'UZS', bankName: '', accountNumber: '' }); setV2ShowAddBankAccount(true); }}
+                                                                    className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                                    <LucideIcon name="Plus" size={12} />
+                                                                    <span>Добавить счёт</span>
+                                                                </button>
+                                                            </div>
                                                             {v2OrgDetail.org.bankAccounts.map(acc => (
                                                                 <div key={acc.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                                                     <div>
                                                                         <p className="font-bold text-sm text-slate-800">{acc.name}</p>
-                                                                        <p className="text-[10px] text-slate-400 mt-0.5">{acc.bankName || '—'} · {acc.currency} · {Number(acc.lastBalance).toLocaleString()} </p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">{acc.bankName || '—'} · {acc.currency} · {acc.accountNumber || '—'} · Остаток: {Number(acc.lastBalance).toLocaleString()}</p>
                                                                     </div>
-                                                                    <button onClick={() => triggerConfirm('Удалить счёт', `Удалить счёт "${acc.name}"?`, async () => {
-                                                                        await apiFetch(`/api/v2/bank-accounts/${acc.id}`, 'DELETE');
-                                                                        notify('Счёт удалён');
-                                                                        await loadV2OrgDetail(v2OrgDetail.org.id);
-                                                                    })}
-                                                                        className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
-                                                                        Удалить
-                                                                    </button>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button onClick={() => setV2EditBankAccountData({ id: acc.id, name: acc.name, currency: acc.currency, bankName: acc.bankName || '', accountNumber: acc.accountNumber || '' })}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all uppercase">
+                                                                            Изменить
+                                                                        </button>
+                                                                        <button onClick={() => triggerConfirm('Удалить счёт', `Удалить счёт "${acc.name}"?`, async () => {
+                                                                            await apiFetch(`/api/v2/bank-accounts/${acc.id}`, 'DELETE');
+                                                                            notify('Счёт удалён');
+                                                                            await loadV2OrgDetail(v2OrgDetail.org.id);
+                                                                        })}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                            Удалить
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             ))}
                                                             {v2OrgDetail.org.bankAccounts.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Банковских счетов нет</p>}
@@ -2125,10 +1496,17 @@
                                                     {/* TAB: periods */}
                                                     {v2OrgDetailTab === 'periods' && (
                                                         <div className="space-y-3">
+                                                            <div className="flex justify-end">
+                                                                <button onClick={() => { setV2NewPeriod({ year: new Date().getFullYear(), month: new Date().getMonth() + 1, mode: 'ACTIVE' }); setV2ShowCreatePeriod(true); }}
+                                                                    className="flex items-center space-x-2 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                                    <LucideIcon name="Plus" size={12} />
+                                                                    <span>Создать период</span>
+                                                                </button>
+                                                            </div>
                                                             {v2OrgDetail.periods.map(p => (
                                                                 <div key={p.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                                                                     <div>
-                                                                        <p className="font-bold text-sm text-slate-800">{p.year} / {String(p.month).padStart(2,'0')}</p>
+                                                                        <p className="font-bold text-sm text-slate-800">{p.year} / {String(p.month).padStart(2,'0')} <span className="text-[10px] text-slate-400 font-normal">({p.mode})</span></p>
                                                                         <p className="text-[10px] text-slate-400 mt-0.5">Транзакций: {p._count?.stagedTransactions || 0} · Документов: {p._count?.documents || 0}</p>
                                                                     </div>
                                                                     <div className="flex items-center gap-2">
@@ -2141,10 +1519,33 @@
                                                                             className="text-[9px] font-bold px-2 py-1 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100 transition-all uppercase">
                                                                             {p.status === 'OPEN' ? 'Закрыть' : 'Открыть'}
                                                                         </button>
+                                                                        <button onClick={() => triggerConfirm('Удалить период', `Удалить период ${p.year}/${String(p.month).padStart(2,'0')}? Все транзакции и документы периода будут стёрты.`, async () => {
+                                                                            await apiFetch(`/api/v2/periods/${p.id}`, 'DELETE');
+                                                                            notify('Период удалён', 'error');
+                                                                            await loadV2OrgDetail(v2OrgDetail.org.id);
+                                                                        })}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-white border border-rose-100 text-rose-500 rounded-lg hover:bg-rose-50 transition-all uppercase">
+                                                                            Удалить
+                                                                        </button>
                                                                     </div>
                                                                 </div>
                                                             ))}
                                                             {v2OrgDetail.periods.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Периодов нет</p>}
+                                                        </div>
+                                                    )}
+                                                    {/* TAB: counterparties */}
+                                                    {v2OrgDetailTab === 'counterparties' && (
+                                                        <div className="space-y-3">
+                                                            {v2Counterparties.map(cp => (
+                                                                <div key={cp.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                                    <div>
+                                                                        <p className="font-bold text-sm text-slate-800">{cp.name}</p>
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5">ИНН: {cp.inn || '—'}</p>
+                                                                    </div>
+                                                                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{cp._count?.journalEntries || 0} проводок</span>
+                                                                </div>
+                                                            ))}
+                                                            {v2Counterparties.length === 0 && <p className="text-xs text-slate-400 text-center py-8">Контрагентов нет</p>}
                                                         </div>
                                                     )}
                                                     {/* TAB: txstats */}
@@ -2182,6 +1583,226 @@
                                             </div>
                                         </div>
                                     )}
+                                </div>
+                            )}
+
+                            {/* ── V2 Billing Tab ── */}
+                            {tab === 'v2_billing' && (
+                                <div className="space-y-8 fade-in">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-2 h-8 bg-emerald-500 rounded-full"></div>
+                                        <div>
+                                            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Биллинг V2</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">Платежи, ваучеры и настройки шлюзов</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Endpoint URLs — static copyable block */}
+                                    <div className="premium-card p-6 space-y-3">
+                                        <div>
+                                            <h3 className="text-base font-bold text-slate-800">Endpoint URLs для платёжных систем</h3>
+                                            <p className="text-xs text-slate-400 mt-0.5">Укажите эти URL в личных кабинетах Payme и Click</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {[
+                                                { label: 'Payme — JSON-RPC URL', url: 'https://contador.uz/admin/api/v2/payments/payme' },
+                                                { label: 'Click — Prepare URL', url: 'https://contador.uz/admin/api/v2/payments/click/prepare' },
+                                                { label: 'Click — Complete URL', url: 'https://contador.uz/admin/api/v2/payments/click/complete' },
+                                            ].map(e => (
+                                                <div key={e.url} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">{e.label}</p>
+                                                        <p className="text-xs font-mono text-slate-800 break-all select-all">{e.url}</p>
+                                                    </div>
+                                                    <button onClick={() => { navigator.clipboard.writeText(e.url); notify('Скопировано ✓'); }}
+                                                        title="Копировать"
+                                                        className="flex-shrink-0 p-2 hover:bg-slate-200 rounded-lg transition-all text-slate-400 hover:text-slate-700">
+                                                        <LucideIcon name="Copy" size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Payment settings */}
+                                    {config && (
+                                        <div className="premium-card p-6 space-y-4">
+                                            <h3 className="text-base font-bold text-slate-800">Настройки платёжных шлюзов</h3>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Цена PRO (сум/год)</label>
+                                                    <input type="number" value={config.pro_price_yearly || ''} onChange={e => setConfig({ ...config, pro_price_yearly: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm outline-none font-bold" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Payme Merchant ID</label>
+                                                    <input type="text" value={config.payme_merchant_id || ''} onChange={e => setConfig({ ...config, payme_merchant_id: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Click Merchant ID</label>
+                                                    <input type="text" value={config.click_merchant_id || ''} onChange={e => setConfig({ ...config, click_merchant_id: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Click Service ID</label>
+                                                    <input type="text" value={config.click_service_id || ''} onChange={e => setConfig({ ...config, click_service_id: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Payme Secret Key</label>
+                                                    <input type="password" value={config.payme_key || ''} onChange={e => setConfig({ ...config, payme_key: e.target.value })}
+                                                        placeholder="Prod key"
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Payme Test Key</label>
+                                                    <input type="password" value={config.payme_test_key || ''} onChange={e => setConfig({ ...config, payme_test_key: e.target.value })}
+                                                        placeholder="Test key"
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Click Secret Key</label>
+                                                    <input type="password" value={config.click_secret_key || ''} onChange={e => setConfig({ ...config, click_secret_key: e.target.value })}
+                                                        placeholder="Secret key"
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Payme Env</label>
+                                                    <select value={config.payme_env || 'test'} onChange={e => setConfig({ ...config, payme_env: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none">
+                                                        <option value="test">test</option>
+                                                        <option value="production">production</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Click Env</label>
+                                                    <select value={config.click_env || 'test'} onChange={e => setConfig({ ...config, click_env: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none">
+                                                        <option value="test">test</option>
+                                                        <option value="production">production</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <button onClick={saveSettings}
+                                                className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">
+                                                Сохранить настройки
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Vouchers */}
+                                    <div className="premium-card p-6 space-y-4">
+                                        <div className="flex justify-between items-center">
+                                            <h3 className="text-base font-bold text-slate-800">Ваучеры V2 ({v2BillingVouchers.length})</h3>
+                                            <div className="flex items-center gap-2">
+                                                <input type="number" min="1" max="100" value={v2NewVoucher.count}
+                                                    onChange={e => setV2NewVoucher({ ...v2NewVoucher, count: e.target.value })}
+                                                    className="w-16 px-2 py-2 border border-slate-200 rounded-xl text-xs text-center font-bold outline-none" placeholder="шт." />
+                                                <input type="number" min="1" value={v2NewVoucher.daysGranted}
+                                                    onChange={e => setV2NewVoucher({ ...v2NewVoucher, daysGranted: e.target.value })}
+                                                    className="w-20 px-2 py-2 border border-slate-200 rounded-xl text-xs text-center font-bold outline-none" placeholder="дней" />
+                                                <button onClick={async () => {
+                                                    const r = await apiFetch('/api/v2/vouchers/generate', 'POST', { count: v2NewVoucher.count, daysGranted: v2NewVoucher.daysGranted });
+                                                    if (r?.success) { notify(`Создано ${r.count} ваучеров`); loadV2BillingVouchers(); }
+                                                }}
+                                                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all flex items-center space-x-1.5">
+                                                    <LucideIcon name="Plus" size={12} />
+                                                    <span>Генерировать</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Код</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дней</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Использован</th>
+                                                        <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Применить</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {v2BillingVouchers.slice(0, 50).map(v => (
+                                                        <tr key={v.id} className="hover:bg-slate-50/50">
+                                                            <td className="px-4 py-3 font-mono text-xs font-bold text-slate-800">{v.code}</td>
+                                                            <td className="px-4 py-3 text-xs font-bold text-slate-600">{v.daysGranted} дн.</td>
+                                                            <td className="px-4 py-3">
+                                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${v.usedAt ? 'bg-slate-100 text-slate-400' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'}`}>
+                                                                    {v.usedAt ? 'Использован' : 'Активен'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-3 text-xs text-slate-400">{v.org?.name || (v.usedAt ? v.usedByOrgId?.substring(0,8) + '…' : '—')}</td>
+                                                            <td className="px-4 py-3 text-right">
+                                                                {!v.usedAt && (
+                                                                    <div className="flex items-center gap-1.5 justify-end">
+                                                                        <input type="text" placeholder="orgId..."
+                                                                            className="px-2 py-1 border border-slate-200 rounded-lg text-[10px] font-mono w-36 outline-none"
+                                                                            onChange={e => { setV2ApplyVoucherCode(v.code); setV2ApplyVoucherOrgId(e.target.value); }} />
+                                                                        <button onClick={async () => {
+                                                                            if (!v2ApplyVoucherOrgId) return notify('Укажите orgId', 'error');
+                                                                            const r = await apiFetch(`/api/v2/vouchers/${v.code}/apply`, 'POST', { orgId: v2ApplyVoucherOrgId });
+                                                                            if (r?.success) { notify('Ваучер применён ✓'); loadV2BillingVouchers(); setV2ApplyVoucherOrgId(''); }
+                                                                            else notify(r?.error || 'Ошибка', 'error');
+                                                                        }}
+                                                                            className="text-[9px] font-bold px-2 py-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all uppercase">
+                                                                            OK
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {v2BillingVouchers.length === 0 && <p className="text-xs text-slate-400 text-center py-6">Ваучеров нет</p>}
+                                    </div>
+
+                                    {/* Payments */}
+                                    <div className="premium-card overflow-hidden">
+                                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                                            <h3 className="text-base font-bold text-slate-800">Журнал платежей V2 ({v2BillingPaymentsTotal})</h3>
+                                            <button onClick={loadV2BillingPayments}
+                                                className="text-[10px] font-bold px-3 py-1.5 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all uppercase">
+                                                Обновить
+                                            </button>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-50 border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата</th>
+                                                        <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Организация</th>
+                                                        <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Провайдер</th>
+                                                        <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Сумма</th>
+                                                        <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</th>
+                                                        <th className="px-5 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дней выдано</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100 bg-white">
+                                                    {v2BillingPayments.map(p => (
+                                                        <tr key={p.id} className="hover:bg-slate-50/50">
+                                                            <td className="px-5 py-3 text-xs text-slate-400 whitespace-nowrap">{new Date(p.createdAt).toLocaleString('ru-RU')}</td>
+                                                            <td className="px-5 py-3 font-bold text-xs text-slate-800">{p.org?.name || p.orgId.substring(0,8) + '…'}</td>
+                                                            <td className="px-5 py-3">
+                                                                <span className="text-[10px] font-black px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full uppercase">{p.provider}</span>
+                                                            </td>
+                                                            <td className="px-5 py-3 font-bold text-sm text-slate-900">{Number(p.amount).toLocaleString()} {p.currency}</td>
+                                                            <td className="px-5 py-3">
+                                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${p.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : p.status === 'CANCELLED' ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>{p.status}</span>
+                                                            </td>
+                                                            <td className="px-5 py-3 text-xs text-slate-600 font-semibold">{p.daysGranted} дн.</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {v2BillingPayments.length === 0 && (
+                                            <div className="p-16 text-center text-slate-400 font-bold uppercase tracking-widest text-xs bg-white">Платежей V2 нет</div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -2378,20 +1999,6 @@
                                 onCancel={() => setConfirmState({ show: false, title: '', message: '', onConfirm: null })}
                             />
 
-                            {/* V1 Upgrade Days Modal */}
-                            <UpgradeDaysModal
-                                show={upgradeState.show}
-                                orgName={upgradeState.orgName}
-                                onConfirm={async (days) => {
-                                    if (days) {
-                                        await apiFetch(`/api/users/${upgradeState.orgId}/upgrade`, 'POST', { days });
-                                        loadUsers();
-                                        notify(`Подписка успешно продлена на ${days} дн.`);
-                                    }
-                                    setUpgradeState({ show: false, orgId: '', orgName: '' });
-                                }}
-                                onCancel={() => setUpgradeState({ show: false, orgId: '', orgName: '' })}
-                            />
 
                             {/* V2 Upgrade Days Modal — глобальный, работает из любой вкладки */}
                             <UpgradeDaysModal
@@ -2410,149 +2017,286 @@
                                 onCancel={() => setV2UpgradeState({ show: false, orgId: '', orgName: '' })}
                             />
 
-                            {/* Add User Modal */}
-                            {showAddUser && (
-                                <Modal title="Новый клиент" onClose={() => setShowAddUser(false)}>
+                            {/* V2 Edit User Name Modal */}
+                            {v2EditUserName && (
+                                <Modal title="Изменить имя пользователя" onClose={() => setV2EditUserName(null)}>
                                     <div className="space-y-4">
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Email (Логин)</label>
-                                            <div className="relative">
-                                                <input 
-                                                    type="email" 
-                                                    placeholder="email@example.com" 
-                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
-                                                    value={newUser.email} 
-                                                    onChange={e => setNewUser({ ...newUser, email: e.target.value })} 
-                                                />
-                                                <LucideIcon name="Mail" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Пароль</label>
-                                            <div className="relative">
-                                                <input 
-                                                    type="password" 
-                                                    placeholder="••••••••" 
-                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
-                                                    value={newUser.password} 
-                                                    onChange={e => setNewUser({ ...newUser, password: e.target.value })} 
-                                                />
-                                                <LucideIcon name="Lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Имя клиента</label>
-                                            <div className="relative">
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="Иван Иванов" 
-                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
-                                                    value={newUser.name} 
-                                                    onChange={e => setNewUser({ ...newUser, name: e.target.value })} 
-                                                />
-                                                <LucideIcon name="User" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                            </div>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Название организации</label>
-                                            <div className="relative">
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="ООО 'Моя компания'" 
-                                                    className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
-                                                    value={newUser.orgName} 
-                                                    onChange={e => setNewUser({ ...newUser, orgName: e.target.value })} 
-                                                />
-                                                <LucideIcon name="Building" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                            </div>
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Имя</label>
+                                            <input type="text" placeholder="Иван Иванов" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                value={v2EditUserName.name} onChange={e => setV2EditUserName({ ...v2EditUserName, name: e.target.value })} />
                                         </div>
                                     </div>
                                     <div className="flex gap-3 mt-8">
-                                        <button 
-                                            onClick={async () => {
-                                                if (!newUser.email.includes('@')) return notify('Некорректный Email', 'error');
-                                                if (newUser.password.length < 6) return notify('Пароль слишком короткий (мин. 6)', 'error');
-                                                if (!newUser.orgName) return notify('Укажите организацию', 'error');
-
-                                                setLoading(true);
-                                                const r = await apiFetch('/api/users', 'POST', newUser);
-                                                setLoading(false);
-                                                if (r?.success) { 
-                                                    setShowAddUser(false); 
-                                                    setNewUser({ email: '', password: '', name: '', orgName: '' }); 
-                                                    loadUsers(); 
-                                                    notify('Новый клиент успешно создан!'); 
-                                                } else if (r?.error) {
-                                                    notify(r.error, 'error');
-                                                }
-                                            }}
-                                            className="flex-1 py-3.5 btn-premium rounded-xl font-bold text-sm shadow-md disabled:opacity-50"
-                                            disabled={loading || !newUser.email || !newUser.password}
-                                        >
-                                            Создать
-                                        </button>
-                                        <button 
-                                            onClick={() => setShowAddUser(false)} 
-                                            className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm"
-                                        >
-                                            Отмена
-                                        </button>
+                                        <button onClick={async () => {
+                                            const r = await apiFetch(`/api/v2/users/${v2EditUserName.id}`, 'PATCH', { name: v2EditUserName.name });
+                                            if (r?.success) { setV2EditUserName(null); loadV2Users(); notify('Имя обновлено ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">Сохранить</button>
+                                        <button onClick={() => setV2EditUserName(null)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
                                     </div>
                                 </Modal>
                             )}
 
-                            {/* Edit User Modal */}
-                            {editUser && (
-                                <Modal title="Изменение данных" onClose={() => setEditUser(null)}>
+                            {/* V2 Add User to Org Modal */}
+                            {v2AddToOrgState && (
+                                <Modal title={`Добавить ${v2AddToOrgState.userEmail} в организацию`} onClose={() => setV2AddToOrgState(null)}>
                                     <div className="space-y-4">
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новый Email</label>
-                                            <input 
-                                                type="email" 
-                                                className="w-full px-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
-                                                value={editUser.email} 
-                                                onChange={e => setEditUser({ ...editUser, email: e.target.value })} 
-                                            />
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Поиск организации</label>
+                                            <input type="text" placeholder="Название организации..." className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                value={v2AddToOrgSearch} onChange={e => setV2AddToOrgSearch(e.target.value)} />
                                         </div>
+                                        {v2AddToOrgSearch.length >= 2 && (
+                                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                                                {v2OrgsList.filter(o => o.name.toLowerCase().includes(v2AddToOrgSearch.toLowerCase()) || (o.inn || '').includes(v2AddToOrgSearch)).slice(0, 5).map(o => (
+                                                    <button key={o.id} onClick={async () => {
+                                                        const r = await apiFetch(`/api/v2/orgs/${o.id}/members`, 'POST', { userId: v2AddToOrgState.userId, role: v2AddToOrgRole });
+                                                        if (r?.success) { setV2AddToOrgState(null); loadV2Users(); notify(`Добавлен в "${o.name}" ✓`); }
+                                                        else notify(r?.error || 'Ошибка', 'error');
+                                                    }} className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-emerald-50 hover:border-emerald-200 border border-slate-100 rounded-xl transition-all text-sm font-semibold text-slate-700">
+                                                        {o.name} {o.inn ? `· ИНН ${o.inn}` : ''}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новый Пароль (оставьте пустым для сохранения)</label>
-                                            <input 
-                                                type="password" 
-                                                placeholder="••••••••" 
-                                                className="w-full px-4 py-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm" 
-                                                value={editUser.password || ''} 
-                                                onChange={e => setEditUser({ ...editUser, password: e.target.value })} 
-                                            />
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Роль</label>
+                                            <select value={v2AddToOrgRole} onChange={e => setV2AddToOrgRole(e.target.value)}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-bold">
+                                                <option value="OWNER">OWNER</option>
+                                                <option value="ADMIN">ADMIN</option>
+                                                <option value="ACCOUNTANT">ACCOUNTANT</option>
+                                            </select>
                                         </div>
                                     </div>
                                     <div className="flex gap-3 mt-8">
-                                        <button 
-                                            onClick={async () => {
-                                                setLoading(true);
-                                                const r = await apiFetch(`/api/users/${editUser.id}/credentials`, 'PATCH', editUser);
-                                                setLoading(false);
-                                                if (r?.success) { 
-                                                    setEditUser(null); 
-                                                    loadUsers(); 
-                                                    notify('Данные пользователя обновлены ✓'); 
-                                                } else if (r?.error) {
-                                                    notify(r.error, 'error');
-                                                }
-                                            }}
-                                            className="flex-1 py-3.5 btn-premium rounded-xl font-bold text-sm shadow-md"
-                                            disabled={loading}
-                                        >
-                                            Сохранить
-                                        </button>
-                                        <button 
-                                            onClick={() => setEditUser(null)} 
-                                            className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-all text-sm"
-                                        >
-                                            Отмена
-                                        </button>
+                                        <button onClick={() => setV2AddToOrgState(null)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Закрыть</button>
                                     </div>
                                 </Modal>
                             )}
+
+                            {/* V2 Create Org Modal */}
+                            {v2ShowCreateOrg && (
+                                <Modal title="Создать организацию V2" onClose={() => setV2ShowCreateOrg(false)}>
+                                    <div className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Название *</label>
+                                            <input type="text" placeholder="ООО 'Компания'" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                value={v2NewOrg.name} onChange={e => setV2NewOrg({ ...v2NewOrg, name: e.target.value })} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">ИНН (опционально)</label>
+                                            <input type="text" placeholder="123456789" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                value={v2NewOrg.inn} onChange={e => setV2NewOrg({ ...v2NewOrg, inn: e.target.value })} />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Налоговый режим</label>
+                                            <select value={v2NewOrg.taxRegime} onChange={e => setV2NewOrg({ ...v2NewOrg, taxRegime: e.target.value })}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-semibold">
+                                                <option value="TURNOVER_TAX">УСН (оборотный налог)</option>
+                                                <option value="VAT">НДС</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center space-x-3">
+                                            <input type="checkbox" id="new-org-vat" checked={v2NewOrg.isVatPayer}
+                                                onChange={e => setV2NewOrg({ ...v2NewOrg, isVatPayer: e.target.checked })} className="w-4 h-4 accent-emerald-600" />
+                                            <label htmlFor="new-org-vat" className="text-sm font-semibold text-slate-700">Плательщик НДС</label>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button onClick={async () => {
+                                            if (!v2NewOrg.name.trim()) return notify('Укажите название', 'error');
+                                            setLoading(true);
+                                            const r = await apiFetch('/api/v2/orgs', 'POST', v2NewOrg);
+                                            setLoading(false);
+                                            if (r?.success) { setV2ShowCreateOrg(false); loadV2Orgs(1, v2OrgSearch, v2OrgPlanFilter, v2OrgRegimeFilter); notify('Организация создана ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} disabled={loading} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm disabled:opacity-50">Создать</button>
+                                        <button onClick={() => setV2ShowCreateOrg(false)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
+                                    </div>
+                                </Modal>
+                            )}
+
+                            {/* V2 Add Member Modal */}
+                            {v2AddMemberState && (
+                                <Modal title="Добавить участника в организацию" onClose={() => setV2AddMemberState(null)}>
+                                    <div className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Email пользователя</label>
+                                            <input type="email" placeholder="user@example.com" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                value={v2AddMemberEmail} onChange={e => setV2AddMemberEmail(e.target.value)} />
+                                            <p className="text-[10px] text-slate-400 pl-1">Или выберите из клиентов V2:</p>
+                                            <div className="max-h-32 overflow-y-auto space-y-1">
+                                                {v2Users.filter(u => !v2AddMemberEmail || u.email.toLowerCase().includes(v2AddMemberEmail.toLowerCase())).slice(0, 5).map(u => (
+                                                    <button key={u.id} onClick={() => setV2AddMemberEmail(u.email)}
+                                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-all border ${v2AddMemberEmail === u.email ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-100 text-slate-700 hover:bg-emerald-50'}`}>
+                                                        {u.email} {u.name ? `· ${u.name}` : ''}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Роль</label>
+                                            <select value={v2AddMemberRole} onChange={e => setV2AddMemberRole(e.target.value)}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-bold">
+                                                <option value="OWNER">OWNER</option>
+                                                <option value="ADMIN">ADMIN</option>
+                                                <option value="ACCOUNTANT">ACCOUNTANT</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button onClick={async () => {
+                                            const user = v2Users.find(u => u.email.toLowerCase() === v2AddMemberEmail.toLowerCase());
+                                            if (!user) return notify('Пользователь не найден', 'error');
+                                            const r = await apiFetch(`/api/v2/orgs/${v2AddMemberState.orgId}/members`, 'POST', { userId: user.id, role: v2AddMemberRole });
+                                            if (r?.success) { setV2AddMemberState(null); await loadV2OrgDetail(v2AddMemberState.orgId); notify('Участник добавлен ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">Добавить</button>
+                                        <button onClick={() => setV2AddMemberState(null)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
+                                    </div>
+                                </Modal>
+                            )}
+
+                            {/* V2 Change Member Role Modal */}
+                            {v2EditMemberRole && (
+                                <Modal title="Изменить роль участника" onClose={() => setV2EditMemberRole(null)}>
+                                    <div className="space-y-4">
+                                        <p className="text-sm text-slate-600">{v2EditMemberRole.email}</p>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Новая роль</label>
+                                            <select defaultValue={v2EditMemberRole.currentRole} id="edit-member-role-select"
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-bold">
+                                                <option value="OWNER">OWNER</option>
+                                                <option value="ADMIN">ADMIN</option>
+                                                <option value="ACCOUNTANT">ACCOUNTANT</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button onClick={async () => {
+                                            const role = document.getElementById('edit-member-role-select').value;
+                                            const r = await apiFetch(`/api/v2/orgs/${v2EditMemberRole.orgId}/members/${v2EditMemberRole.userId}/role`, 'PATCH', { role });
+                                            if (r?.success) { setV2EditMemberRole(null); await loadV2OrgDetail(v2EditMemberRole.orgId); notify('Роль изменена ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">Сохранить</button>
+                                        <button onClick={() => setV2EditMemberRole(null)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
+                                    </div>
+                                </Modal>
+                            )}
+
+                            {/* V2 Add Bank Account Modal */}
+                            {v2ShowAddBankAccount && v2OrgDetail && (
+                                <Modal title="Добавить банковский счёт" onClose={() => setV2ShowAddBankAccount(false)}>
+                                    <div className="space-y-4">
+                                        {[
+                                            { field: 'name', label: 'Название счёта *', placeholder: 'Расчётный счёт UZS' },
+                                            { field: 'bankName', label: 'Название банка', placeholder: 'Uzpromstroybank' },
+                                            { field: 'accountNumber', label: 'Номер счёта', placeholder: '20208000...' }
+                                        ].map(f => (
+                                            <div key={f.field} className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">{f.label}</label>
+                                                <input type="text" placeholder={f.placeholder} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                    value={v2NewBankAccount[f.field]} onChange={e => setV2NewBankAccount({ ...v2NewBankAccount, [f.field]: e.target.value })} />
+                                            </div>
+                                        ))}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Валюта</label>
+                                            <select value={v2NewBankAccount.currency} onChange={e => setV2NewBankAccount({ ...v2NewBankAccount, currency: e.target.value })}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-bold">
+                                                <option value="UZS">UZS</option>
+                                                <option value="USD">USD</option>
+                                                <option value="EUR">EUR</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button onClick={async () => {
+                                            if (!v2NewBankAccount.name.trim()) return notify('Укажите название', 'error');
+                                            const r = await apiFetch(`/api/v2/orgs/${v2OrgDetail.org.id}/bank-accounts`, 'POST', v2NewBankAccount);
+                                            if (r?.success) { setV2ShowAddBankAccount(false); await loadV2OrgDetail(v2OrgDetail.org.id); notify('Счёт добавлен ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">Добавить</button>
+                                        <button onClick={() => setV2ShowAddBankAccount(false)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
+                                    </div>
+                                </Modal>
+                            )}
+
+                            {/* V2 Edit Bank Account Modal */}
+                            {v2EditBankAccountData && (
+                                <Modal title="Редактировать банковский счёт" onClose={() => setV2EditBankAccountData(null)}>
+                                    <div className="space-y-4">
+                                        {[
+                                            { field: 'name', label: 'Название счёта *', placeholder: 'Расчётный счёт' },
+                                            { field: 'bankName', label: 'Название банка', placeholder: 'Uzpromstroybank' },
+                                            { field: 'accountNumber', label: 'Номер счёта', placeholder: '20208000...' }
+                                        ].map(f => (
+                                            <div key={f.field} className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">{f.label}</label>
+                                                <input type="text" placeholder={f.placeholder} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none"
+                                                    value={v2EditBankAccountData[f.field]} onChange={e => setV2EditBankAccountData({ ...v2EditBankAccountData, [f.field]: e.target.value })} />
+                                            </div>
+                                        ))}
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Валюта</label>
+                                            <select value={v2EditBankAccountData.currency} onChange={e => setV2EditBankAccountData({ ...v2EditBankAccountData, currency: e.target.value })}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-bold">
+                                                <option value="UZS">UZS</option>
+                                                <option value="USD">USD</option>
+                                                <option value="EUR">EUR</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button onClick={async () => {
+                                            if (!v2EditBankAccountData.name.trim()) return notify('Укажите название', 'error');
+                                            const r = await apiFetch(`/api/v2/bank-accounts/${v2EditBankAccountData.id}`, 'PATCH', v2EditBankAccountData);
+                                            if (r?.success) { setV2EditBankAccountData(null); await loadV2OrgDetail(v2OrgDetail.org.id); notify('Счёт обновлён ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">Сохранить</button>
+                                        <button onClick={() => setV2EditBankAccountData(null)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
+                                    </div>
+                                </Modal>
+                            )}
+
+                            {/* V2 Create Period Modal */}
+                            {v2ShowCreatePeriod && v2OrgDetail && (
+                                <Modal title="Создать период учёта" onClose={() => setV2ShowCreatePeriod(false)}>
+                                    <div className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Год *</label>
+                                                <input type="number" min="2020" max="2035" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none font-bold"
+                                                    value={v2NewPeriod.year} onChange={e => setV2NewPeriod({ ...v2NewPeriod, year: e.target.value })} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Месяц * (1-12)</label>
+                                                <input type="number" min="1" max="12" className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-400 outline-none font-bold"
+                                                    value={v2NewPeriod.month} onChange={e => setV2NewPeriod({ ...v2NewPeriod, month: e.target.value })} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Режим</label>
+                                            <select value={v2NewPeriod.mode} onChange={e => setV2NewPeriod({ ...v2NewPeriod, mode: e.target.value })}
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none font-bold">
+                                                <option value="ACTIVE">ACTIVE — текущий</option>
+                                                <option value="HISTORICAL">HISTORICAL — ретро-ввод</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-3 mt-8">
+                                        <button onClick={async () => {
+                                            const r = await apiFetch(`/api/v2/orgs/${v2OrgDetail.org.id}/periods`, 'POST', v2NewPeriod);
+                                            if (r?.success) { setV2ShowCreatePeriod(false); await loadV2OrgDetail(v2OrgDetail.org.id); notify('Период создан ✓'); }
+                                            else notify(r?.error || 'Ошибка', 'error');
+                                        }} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">Создать</button>
+                                        <button onClick={() => setV2ShowCreatePeriod(false)} className="flex-1 py-3.5 border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 text-sm">Отмена</button>
+                                    </div>
+                                </Modal>
+                            )}
+
+
                         </div>
                     </div>
                 </div>

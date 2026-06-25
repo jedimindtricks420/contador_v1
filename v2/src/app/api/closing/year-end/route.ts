@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
+import { ACCOUNTS } from "@/lib/constants";
 import Decimal from "decimal.js";
 
-// Перенос финансового результата (9910) в нераспределённую прибыль (8510) в конце года.
-// Дт 9910 — Кт 8510 (прибыль) / Дт 8510 — Кт 9910 (убыток)
+// Перенос финансового результата (9910) в нераспределённую прибыль (8710) в конце года.
+// Дт 9910 — Кт 8710 (прибыль) / Дт 8710 — Кт 9910 (убыток)
 export async function POST(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
@@ -40,12 +41,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Сальдо 9910 = 0, перенос не требуется", transferred: 0 });
     }
 
-    const [acc9910, acc8510] = await Promise.all([
+    const [acc9910, acc8710] = await Promise.all([
       prisma.account.findUnique({ where: { code: "9910" } }),
-      prisma.account.findUnique({ where: { code: "8510" } })
+      prisma.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } })
     ]);
-    if (!acc9910 || !acc8510) {
-      return NextResponse.json({ error: "Счета 9910 или 8510 не найдены в плане счетов" }, { status: 500 });
+    if (!acc9910 || !acc8710) {
+      return NextResponse.json({ error: "Счета 9910 или 8710 не найдены в плане счетов" }, { status: 500 });
     }
 
     let yearEndType = await prisma.documentType.findUnique({ where: { code: "YEAR_END_CLOSE" } });
@@ -68,29 +69,29 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    // net9910 > 0 → дебетовый остаток у 9910 (убыток): Дт 8510 — Кт 9910
-    // net9910 < 0 → кредитовый остаток у 9910 (прибыль): Дт 9910 — Кт 8510
+    // net9910 > 0 → дебетовый остаток у 9910 (убыток): Дт 8710 — Кт 9910
+    // net9910 < 0 → кредитовый остаток у 9910 (прибыль): Дт 9910 — Кт 8710
     const amt = net9910.abs();
     if (net9910.gt(0)) {
-      // Убыток: Дт 8510 — Кт 9910
+      // Убыток: Дт 8710 — Кт 9910
       await prisma.journalEntry.createMany({
         data: [
-          { documentId: doc.id, accountId: acc8510.id, debit: amt, credit: new Decimal(0), date: docDate },
+          { documentId: doc.id, accountId: acc8710.id, debit: amt, credit: new Decimal(0), date: docDate },
           { documentId: doc.id, accountId: acc9910.id, debit: new Decimal(0), credit: amt, date: docDate }
         ]
       });
     } else {
-      // Прибыль: Дт 9910 — Кт 8510
+      // Прибыль: Дт 9910 — Кт 8710
       await prisma.journalEntry.createMany({
         data: [
           { documentId: doc.id, accountId: acc9910.id, debit: amt, credit: new Decimal(0), date: docDate },
-          { documentId: doc.id, accountId: acc8510.id, debit: new Decimal(0), credit: amt, date: docDate }
+          { documentId: doc.id, accountId: acc8710.id, debit: new Decimal(0), credit: amt, date: docDate }
         ]
       });
     }
 
     return NextResponse.json({
-      message: net9910.lt(0) ? "Прибыль перенесена в 8510" : "Убыток перенесён в 8510",
+      message: net9910.lt(0) ? "Прибыль перенесена в нераспределённую прибыль (8710)" : "Убыток перенесён в нераспределённую прибыль (8710)",
       transferred: amt.toNumber(),
       isProfit: net9910.lt(0)
     });

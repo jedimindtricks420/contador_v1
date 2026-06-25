@@ -6,6 +6,9 @@ import {
   REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, EXPENSE_ACCOUNT_CODES, CLOSING
 } from "./constants";
 
+// Net salary multiplier: employee receives (1 - NDFL_total) of gross
+const NET_SALARY_RATE = 1 - TAX_RATES.NDFL; // 0.88
+
 const globalForClosing = globalThis as unknown as { closingStates: Map<string, any> };
 if (!globalForClosing.closingStates) {
   globalForClosing.closingStates = new Map();
@@ -19,6 +22,10 @@ function defaultState() {
     fxDiff: { exchangeRate: 0, difference: 0 },
     soliqMatched: { matched: 0, unmatched: 0 }
   };
+}
+
+export function clearClosingState(periodId: string) {
+  closingStates.delete(periodId);
 }
 
 export async function getClosingState(periodId: string) {
@@ -38,7 +45,12 @@ export async function saveClosingState(periodId: string, patch: any) {
   await prisma.period.update({ where: { id: periodId }, data: { closingData: updated } });
 }
 
-export async function finalizePeriod(periodId: string, orgId: string, userId: string) {
+export async function finalizePeriod(
+  periodId: string,
+  orgId: string,
+  userId: string,
+  overrideAccruals?: { salaryAmount?: number; depreciationAmount?: number; rentAmount?: number }
+) {
   const period = await prisma.period.findUnique({
     where: { id: periodId },
     include: { org: true }
@@ -50,34 +62,61 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
   const state = await getClosingState(periodId);
 
   const result = await prisma.$transaction(async (tx) => {
-    const accruals = state.accruals || { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 };
+    const baseAccruals = state.accruals || { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 };
+    const accruals = overrideAccruals
+      ? {
+          salaryAmount: overrideAccruals.salaryAmount ?? baseAccruals.salaryAmount,
+          depreciationAmount: overrideAccruals.depreciationAmount ?? baseAccruals.depreciationAmount,
+          rentAmount: overrideAccruals.rentAmount ?? baseAccruals.rentAmount
+        }
+      : baseAccruals;
     const accrualDate = new Date(period.year, period.month - 1, CLOSING.ACCRUAL_DAY);
 
     // A. Начисление заработной платы и налогов ФОТ
-    if (Number(accruals.salaryAmount) > 0) {
-      let salaryType = await tx.documentType.findUnique({ where: { code: "SALARY_ACCRUAL" } });
-      if (!salaryType) {
-        salaryType = await tx.documentType.create({
-          data: {
-            code: "SALARY_ACCRUAL",
-            name: "Начисление заработной платы и налогов ФОТ",
-            postingTemplate: {
-              lines: [
-                // Gross ЗП: Дт 9420 — Кт 6710
-                { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "salaryAmount" },
-                { accountCode: ACCOUNTS.PAYROLL, side: "credit", expression: "salaryAmount" },
-                // Удержание НДФЛ: Дт 6710 — Кт 6410
-                { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL}` },
-                { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL}` },
-                // Соцналог (работодатель): Дт 9420 — Кт 6520
-                { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
-                { accountCode: ACCOUNTS.SOCIAL_TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` }
-              ],
-              opensItem: false
-            }
+    const existingSalary = await tx.document.findFirst({
+      where: { orgId, periodId, type: { code: "SALARY_ACCRUAL" }, status: "POSTED" }
+    });
+    if (!existingSalary && Number(accruals.salaryAmount) > 0) {
+      // Always upsert so the template stays current if rates change
+      const salaryType = await tx.documentType.upsert({
+        where: { code: "SALARY_ACCRUAL" },
+        update: {
+          postingTemplate: {
+            lines: [
+              // Брутто ЗП: Дт 9420 — Кт 6710
+              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "salaryAmount" },
+              { accountCode: ACCOUNTS.PAYROLL, side: "credit", expression: "salaryAmount" },
+              // ИНПС 0.1% (из зарплаты работника): Дт 6710 — Кт 6530
+              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
+              { accountCode: ACCOUNTS.INPS_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
+              // НДФЛ в бюджет 11.9% (из зарплаты работника): Дт 6710 — Кт 6410
+              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
+              { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
+              // Соцналог 12% (расход работодателя): Дт 9420 — Кт 6520
+              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
+              { accountCode: ACCOUNTS.SOCIAL_TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` }
+            ],
+            opensItem: false
           }
-        });
-      }
+        },
+        create: {
+          code: "SALARY_ACCRUAL",
+          name: "Начисление заработной платы и налогов ФОТ",
+          postingTemplate: {
+            lines: [
+              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "salaryAmount" },
+              { accountCode: ACCOUNTS.PAYROLL, side: "credit", expression: "salaryAmount" },
+              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
+              { accountCode: ACCOUNTS.INPS_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
+              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
+              { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
+              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
+              { accountCode: ACCOUNTS.SOCIAL_TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` }
+            ],
+            opensItem: false
+          }
+        }
+      });
       const salaryDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: salaryType.id, date: accrualDate, status: "POSTED",
@@ -85,10 +124,42 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
         }
       });
       await postDocument(salaryDoc.id, tx, userId);
+
+      // A2. SALARY_OFFSET — зачёт нетто-зарплаты в счёт займов сотрудникам (если займы есть)
+      const loanBalance = await tx.journalEntry.aggregate({
+        where: { document: { orgId, status: "POSTED" }, account: { code: ACCOUNTS.EMPLOYEE_LOAN_RECEIVABLE } },
+        _sum: { debit: true, credit: true }
+      });
+      const balance4720 = new Decimal(loanBalance._sum.debit?.toString() || "0")
+        .minus(new Decimal(loanBalance._sum.credit?.toString() || "0"));
+
+      if (balance4720.gt(0)) {
+        const netSalary = new Decimal(accruals.salaryAmount).mul(NET_SALARY_RATE);
+        const offsetAmount = Decimal.min(netSalary, balance4720);
+
+        const existingOffset = await tx.document.findFirst({
+          where: { orgId, periodId, type: { code: "SALARY_OFFSET" }, status: "POSTED" }
+        });
+        if (!existingOffset && offsetAmount.gt(0)) {
+          const offsetType = await tx.documentType.findUnique({ where: { code: "SALARY_OFFSET" } });
+          if (offsetType) {
+            const offsetDoc = await tx.document.create({
+              data: {
+                orgId, periodId, typeId: offsetType.id, date: accrualDate, status: "POSTED",
+                payload: { amount: offsetAmount.toNumber(), description: "Зачёт нетто-зарплаты в счёт займов" } as any
+              }
+            });
+            await postDocument(offsetDoc.id, tx, userId);
+          }
+        }
+      }
     }
 
     // B. Начисление амортизации ОС: Дт 9430 — Кт 0200
-    if (Number(accruals.depreciationAmount) > 0) {
+    const existingDep = await tx.document.findFirst({
+      where: { orgId, periodId, type: { code: "DEPRECIATION_ACCRUAL" }, status: "POSTED" }
+    });
+    if (!existingDep && Number(accruals.depreciationAmount) > 0) {
       let depType = await tx.documentType.findUnique({ where: { code: "DEPRECIATION_ACCRUAL" } });
       if (!depType) {
         depType = await tx.documentType.create({
@@ -114,24 +185,27 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
       await postDocument(depDoc.id, tx, userId);
     }
 
-    // C. Начисление аренды: Дт 9420 — Кт 6010
-    if (Number(accruals.rentAmount) > 0) {
-      let rentType = await tx.documentType.findUnique({ where: { code: "RENT_ACCRUAL" } });
-      if (!rentType) {
-        rentType = await tx.documentType.create({
-          data: {
-            code: "RENT_ACCRUAL",
-            name: "Начисление аренды (неденежное)",
-            postingTemplate: {
-              lines: [
-                { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "rentAmount" },
-                { accountCode: ACCOUNTS.PAYABLES, side: "credit", expression: "rentAmount" }
-              ],
-              opensItem: false
-            }
-          }
-        });
-      }
+    // C. Начисление аренды: Дт 9420 — Кт 6010 (административные расходы — аренда офиса)
+    const existingRent = await tx.document.findFirst({
+      where: { orgId, periodId, type: { code: "RENT_ACCRUAL" }, status: "POSTED" }
+    });
+    if (!existingRent && Number(accruals.rentAmount) > 0) {
+      const rentTemplate = {
+        lines: [
+          { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "rentAmount" },
+          { accountCode: ACCOUNTS.PAYABLES, side: "credit", expression: "rentAmount" }
+        ],
+        opensItem: false
+      };
+      const rentType = await tx.documentType.upsert({
+        where: { code: "RENT_ACCRUAL" },
+        update: { postingTemplate: rentTemplate },
+        create: {
+          code: "RENT_ACCRUAL",
+          name: "Начисление аренды (неденежное)",
+          postingTemplate: rentTemplate
+        }
+      });
       const rentDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: rentType.id, date: accrualDate, status: "POSTED",
@@ -143,7 +217,10 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
 
     // D. Курсовые разницы: Дт/Кт 5210 ↔ 9540/9620
     const fxDiff = state.fxDiff || { exchangeRate: 0, difference: 0 };
-    if (Number(fxDiff.difference) !== 0) {
+    const existingFx = await tx.document.findFirst({
+      where: { orgId, periodId, type: { code: "FX_DIFFERENCE" }, status: "POSTED" }
+    });
+    if (!existingFx && Number(fxDiff.difference) !== 0) {
       let fxType = await tx.documentType.findUnique({ where: { code: "FX_DIFFERENCE" } });
       if (!fxType) {
         fxType = await tx.documentType.create({
@@ -207,7 +284,7 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
     const expenseEntries = await tx.journalEntry.findMany({
       where: {
         document: { periodId, orgId },
-        account: { code: { in: [...COGS_ACCOUNT_CODES, ...EXPENSE_ACCOUNT_CODES] } }
+        account: { code: { in: [...COGS_ACCOUNT_CODES, ...EXPENSE_ACCOUNT_CODES, ACCOUNTS.INTEREST_EXPENSE] } }
       }
     });
     const totalExpense = expenseEntries.reduce(
@@ -217,30 +294,27 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
     const netProfit = totalRevenue.plus(otherIncome).plus(totalFxIncome)
       .minus(totalExpense).minus(totalFxExpense);
 
+    // Clear pending events for this period to avoid duplicates
+    await tx.taxCalendarEvent.deleteMany({
+      where: { orgId, periodId, status: "PENDING" }
+    });
+
     const taxes: { type: string; amount: Decimal; dueDate: Date }[] = [];
     const nextMonth20th = new Date(period.year, period.month, CLOSING.TAX_DUE_DAY);
 
     if (Number(accruals.salaryAmount) > 0) {
-      taxes.push({ type: "PERSONAL_INCOME_TAX", amount: new Decimal(accruals.salaryAmount).mul(TAX_RATES.NDFL), dueDate: nextMonth20th });
-      taxes.push({ type: "SOCIAL_TAX", amount: new Decimal(accruals.salaryAmount).mul(TAX_RATES.SOCIAL_TAX), dueDate: nextMonth20th });
+      const sal = new Decimal(accruals.salaryAmount);
+      taxes.push({ type: "PERSONAL_INCOME_TAX", amount: sal.mul(TAX_RATES.NDFL_BUDGET), dueDate: nextMonth20th });
+      taxes.push({ type: "INPS",                amount: sal.mul(TAX_RATES.INPS),         dueDate: nextMonth20th });
+      taxes.push({ type: "SOCIAL_TAX",          amount: sal.mul(TAX_RATES.SOCIAL_TAX),   dueDate: nextMonth20th });
     }
 
     if (org.taxRegime === "VAT") {
-      const vatEntries = await tx.journalEntry.findMany({
-        where: {
-          document: { periodId, orgId, type: { code: "REVENUE_VAT" } },
-          account: { code: ACCOUNTS.TAX_PAYABLE }
-        }
-      });
-      const vatAmount = vatEntries.reduce(
-        (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())), new Decimal(0)
-      );
-      if (vatAmount.gt(0)) {
-        taxes.push({ type: "VAT", amount: vatAmount, dueDate: nextMonth20th });
-      }
-
       // E2. Начислить налог на прибыль проводкой Дт 9810 — Кт 6410
-      if (netProfit.gt(0)) {
+      const existingPtax = await tx.document.findFirst({
+        where: { orgId, periodId, type: { code: "PROFIT_TAX_ACCRUAL" }, status: "POSTED" }
+      });
+      if (!existingPtax && netProfit.gt(0)) {
         const profitTaxAmt = netProfit.mul(TAX_RATES.PROFIT_TAX);
         taxes.push({ type: "PROFIT_TAX", amount: profitTaxAmt, dueDate: nextMonth20th });
 
@@ -252,7 +326,7 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
               name: "Начисление налога на прибыль",
               postingTemplate: {
                 lines: [
-                  { accountCode: "9810", side: "debit", expression: "taxAmount" },
+                  { accountCode: ACCOUNTS.PROFIT_TAX_EXPENSE, side: "debit", expression: "taxAmount" },
                   { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: "taxAmount" }
                 ],
                 opensItem: false
@@ -268,10 +342,6 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
         });
         await postDocument(ptaxDoc.id, tx, userId);
       }
-    } else {
-      if (totalRevenue.gt(0)) {
-        taxes.push({ type: "TURNOVER_TAX", amount: totalRevenue.mul(TAX_RATES.TURNOVER_TAX), dueDate: nextMonth20th });
-      }
     }
 
     // F. Налоговый календарь
@@ -286,6 +356,9 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
       });
       createdEvents.push(ev);
     }
+
+    // G. Вызов динамического пересчета для НДС и налога с оборота
+    await upsertTaxCalendarEventsForPeriod(periodId, orgId, tx);
 
     // H. Реформация баланса: перенос всех TRANSIT-счетов на 9910
     const transitEntries = await tx.journalEntry.findMany({
@@ -350,7 +423,7 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
       }
     }
 
-    // G. Заблокировать период
+    // I. Заблокировать период
     const lastDay = new Date(period.year, period.month, 0);
     const updatedPeriod = await tx.period.update({
       where: { id: periodId },
@@ -364,4 +437,125 @@ export async function finalizePeriod(periodId: string, orgId: string, userId: st
   closingStates.delete(periodId);
 
   return result;
+}
+
+export async function upsertTaxCalendarEventsForPeriod(periodId: string, orgId: string, tx: any = prisma) {
+  const period = await tx.period.findUnique({
+    where: { id: periodId },
+    include: { org: true }
+  });
+  if (!period) return;
+  const org = period.org;
+
+  const nextMonth20th = new Date(period.year, period.month, CLOSING.TAX_DUE_DAY);
+
+  if (org.taxRegime === "VAT") {
+    // 1. VAT calculation
+    // Outgoing VAT (credit entries on account 6410 except from SALARY_ACCRUAL and PROFIT_TAX_ACCRUAL)
+    const vatOutEntries = await tx.journalEntry.findMany({
+      where: {
+        document: {
+          periodId,
+          orgId,
+          type: { code: { notIn: ["SALARY_ACCRUAL", "PROFIT_TAX_ACCRUAL"] } }
+        },
+        account: { code: ACCOUNTS.TAX_PAYABLE },
+        credit: { gt: 0 }
+      }
+    });
+    const vatOut = vatOutEntries.reduce(
+      (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())), new Decimal(0)
+    );
+
+    // Incoming VAT (debit entries on account 4410)
+    const vatInEntries = await tx.journalEntry.findMany({
+      where: {
+        document: { periodId, orgId },
+        account: { code: ACCOUNTS.VAT_INPUT },
+        debit: { gt: 0 }
+      }
+    });
+    const vatIn = vatInEntries.reduce(
+      (s: Decimal, e: any) => s.plus(new Decimal(e.debit.toString())), new Decimal(0)
+    );
+
+    const vatAmount = vatOut.minus(vatIn);
+
+    if (vatAmount.gt(0)) {
+      const existing = await tx.taxCalendarEvent.findFirst({
+        where: { orgId, periodId, type: "VAT", status: "PENDING" }
+      });
+      if (existing) {
+        await tx.taxCalendarEvent.update({
+          where: { id: existing.id },
+          data: {
+            estimatedAmount: vatAmount,
+            dueDate: nextMonth20th,
+            note: `Обновлено динамически: исходящий НДС ${vatOut.toFixed(2)}, входящий ${vatIn.toFixed(2)}`
+          }
+        });
+      } else {
+        await tx.taxCalendarEvent.create({
+          data: {
+            orgId,
+            periodId,
+            type: "VAT",
+            dueDate: nextMonth20th,
+            estimatedAmount: vatAmount,
+            status: "PENDING",
+            note: `Создано динамически: исходящий НДС ${vatOut.toFixed(2)}, входящий ${vatIn.toFixed(2)}`
+          }
+        });
+      }
+    } else {
+      await tx.taxCalendarEvent.deleteMany({
+        where: { orgId, periodId, type: "VAT", status: "PENDING" }
+      });
+    }
+  } else {
+    // 2. Turnover Tax calculation
+    const revenueEntries = await tx.journalEntry.findMany({
+      where: {
+        document: { periodId, orgId },
+        account: { code: { in: REVENUE_ACCOUNT_CODES } }
+      }
+    });
+    const totalRevenue = revenueEntries.reduce(
+      (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())), new Decimal(0)
+    );
+
+    const turnoverTaxAmt = totalRevenue.mul(TAX_RATES.TURNOVER_TAX);
+
+    if (turnoverTaxAmt.gt(0)) {
+      const existing = await tx.taxCalendarEvent.findFirst({
+        where: { orgId, periodId, type: "TURNOVER_TAX", status: "PENDING" }
+      });
+      if (existing) {
+        await tx.taxCalendarEvent.update({
+          where: { id: existing.id },
+          data: {
+            estimatedAmount: turnoverTaxAmt,
+            dueDate: nextMonth20th,
+            note: `Обновлено динамически по выручке: ${totalRevenue.toFixed(2)}`
+          }
+        });
+      } else {
+        await tx.taxCalendarEvent.create({
+          data: {
+            orgId,
+            periodId,
+            type: "TURNOVER_TAX",
+            dueDate: nextMonth20th,
+            estimatedAmount: turnoverTaxAmt,
+            status: "PENDING",
+            note: `Создано динамически по выручке: ${totalRevenue.toFixed(2)}`
+          }
+        });
+      }
+    } else {
+      await tx.taxCalendarEvent.deleteMany({
+        where: { orgId, periodId, type: "TURNOVER_TAX", status: "PENDING" }
+      });
+    }
+  }
 }

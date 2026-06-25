@@ -64,10 +64,14 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
     // INN -> KEYWORD -> AMOUNT_RANGE -> TREASURY_ACCOUNT
     let matchingRule: typeof rules[0] | undefined;
 
+    // Direction filter: skip rules that specify a direction not matching the transaction
+    const directionMatch = (r: typeof rules[0]) =>
+      !r.direction || r.direction === tx.direction;
+
     // 1. INN match
     if (tx.counterpartyInn) {
       matchingRule = rules.find(
-        r => r.matchType === "INN" && r.matchValue === tx.counterpartyInn
+        r => r.matchType === "INN" && r.matchValue === tx.counterpartyInn && directionMatch(r)
       );
     }
 
@@ -76,7 +80,8 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
       matchingRule = rules.find(
         r =>
           r.matchType === "KEYWORD" &&
-          tx.description.toLowerCase().includes(r.matchValue.toLowerCase())
+          tx.description.toLowerCase().includes(r.matchValue.toLowerCase()) &&
+          directionMatch(r)
       );
     }
 
@@ -84,7 +89,7 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
     if (!matchingRule) {
       const amt = Number(tx.amount);
       matchingRule = rules.find(
-        r => r.matchType === "AMOUNT_RANGE" && matchAmountRange(amt, r.matchValue)
+        r => r.matchType === "AMOUNT_RANGE" && matchAmountRange(amt, r.matchValue) && directionMatch(r)
       );
     }
 
@@ -94,7 +99,8 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
         r =>
           r.matchType === "TREASURY_ACCOUNT" &&
           ((tx.counterpartyInn && r.matchValue === tx.counterpartyInn) ||
-            (tx.description && tx.description.toLowerCase().includes(r.matchValue.toLowerCase())))
+            (tx.description && tx.description.toLowerCase().includes(r.matchValue.toLowerCase()))) &&
+          directionMatch(r)
       );
     }
 

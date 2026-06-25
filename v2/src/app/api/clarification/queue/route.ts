@@ -16,7 +16,9 @@ export async function GET(req: NextRequest) {
       where: {
         orgId,
         periodId,
-        status: "NEEDS_CLARIFICATION"
+        // Include IMPORTED (AI not run yet) and NEEDS_CLARIFICATION (AI low confidence).
+        // AUTO_MATCHED/CONFIRMED/SKIPPED are already handled — exclude them.
+        status: { in: ["NEEDS_CLARIFICATION", "IMPORTED"] }
       },
       orderBy: { date: "asc" }
     });
@@ -41,6 +43,7 @@ export async function GET(req: NextRequest) {
       }
 
       const grp = groupsMap.get(groupKey);
+      if (tx.status === "IMPORTED") grp.hasImported = true;
       grp.transactions.push({
         id: tx.id,
         date: tx.date.toISOString().split("T")[0],

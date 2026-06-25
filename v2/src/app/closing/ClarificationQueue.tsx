@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { CheckCircle2, Briefcase, AlertTriangle, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, Briefcase, AlertTriangle, RefreshCw, Sparkles } from "lucide-react";
 import { formatSum } from "@/lib/format";
 
 interface Transaction {
@@ -16,6 +16,7 @@ interface ClarificationGroup {
   counterpartyHint: string;
   counterpartyInn: string | null;
   transactions: Transaction[];
+  hasImported?: boolean; // true if any tx in group is IMPORTED (not yet AI-processed)
   aiSuggestion: {
     categoryId: string;
     confidence: number;
@@ -29,6 +30,78 @@ interface DocumentType {
   id: string;
   code: string;
   name: string;
+}
+
+function TypeaheadSelect({
+  options,
+  value,
+  onChange,
+}: {
+  options: DocumentType[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedName = options.find((o) => o.id === value)?.name ?? "";
+  const filtered =
+    query.length > 0
+      ? options.filter(
+          (o) =>
+            o.name.toLowerCase().includes(query.toLowerCase()) ||
+            o.code.toLowerCase().includes(query.toLowerCase())
+        )
+      : options;
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative flex-1 md:flex-none md:min-w-[280px]">
+      <input
+        type="text"
+        className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-none focus:border-black"
+        placeholder={open ? "Поиск по категории..." : (selectedName || "Выберите категорию...")}
+        value={open ? query : selectedName}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {open && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded shadow-lg max-h-52 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
+          ) : (
+            filtered.map((o) => (
+              <div
+                key={o.id}
+                className={`px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 ${
+                  o.id === value ? "bg-gray-100 font-semibold" : ""
+                }`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(o.id);
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                {o.name}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface ClarificationQueueProps {
@@ -45,6 +118,8 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
   const [answeringGroupId, setAnsweringGroupId] = useState<string | null>(null);
   const [dismissedGroups, setDismissedGroups] = useState<string[]>([]);
   const [showSkipAllConfirm, setShowSkipAllConfirm] = useState(false);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiProgress, setAiProgress] = useState<{ processed: number; total: number } | null>(null);
 
   // Category selections per group
   const [selectedCategories, setSelectedCategories] = useState<Record<string, string>>({});
@@ -54,10 +129,10 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
     try {
       const [queueRes, docTypesRes] = await Promise.all([
         fetch(`/v2/api/clarification/queue?periodId=${periodId}`),
-        fetch("/v2/api/document-types")
+        fetch("/v2/api/document-types?bankOnly=true")
       ]);
 
-      const queueData = await queueRes.json();
+      const queueData: ClarificationGroup[] = await queueRes.json();
       const docTypesData = await docTypesRes.json();
 
       setGroups(queueData);
@@ -67,7 +142,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
       const initialCats: Record<string, string> = {};
       const initialRemember: Record<string, boolean> = {};
 
-      queueData.forEach((g: ClarificationGroup) => {
+      queueData.forEach((g) => {
         if (g.aiSuggestion) {
           initialCats[g.groupId] = g.aiSuggestion.categoryId;
         } else if (docTypesData.length > 0) {
@@ -83,6 +158,41 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
       setLoadError(true);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRunAI = async () => {
+    setAiRunning(true);
+    setAiProgress(null);
+    try {
+      const res = await fetch("/v2/api/classification/run-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ periodId })
+      });
+      if (!res.ok) return;
+
+      const pollId = setInterval(async () => {
+        try {
+          const stRes = await fetch(`/v2/api/classification/status/${periodId}`);
+          if (stRes.ok) {
+            const st = await stRes.json();
+            if (st.processed !== undefined && st.total > 0) {
+              setAiProgress({ processed: st.processed, total: st.total });
+            }
+            if (st.status === "done" || st.status === "failed") {
+              clearInterval(pollId);
+              setAiRunning(false);
+              setAiProgress(null);
+              // Reload queue — IMPORTED → NEEDS_CLARIFICATION after AI
+              setLoading(true);
+              loadQueue();
+            }
+          }
+        } catch { /* ignore poll errors */ }
+      }, 2000);
+    } catch {
+      setAiRunning(false);
     }
   };
 
@@ -198,7 +308,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
           <div className="font-bold text-gray-700 text-sm">Очередь уточняющих вопросов</div>
           <div className="text-gray-400">Ответьте на вопросы, чтобы завершить классификацию операций периода</div>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
           {onBack && (
             <button
               onClick={onBack}
@@ -208,6 +318,26 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
             </button>
           )}
           <div className="font-semibold text-gray-700 whitespace-nowrap">Осталось групп: {groups.length}</div>
+          {/* AI button — visible when there are unprocessed IMPORTED transactions */}
+          {groups.some(g => g.hasImported) && (
+            <button
+              onClick={handleRunAI}
+              disabled={aiRunning}
+              className="text-[10px] font-bold bg-black text-white px-3 py-1.5 uppercase tracking-widest hover:opacity-80 transition-opacity disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {aiRunning ? (
+                <>
+                  <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  {aiProgress ? `${aiProgress.processed}/${aiProgress.total}` : "Запуск..."}
+                </>
+              ) : (
+                <><Sparkles size={11} /> Распознать ИИ</>
+              )}
+            </button>
+          )}
           <button
             onClick={() => setShowSkipAllConfirm(true)}
             className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 py-1.5 px-3 rounded font-semibold transition"
@@ -216,6 +346,16 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
           </button>
         </div>
       </div>
+
+      {/* Banner for unprocessed IMPORTED transactions */}
+      {groups.some(g => g.hasImported) && !aiRunning && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
+          <span>
+            Некоторые операции ещё не были обработаны ИИ (показаны ниже). Нажмите <strong>Распознать ИИ</strong> для автоматической классификации, или назначьте категорию вручную.
+          </span>
+        </div>
+      )}
 
       {/* Cards List */}
       <div className="space-y-6">
@@ -244,6 +384,11 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
                     {group.counterpartyInn && (
                       <span className="bg-gray-100 text-gray-500 font-mono px-2 py-0.5 rounded-sm text-[10px]">
                         ИНН: {group.counterpartyInn}
+                      </span>
+                    )}
+                    {group.hasImported && (
+                      <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-sm">
+                        Не обработан ИИ
                       </span>
                     )}
                   </div>
@@ -297,19 +442,13 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
 
                   {/* Fallback Selector & Form Submit */}
                   <div className="flex items-center gap-3 w-full md:w-auto flex-1 md:justify-end">
-                    <select
+                    <TypeaheadSelect
+                      options={docTypes}
                       value={selectedCategories[group.groupId] || ""}
-                      onChange={(e) =>
-                        setSelectedCategories(prev => ({ ...prev, [group.groupId]: e.target.value }))
+                      onChange={(id) =>
+                        setSelectedCategories(prev => ({ ...prev, [group.groupId]: id }))
                       }
-                      className="bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-hidden focus:border-black flex-1 md:flex-none md:min-w-[220px]"
-                    >
-                      {docTypes.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
 
                     <button
                       onClick={() => handleAnswer(group)}

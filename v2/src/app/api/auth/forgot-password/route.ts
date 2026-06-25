@@ -37,13 +37,9 @@ export async function POST(req: NextRequest) {
 
     const mailSent = await sendPasswordResetEmail(user.email, resetUrl);
 
-    // Dev fallback: return token in response if email not configured
     if (!mailSent) {
-      if (process.env.NODE_ENV !== "production") {
-        return NextResponse.json({ success: true, devResetUrl: resetUrl });
-      }
-      // In production without mail config, still succeed silently
-      return NextResponse.json({ success: true });
+      // SMTP не настроен — логируем только в консоль сервера, не возвращаем токен клиенту
+      console.log("[forgot-password] SMTP not configured. Reset URL (server-only):", resetUrl);
     }
 
     return NextResponse.json({ success: true });

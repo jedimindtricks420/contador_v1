@@ -90,12 +90,21 @@ export async function postDocument(
       if (condResult.isZero()) continue;
     }
 
-    // Find account
+    // Find account — supports "$fieldName" for payload-driven dynamic account codes
+    let resolvedAccountCode: string = line.accountCode;
+    if (resolvedAccountCode.startsWith("$")) {
+      const fieldName = resolvedAccountCode.slice(1);
+      resolvedAccountCode = (payload[fieldName] as string) || "";
+      if (!resolvedAccountCode) {
+        throw new Error(`Обязательное поле "${fieldName}" не указано в данных документа (нужен код счёта)`);
+      }
+    }
+
     const account = await tx.account.findUnique({
-      where: { code: line.accountCode }
+      where: { code: resolvedAccountCode }
     });
     if (!account) {
-      throw new Error(`Счёт с кодом ${line.accountCode} не найден в плане счетов`);
+      throw new Error(`Счёт с кодом ${resolvedAccountCode} не найден в плане счетов`);
     }
 
     // Calculate amount
@@ -162,6 +171,38 @@ export async function postDocument(
     });
   }
 
+  // 9b. Auto-close an existing OpenItem when the template declares closesOpenItemByAccount.
+  // Used by SUPPLIER_REFUND (closes 4310 advance) and ADVANCE_RETURN_SENT (closes 6310 advance).
+  if (template.closesOpenItemByAccount && counterpartyId) {
+    const closeAccount = await tx.account.findUnique({
+      where: { code: template.closesOpenItemByAccount }
+    });
+    if (closeAccount) {
+      const docAmount = evaluate("amount", evalPayload);
+      // Find the best matching open item: same counterparty + same account + closest amount
+      const candidates = await tx.openItem.findMany({
+        where: {
+          orgId: doc.orgId,
+          accountId: closeAccount.id,
+          counterpartyId,
+          status: "OPEN"
+        },
+        orderBy: { dateOpened: "asc" }
+      });
+      // Prefer exact amount match, otherwise take the oldest open item
+      const exactMatch = candidates.find((c: any) =>
+        new Decimal(c.amount.toString()).minus(docAmount).abs().lessThan("0.01")
+      );
+      const toClose = exactMatch ?? candidates[0] ?? null;
+      if (toClose) {
+        await tx.openItem.update({
+          where: { id: toClose.id },
+          data: { status: "CLOSED", dateClosed: doc.date }
+        });
+      }
+    }
+  }
+
   // 10. Audit Log
   const userId = passedUserId || "system";
 
@@ -178,6 +219,41 @@ export async function postDocument(
       } as any
     }
   });
+
+  // Update tax calendar events dynamically for the period
+  try {
+    const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
+    await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
+  } catch (err: any) {
+    console.error("Failed to dynamically update tax calendar events in postDocument:", err.message);
+  }
+
+  // Auto-close TaxCalendarEvents when a tax payment document is posted.
+  // TAX_PAYMENT covers all budget taxes (VAT, НДФЛ, profit tax, turnover tax).
+  // SOCIAL_TAX_PAYMENT covers social tax only.
+  // We close PENDING events whose due date has already passed (lte payment date),
+  // meaning the tax was accrued and is now being paid.
+  if (doc.type.code === "TAX_PAYMENT") {
+    await tx.taxCalendarEvent.updateMany({
+      where: {
+        orgId: doc.orgId,
+        type: { in: ["VAT", "PERSONAL_INCOME_TAX", "PROFIT_TAX", "TURNOVER_TAX"] as any[] },
+        status: "PENDING",
+        dueDate: { lte: doc.date }
+      },
+      data: { status: "DONE" }
+    });
+  } else if (doc.type.code === "SOCIAL_TAX_PAYMENT") {
+    await tx.taxCalendarEvent.updateMany({
+      where: {
+        orgId: doc.orgId,
+        type: "SOCIAL_TAX" as any,
+        status: "PENDING",
+        dueDate: { lte: doc.date }
+      },
+      data: { status: "DONE" }
+    });
+  }
 
   return { journalEntries: createdEntries, openItem };
 }
@@ -227,6 +303,13 @@ export async function voidDocument(
     }
   });
 
+  // 5b. Return the bank transaction to the clarification queue if this document
+  //     was created from a staged transaction (AUTO_MATCHED or CONFIRMED by user).
+  await tx.stagedTransaction.updateMany({
+    where: { documentId },
+    data: { status: "NEEDS_CLARIFICATION", documentId: null }
+  });
+
   // 6. Audit Log
   const userId = passedUserId || "system";
 
@@ -239,6 +322,14 @@ export async function voidDocument(
       entityId: doc.id
     }
   });
+
+  // Update tax calendar events dynamically for the period
+  try {
+    const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
+    await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
+  } catch (err: any) {
+    console.error("Failed to dynamically update tax calendar events in voidDocument:", err.message);
+  }
 }
 
 /**

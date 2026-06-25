@@ -8,6 +8,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -16,7 +17,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
       fontSrc: ["'self'", "fonts.gstatic.com"],
       imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"]
+      connectSrc: ["'self'", "https://unpkg.com"]
     }
   }
 })); // Configured security headers for Admin Portal
@@ -32,6 +33,7 @@ const PORT = process.env.ADMIN_PORT || 3031;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecretadmin";
 
 app.use(express.json());
+app.use((req: Request, _res: Response, next: NextFunction) => { if (req.body === undefined) req.body = {}; next(); });
 
 // ─────────────────────────────────────────────
 // PAYMENT UTILS & HELPERS
@@ -112,6 +114,28 @@ async function fulfillSubscription(paymentId: string, externalId: string) {
 
 async function getPaymentConfig() {
   return await prisma.paymentConfig.findUnique({ where: { id: "default" } });
+}
+
+async function fulfillSubscriptionV2(paymentId: string, externalId: string) {
+  const payment = await prismaV2.payment.update({
+    where: { id: paymentId },
+    data: { status: "SUCCESS", externalId, completedAt: new Date() }
+  });
+
+  const now = new Date();
+  const sub = await prismaV2.subscription.findUnique({ where: { orgId: payment.orgId } });
+  const baseDate = (sub?.plan === "PRO" && sub.validUntil && sub.validUntil > now)
+    ? sub.validUntil : now;
+  const newValidUntil = new Date(baseDate);
+  newValidUntil.setDate(newValidUntil.getDate() + (payment.daysGranted || 365));
+
+  await prismaV2.subscription.upsert({
+    where: { orgId: payment.orgId },
+    update: { plan: "PRO", validUntil: newValidUntil },
+    create: { orgId: payment.orgId, plan: "PRO", validUntil: newValidUntil }
+  });
+
+  console.log(`[V2 Payment] Fulfilled PRO subscription for Org: ${payment.orgId}`);
 }
 
 // ─────────────────────────────────────────────
@@ -280,6 +304,194 @@ publicRouter.post("/payments/click/complete", publicLimiter, async (req: Request
 
   await fulfillSubscription(payment.id, String(p.click_trans_id));
   res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0, error_note: "Success" });
+});
+
+// ─── V2 PAYMENT ROUTES ───────────────────────────────────────────────────────
+
+// V2 - Initiate Payment
+publicRouter.post("/v2/payments/initiate", publicLimiter, async (req: Request, res: Response) => {
+  const { orgId, provider } = req.body;
+  if (!orgId || !["PAYME", "CLICK"].includes(provider)) {
+    return res.status(400).json({ error: "Invalid orgId or provider" });
+  }
+
+  const config = await getPaymentConfig();
+  if (!config) return res.status(500).json({ error: "Payment system not configured" });
+
+  const amount = config.pro_price_yearly || 299000;
+  const pendingExternalId = `PENDING_${randomBytes(8).toString("hex")}`;
+
+  const payment = await prismaV2.payment.create({
+    data: {
+      orgId,
+      provider,
+      externalId: pendingExternalId,
+      amount: amount,
+      currency: "UZS",
+      status: "PENDING",
+      daysGranted: 365
+    }
+  });
+
+  let url = "";
+  if (provider === "PAYME") {
+    url = generatePaymeUrl(payment.id, amount * 100, config);
+  } else {
+    url = generateClickUrl(payment.id, amount, config);
+  }
+
+  res.json({ success: true, url, paymentId: payment.id });
+});
+
+// V2 - Payme Webhook
+publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res: Response) => {
+  const { method, params, id } = req.body;
+  const config = await getPaymentConfig();
+  if (!checkPaymeAuth(req.headers.authorization, config)) {
+    return res.json({ error: PAYME_ERRORS.AUTH_ERROR, id });
+  }
+
+  try {
+    switch (method) {
+      case "CheckPerformTransaction": {
+        const paymentId = params.account.order_id;
+        const payment = await prismaV2.payment.findUnique({ where: { id: paymentId } });
+        if (!payment) throw PAYME_ERRORS.ORDER_NOT_FOUND;
+        if (Number(payment.amount) * 100 !== params.amount) throw PAYME_ERRORS.WRONG_AMOUNT;
+        if (payment.status === "SUCCESS") throw PAYME_ERRORS.ORDER_ALREADY_PAID;
+        return res.json({ result: { allow: true }, id });
+      }
+      case "CreateTransaction": {
+        const paymentId = params.account.order_id;
+        const payment = await prismaV2.payment.findUnique({ where: { id: paymentId } });
+        if (!payment) throw PAYME_ERRORS.ORDER_NOT_FOUND;
+        if (!payment.externalId.startsWith("PENDING_") && payment.externalId !== params.id) throw PAYME_ERRORS.CANNOT_PERFORM;
+        if (payment.status === "SUCCESS") throw PAYME_ERRORS.ORDER_ALREADY_PAID;
+
+        await prismaV2.payment.update({
+          where: { id: paymentId },
+          data: { externalId: params.id }
+        });
+        return res.json({ result: { create_time: payment.createdAt.getTime(), transaction: payment.id, state: 1 }, id });
+      }
+      case "PerformTransaction": {
+        const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
+        if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
+        if (payment.status === "SUCCESS") {
+          return res.json({ result: { transaction: payment.id, perform_time: payment.completedAt?.getTime(), state: 2 }, id });
+        }
+        await fulfillSubscriptionV2(payment.id, params.id);
+        const updated = await prismaV2.payment.findUnique({ where: { id: payment.id } });
+        return res.json({ result: { transaction: updated!.id, perform_time: updated!.completedAt?.getTime(), state: 2 }, id });
+      }
+      case "CancelTransaction": {
+        const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
+        if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
+        if (payment.status === "SUCCESS") {
+          return res.json({ result: { transaction: payment.id, cancel_time: Date.now(), state: -2 }, id });
+        }
+        await prismaV2.payment.update({
+          where: { id: payment.id },
+          data: { status: "FAILED" }
+        });
+        return res.json({ result: { transaction: payment.id, cancel_time: Date.now(), state: -1 }, id });
+      }
+      case "CheckTransaction": {
+        const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
+        if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
+        return res.json({
+          result: {
+            create_time: payment.createdAt.getTime(),
+            perform_time: payment.completedAt?.getTime() || 0,
+            cancel_time: 0,
+            transaction: payment.id,
+            state: payment.status === "SUCCESS" ? 2 : (payment.status === "FAILED" ? -1 : 1),
+            reason: null
+          },
+          id
+        });
+      }
+      default: return res.json({ error: PAYME_ERRORS.METHOD_NOT_FOUND, id });
+    }
+  } catch (err: any) {
+    return res.json({ error: err.code ? err : PAYME_ERRORS.SYSTEM_ERROR, id });
+  }
+});
+
+// V2 - Click Prepare
+publicRouter.post("/v2/payments/click/prepare", publicLimiter, async (req: Request, res: Response) => {
+  const p = req.body;
+  const config = await getPaymentConfig();
+  if (!verifyClickSignature(p, 0, config?.click_secret_key || "")) {
+    return res.json({ error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+  }
+
+  const payment = await prismaV2.payment.findUnique({ where: { id: p.merchant_trans_id } });
+  if (!payment) return res.json({ error: CLICK_ERRORS.USER_NOT_FOUND, error_note: "Order not found" });
+  if (parseFloat(String(payment.amount)) !== parseFloat(p.amount)) {
+    return res.json({ error: CLICK_ERRORS.WRONG_AMOUNT, error_note: "Wrong amount" });
+  }
+  if (payment.status === "SUCCESS") return res.json({ error: CLICK_ERRORS.ALREADY_PAID, error_note: "Already paid" });
+
+  await prismaV2.payment.update({
+    where: { id: payment.id },
+    data: { externalId: String(p.click_trans_id) }
+  });
+
+  res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.id, error: 0, error_note: "Success" });
+});
+
+// V2 - Click Complete
+publicRouter.post("/v2/payments/click/complete", publicLimiter, async (req: Request, res: Response) => {
+  const p = req.body;
+  const config = await getPaymentConfig();
+  if (!verifyClickSignature(p, 1, config?.click_secret_key || "")) {
+    return res.json({ error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+  }
+
+  const payment = await prismaV2.payment.findUnique({ where: { id: p.merchant_trans_id } });
+  if (!payment || p.merchant_prepare_id !== payment.id) {
+    return res.json({ error: CLICK_ERRORS.TRANSACTION_NOT_FOUND, error_note: "Invalid prepare id" });
+  }
+
+  if (parseInt(p.error) < 0) {
+    await prismaV2.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+    return res.json({ error: CLICK_ERRORS.CANCELLED, error_note: "Cancelled" });
+  }
+
+  if (payment.status === "SUCCESS") {
+    return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0 });
+  }
+
+  await fulfillSubscriptionV2(payment.id, String(p.click_trans_id));
+  res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0, error_note: "Success" });
+});
+
+// V2 User voucher redemption (called by v2 BFF — no admin auth needed, orgId comes from session via BFF)
+publicRouter.post("/v2/vouchers/redeem", publicLimiter, async (req: Request, res: Response) => {
+  const { orgId, code } = req.body;
+  if (!orgId || !code) return res.status(400).json({ error: "orgId and code are required" });
+  const normalizedCode = String(code).trim().toUpperCase();
+  const voucher = await prismaV2.voucher.findUnique({ where: { code: normalizedCode } });
+  if (!voucher) return res.status(404).json({ error: "Ваучер не найден" });
+  if (voucher.usedAt) return res.status(409).json({ error: "Ваучер уже использован" });
+
+  const sub = await prismaV2.subscription.findUnique({ where: { orgId } });
+  const now = new Date();
+  const baseDate = (sub?.plan === "PRO" && sub.validUntil && sub.validUntil > now) ? sub.validUntil : now;
+  const newValidUntil = new Date(baseDate);
+  newValidUntil.setDate(newValidUntil.getDate() + voucher.daysGranted);
+
+  await prismaV2.$transaction([
+    prismaV2.voucher.update({ where: { code: normalizedCode }, data: { usedByOrgId: orgId, usedAt: now } }),
+    prismaV2.subscription.upsert({
+      where: { orgId },
+      update: { plan: "PRO", validUntil: newValidUntil },
+      create: { orgId, plan: "PRO", validUntil: newValidUntil }
+    })
+  ]);
+
+  res.json({ success: true, daysGranted: voucher.daysGranted, validUntil: newValidUntil });
 });
 
 // Mount Public Router
@@ -636,11 +848,26 @@ router.post("/v2/orgs/:orgId/upgrade", async (req: Request, res: Response) => {
 });
 
 router.delete("/v2/orgs/:orgId", async (req: Request, res: Response) => {
+  const orgId = req.params.orgId;
   try {
-    await prismaV2.organization.delete({ where: { id: req.params.orgId } });
+    // Must delete in FK-safe order:
+    // StagedTransaction → blocks BankAccount & Period deletion
+    await prismaV2.stagedTransaction.deleteMany({ where: { orgId } });
+    // OpenItem → blocks Document deletion (no cascade on openingDocumentId)
+    await prismaV2.openItem.deleteMany({ where: { orgId } });
+    // Document → cascade deletes JournalEntry (which references Counterparty without cascade)
+    await prismaV2.document.deleteMany({ where: { orgId } });
+    // Now safe to delete Periods, BankAccounts, Counterparties
+    await prismaV2.period.deleteMany({ where: { orgId } });
+    await prismaV2.bankAccount.deleteMany({ where: { orgId } });
+    await prismaV2.counterparty.deleteMany({ where: { orgId } });
+    await prismaV2.rule.deleteMany({ where: { orgId } });
+    // Organization cascade deletes: OrgMember, AuditLog, Subscription, Payment, TaxCalendarEvent, TaxDeadlineTemplate
+    await prismaV2.organization.delete({ where: { id: orgId } });
     res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete organization" });
+  } catch (error: any) {
+    console.error("Delete org error:", error?.message, error?.code, error?.meta);
+    res.status(500).json({ error: "Failed to delete organization", detail: error?.message });
   }
 });
 
@@ -853,6 +1080,238 @@ router.patch("/v2/periods/:periodId/status", async (req: Request, res: Response)
   } catch (error: any) {
     res.status(404).json({ error: "Period not found" });
   }
+});
+
+// ─── V2 NEW ROUTES ───────────────────────────────────────────────────────────
+
+// Create standalone organization
+router.post("/v2/orgs", async (req: Request, res: Response) => {
+  const { name, inn, taxRegime, isVatPayer } = req.body;
+  if (!name) return res.status(400).json({ error: "Organization name is required" });
+  if (taxRegime && !["VAT", "TURNOVER_TAX"].includes(taxRegime)) {
+    return res.status(400).json({ error: "Invalid taxRegime. Use VAT or TURNOVER_TAX" });
+  }
+  try {
+    const org = await prismaV2.organization.create({
+      data: {
+        name,
+        inn: inn || null,
+        taxRegime: taxRegime || "TURNOVER_TAX",
+        isVatPayer: Boolean(isVatPayer),
+        subscription: { create: { plan: "FREE" } }
+      },
+      include: { subscription: true }
+    });
+    res.json({ success: true, org });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to create organization" });
+  }
+});
+
+// Update user name
+router.patch("/v2/users/:userId", async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const { name } = req.body;
+  if (name === undefined) return res.status(400).json({ error: "name is required" });
+  try {
+    const user = await prismaV2.user.update({ where: { id: userId }, data: { name: name || null } });
+    res.json({ success: true, user });
+  } catch (error: any) {
+    res.status(404).json({ error: "User not found" });
+  }
+});
+
+// Add user to organization
+router.post("/v2/orgs/:orgId/members", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { userId, role } = req.body;
+  if (!userId || !role) return res.status(400).json({ error: "userId and role are required" });
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role. Use OWNER, ADMIN, or ACCOUNTANT" });
+  }
+  try {
+    const member = await prismaV2.orgMember.create({
+      data: { orgId, userId, role },
+      include: { user: { select: { id: true, email: true, name: true } } }
+    });
+    res.json({ success: true, member });
+  } catch (error: any) {
+    if (error.code === "P2002") return res.status(409).json({ error: "User is already a member of this organization" });
+    if (error.code === "P2003") return res.status(404).json({ error: "User or organization not found" });
+    res.status(500).json({ error: error.message || "Failed to add member" });
+  }
+});
+
+// Change member role in organization
+router.patch("/v2/orgs/:orgId/members/:userId/role", async (req: Request, res: Response) => {
+  const { orgId, userId } = req.params;
+  const { role } = req.body;
+  if (!["OWNER", "ADMIN", "ACCOUNTANT"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role. Use OWNER, ADMIN, or ACCOUNTANT" });
+  }
+  try {
+    const member = await prismaV2.orgMember.update({
+      where: { userId_orgId: { userId, orgId } },
+      data: { role }
+    });
+    res.json({ success: true, member });
+  } catch (error: any) {
+    res.status(404).json({ error: "Member not found" });
+  }
+});
+
+// Create bank account for org
+router.post("/v2/orgs/:orgId/bank-accounts", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { name, currency, bankName, accountNumber } = req.body;
+  if (!name) return res.status(400).json({ error: "Account name is required" });
+  try {
+    const account = await prismaV2.bankAccount.create({
+      data: { orgId, name, currency: currency || "UZS", bankName: bankName || null, accountNumber: accountNumber || null }
+    });
+    res.json({ success: true, account });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to create bank account" });
+  }
+});
+
+// Edit bank account
+router.patch("/v2/bank-accounts/:accountId", async (req: Request, res: Response) => {
+  const { accountId } = req.params;
+  const { name, currency, bankName, accountNumber } = req.body;
+  const data: any = {};
+  if (name !== undefined) data.name = name;
+  if (currency !== undefined) data.currency = currency;
+  if (bankName !== undefined) data.bankName = bankName;
+  if (accountNumber !== undefined) data.accountNumber = accountNumber;
+  try {
+    const account = await prismaV2.bankAccount.update({ where: { id: accountId }, data });
+    res.json({ success: true, account });
+  } catch (error: any) {
+    res.status(404).json({ error: "Bank account not found" });
+  }
+});
+
+// Create period for org
+router.post("/v2/orgs/:orgId/periods", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const { year, month, mode } = req.body;
+  if (!year || !month) return res.status(400).json({ error: "year and month are required" });
+  if (mode && !["HISTORICAL", "ACTIVE"].includes(mode)) {
+    return res.status(400).json({ error: "Invalid mode. Use HISTORICAL or ACTIVE" });
+  }
+  try {
+    const period = await prismaV2.period.create({
+      data: { orgId, year: parseInt(year), month: parseInt(month), mode: mode || "ACTIVE" }
+    });
+    res.json({ success: true, period });
+  } catch (error: any) {
+    if (error.code === "P2002") return res.status(409).json({ error: "Period already exists for this year/month" });
+    res.status(500).json({ error: error.message || "Failed to create period" });
+  }
+});
+
+// Delete period
+router.delete("/v2/periods/:periodId", async (req: Request, res: Response) => {
+  try {
+    await prismaV2.period.delete({ where: { id: req.params.periodId } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(404).json({ error: "Period not found" });
+  }
+});
+
+// List counterparties for org
+router.get("/v2/orgs/:orgId/counterparties", async (req: Request, res: Response) => {
+  const { orgId } = req.params;
+  const counterparties = await prismaV2.counterparty.findMany({
+    where: { orgId },
+    include: { _count: { select: { journalEntries: true } } },
+    orderBy: { name: "asc" }
+  });
+  res.json(counterparties);
+});
+
+// V2 Payments list
+router.get("/v2/payments", async (req: Request, res: Response) => {
+  const { orgId, status, from, to, page = "1" } = req.query;
+  const take = 50;
+  const skip = (parseInt(page as string) - 1) * take;
+  const where: any = {};
+  if (orgId) where.orgId = orgId;
+  if (status) where.status = status;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from as string);
+    if (to) where.createdAt.lte = new Date(to as string);
+  }
+  const [payments, total] = await Promise.all([
+    prismaV2.payment.findMany({
+      where,
+      include: { org: { select: { name: true, inn: true } } },
+      orderBy: { createdAt: "desc" },
+      take, skip
+    }),
+    prismaV2.payment.count({ where })
+  ]);
+  res.json({ payments, total, page: parseInt(page as string), pages: Math.ceil(total / take) });
+});
+
+// V2 Vouchers list
+router.get("/v2/vouchers", async (req: Request, res: Response) => {
+  const { used } = req.query;
+  const where: any = {};
+  if (used === "true") where.usedAt = { not: null };
+  if (used === "false") where.usedAt = null;
+  const vouchers = await prismaV2.voucher.findMany({
+    where,
+    include: { org: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 200
+  });
+  res.json(vouchers);
+});
+
+// Generate V2 vouchers
+router.post("/v2/vouchers/generate", async (req: Request, res: Response) => {
+  const { count = 10, daysGranted = 365 } = req.body;
+  const n = Math.min(parseInt(count), 100);
+  const days = parseInt(daysGranted);
+  const vouchers = Array.from({ length: n }, () => ({
+    code: `CV2-${randomBytes(3).toString("hex").toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`,
+    daysGranted: days
+  }));
+  await prismaV2.voucher.createMany({ data: vouchers });
+  res.json({ success: true, count: n, vouchers });
+});
+
+// Apply V2 voucher to org
+router.post("/v2/vouchers/:code/apply", async (req: Request, res: Response) => {
+  const { code } = req.params;
+  const { orgId } = req.body;
+  if (!orgId) return res.status(400).json({ error: "orgId is required" });
+  const voucher = await prismaV2.voucher.findUnique({ where: { code } });
+  if (!voucher) return res.status(404).json({ error: "Voucher not found" });
+  if (voucher.usedAt) return res.status(409).json({ error: "Voucher already used" });
+
+  const sub = await prismaV2.subscription.findUnique({ where: { orgId } });
+  const baseDate = (sub?.plan === "PRO" && sub.validUntil && sub.validUntil > new Date()) ? sub.validUntil : new Date();
+  const newValidUntil = new Date(baseDate);
+  newValidUntil.setDate(newValidUntil.getDate() + voucher.daysGranted);
+
+  await prismaV2.$transaction([
+    prismaV2.voucher.update({
+      where: { code },
+      data: { usedByOrgId: orgId, usedAt: new Date() }
+    }),
+    prismaV2.subscription.upsert({
+      where: { orgId },
+      update: { plan: "PRO", validUntil: newValidUntil },
+      create: { orgId, plan: "PRO", validUntil: newValidUntil }
+    })
+  ]);
+
+  res.json({ success: true, validUntil: newValidUntil });
 });
 
 app.use("/admin/api", router);

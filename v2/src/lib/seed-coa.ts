@@ -15,6 +15,7 @@ export const MASTER_COA: CoaEntry[] = [
   { code: "0000", name: "Вспомогательный (ввод начальных остатков)", type: "ACTIVE_PASSIVE", group: "Системные", layer: "CORE", isDeprecated: false },
 
   // ОСНОВНЫЕ СРЕДСТВА
+  { code: "0100", name: "Основные средства (сводный счёт)", type: "ASSET", group: "Основные средства", layer: "CORE", isDeprecated: false },
   { code: "0110", name: "Земля", type: "ASSET", group: "Основные средства", layer: "EXTENSION", isDeprecated: false },
   { code: "0111", name: "Благоустройство земли", type: "ASSET", group: "Основные средства", layer: "EXTENSION", isDeprecated: false },
   { code: "0112", name: "Благоустройство ОС по финансовой аренде", type: "ASSET", group: "Основные средства", layer: "EXTENSION", isDeprecated: false },
@@ -183,7 +184,7 @@ export const MASTER_COA: CoaEntry[] = [
   { code: "5920", name: "Прочие текущие активы", type: "ASSET", group: "Денежные средства", layer: "EXTENSION", isDeprecated: false },
 
   // КРАТКОСРОЧНЫЕ ОБЯЗАТЕЛЬСТВА
-  { code: "6010", name: "Счета к оплате поставщикам и подрядчикам", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "CORE", isDeprecated: false },
+  { code: "6010", name: "Счета к оплате поставщикам и подрядчикам", type: "ACTIVE_PASSIVE", group: "Краткосрочные обязательства", layer: "CORE", isDeprecated: false },
   { code: "6020", name: "Векселя выданные (краткосрочные)", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "EXTENSION", isDeprecated: false },
   { code: "6110", name: "Счета к оплате обособленным подразделениям", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "EXTENSION", isDeprecated: false },
   { code: "6120", name: "Счета к оплате дочерним и зависимым обществам", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "EXTENSION", isDeprecated: false },
@@ -199,6 +200,7 @@ export const MASTER_COA: CoaEntry[] = [
   { code: "6410", name: "Задолженность по платежам в бюджетную систему", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "CORE", isDeprecated: false },
   { code: "6510", name: "Платежи по страхованию", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "CORE", isDeprecated: false },
   { code: "6520", name: "Платежи в государственные целевые фонды", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "CORE", isDeprecated: false },
+  { code: "6530", name: "Задолженность по ИНПС (накопительная пенсия)", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "CORE", isDeprecated: false },
   { code: "6610", name: "Дивиденды к оплате", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "EXTENSION", isDeprecated: false },
   { code: "6620", name: "Задолженность выбывающим учредителям по их доле", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "EXTENSION", isDeprecated: false },
   { code: "6630", name: "Вклады учредителей по увеличению уставного капитала", type: "LIABILITY", group: "Краткосрочные обязательства", layer: "EXTENSION", isDeprecated: false },
