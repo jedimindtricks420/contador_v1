@@ -354,19 +354,37 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
   try {
     switch (method) {
       case "CheckPerformTransaction": {
-        const paymentId = params.account.order_id;
+        const providedKey = Object.keys(params.account || {})[0] || "order_id";
+        const paymentId = params.account?.[providedKey];
+        if (!paymentId) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
+
         const payment = await prismaV2.payment.findUnique({ where: { id: paymentId } });
-        if (!payment) throw PAYME_ERRORS.ORDER_NOT_FOUND;
+        if (!payment) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
         if (Number(payment.amount) * 100 !== params.amount) throw PAYME_ERRORS.WRONG_AMOUNT;
         if (payment.status === "SUCCESS") throw PAYME_ERRORS.ORDER_ALREADY_PAID;
+        if (payment.status === "FAILED") throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "Transaction cancelled" };
         return res.json({ result: { allow: true }, id });
       }
       case "CreateTransaction": {
-        const paymentId = params.account.order_id;
+        const providedKey = Object.keys(params.account || {})[0] || "order_id";
+        const paymentId = params.account?.[providedKey];
+        if (!paymentId) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
+
+        if (Date.now() - params.time > 43200000) {
+          throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "timeout" };
+        }
+
+        const existing = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
+        if (existing) {
+          return res.json({ result: { create_time: existing.createdAt.getTime(), transaction: existing.id, state: existing.status === "SUCCESS" ? 2 : (existing.status === "FAILED" ? (existing.completedAt ? -2 : -1) : 1) }, id });
+        }
+
         const payment = await prismaV2.payment.findUnique({ where: { id: paymentId } });
-        if (!payment) throw PAYME_ERRORS.ORDER_NOT_FOUND;
-        if (!payment.externalId.startsWith("PENDING_") && payment.externalId !== params.id) throw PAYME_ERRORS.CANNOT_PERFORM;
+        if (!payment) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
+        if (payment.externalId && !payment.externalId.startsWith("PENDING_") && payment.externalId !== params.id) throw PAYME_ERRORS.CANNOT_PERFORM;
+        if (Number(payment.amount) * 100 !== params.amount) throw PAYME_ERRORS.WRONG_AMOUNT;
         if (payment.status === "SUCCESS") throw PAYME_ERRORS.ORDER_ALREADY_PAID;
+        if (payment.status === "FAILED") throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "Transaction cancelled" };
 
         await prismaV2.payment.update({
           where: { id: paymentId },
@@ -377,39 +395,79 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
       case "PerformTransaction": {
         const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
-        if (payment.status === "SUCCESS") {
-          return res.json({ result: { transaction: payment.id, perform_time: payment.completedAt?.getTime(), state: 2 }, id });
+        if (payment.status === "SUCCESS" && payment.completedAt) {
+          return res.json({ result: { transaction: payment.id, perform_time: payment.completedAt.getTime(), state: 2 }, id });
+        }
+        if (payment.status === "FAILED") {
+          throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "Transaction cancelled" };
         }
         await fulfillSubscriptionV2(payment.id, params.id);
         const updated = await prismaV2.payment.findUnique({ where: { id: payment.id } });
-        return res.json({ result: { transaction: updated!.id, perform_time: updated!.completedAt?.getTime(), state: 2 }, id });
+        return res.json({ result: { transaction: updated!.id, perform_time: updated!.completedAt ? updated!.completedAt.getTime() : Date.now(), state: 2 }, id });
       }
       case "CancelTransaction": {
         const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
-        if (payment.status === "SUCCESS") {
-          return res.json({ result: { transaction: payment.id, cancel_time: Date.now(), state: -2 }, id });
+        
+        const now = new Date();
+        if (payment.status === "FAILED") {
+          return res.json({ result: { transaction: payment.id, cancel_time: payment.cancelTime ? payment.cancelTime.getTime() : now.getTime(), state: payment.completedAt ? -2 : -1 }, id });
         }
         await prismaV2.payment.update({
           where: { id: payment.id },
-          data: { status: "FAILED" }
+          data: { status: "FAILED", cancelTime: now, cancelReason: String(params.reason) }
         });
-        return res.json({ result: { transaction: payment.id, cancel_time: Date.now(), state: -1 }, id });
+        return res.json({ result: { transaction: payment.id, cancel_time: now.getTime(), state: payment.completedAt ? -2 : -1 }, id });
       }
       case "CheckTransaction": {
         const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
+        
+        let state = 1;
+        if (payment.status === "SUCCESS") state = 2;
+        else if (payment.status === "FAILED") state = payment.completedAt ? -2 : -1;
+
         return res.json({
           result: {
             create_time: payment.createdAt.getTime(),
             perform_time: payment.completedAt?.getTime() || 0,
-            cancel_time: 0,
+            cancel_time: payment.cancelTime?.getTime() || 0,
             transaction: payment.id,
-            state: payment.status === "SUCCESS" ? 2 : (payment.status === "FAILED" ? -1 : 1),
-            reason: null
+            state: state,
+            reason: payment.cancelReason ? parseInt(payment.cancelReason) : null
           },
           id
         });
+      }
+      case "GetStatement": {
+        const { from, to } = params;
+        const attempts = await prismaV2.payment.findMany({
+          where: {
+            externalId: { not: { startsWith: "PENDING_" } },
+            createdAt: { gte: new Date(from), lte: new Date(to) }
+          },
+          orderBy: { createdAt: "asc" }
+        });
+
+        const transactions = attempts.map(attempt => {
+          let state = 1;
+          if (attempt.status === "SUCCESS") state = 2;
+          else if (attempt.status === "FAILED") state = attempt.completedAt ? -2 : -1;
+
+          return {
+            id: attempt.externalId,
+            time: attempt.createdAt.getTime(),
+            amount: Number(attempt.amount) * 100,
+            account: { order_id: attempt.id },
+            create_time: attempt.createdAt.getTime(),
+            perform_time: attempt.completedAt?.getTime() || 0,
+            cancel_time: attempt.cancelTime?.getTime() || 0,
+            transaction: attempt.id,
+            state: state,
+            reason: attempt.cancelReason ? parseInt(attempt.cancelReason) : null
+          };
+        });
+        return res.json({ result: { transactions }, id });
       }
       default: return res.json({ error: PAYME_ERRORS.METHOD_NOT_FOUND, id });
     }

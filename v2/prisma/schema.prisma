@@ -305,6 +305,8 @@ model Payment {
   daysGranted Int          @default(365)
   createdAt   DateTime     @default(now())
   completedAt DateTime?
+  cancelTime  DateTime?
+  cancelReason String?
   org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])

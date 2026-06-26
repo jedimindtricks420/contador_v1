@@ -31,7 +31,6 @@ const NAV = [
   { href: "/dashboard", label: "Главная", icon: LayoutDashboard },
   { href: "/transactions", label: "Транзакции", icon: ArrowLeftRight },
   { href: "/cashflow", label: "Cash Flow", icon: TrendingUp },
-  { href: "/pnl", label: "Форма №2 — Отчёт о фин. результатах", icon: BarChart2 },
   { href: "/accounts", label: "Счета", icon: ListTree },
   { href: "/open-positions", label: "Открытые позиции", icon: Clock },
   { href: "/closing", label: "Закрытие месяца", icon: CalendarCheck },
@@ -44,7 +43,8 @@ const REPORTS_NAV = [
   { href: "/reports/account-card", label: "Карточка счёта", icon: CreditCard },
   { href: "/reports/account-analysis", label: "Анализ счёта", icon: FileText },
   { href: "/reports/subconto", label: "Анализ субконто", icon: BookOpen },
-  { href: "/reports/balance", label: "Форма №1 — Бухгалтерский баланс", icon: Scale },
+  { href: "/balance", label: "Форма №1 — Баланс", icon: Scale },
+  { href: "/pnl", label: "Форма №2 — Финрезультаты", icon: BarChart2 },
 ];
 
 interface Membership {
