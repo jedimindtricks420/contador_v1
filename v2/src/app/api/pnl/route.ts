@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import Decimal from "decimal.js";
-import { ACCOUNTS, REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, EXPENSE_ACCOUNT_CODES } from "@/lib/constants";
+
+type AggRow = { code: string; sumDebit: string; sumCredit: string };
 
 export async function GET(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
-    const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { taxRegime: true } });
+    const org = await prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { taxRegime: true, turnoverTaxRate: true }
+    });
     const { searchParams } = new URL(req.url);
 
     const fromParam = searchParams.get("from");
@@ -23,245 +27,192 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Неверный формат даты (from/to)" }, { status: 400 });
     }
 
-    // Accrual-method VAT document types
-    const OUTPUT_VAT_TYPES = ["INVOICE_CONFIRMED", "INVOICE_CONFIRMED_PREPAID", "REVENUE_VAT", "REVENUE_NO_VAT"];
-    const INPUT_VAT_TYPES  = ["GOODS_RECEIVED", "GOODS_RECEIVED_PREPAID", "SERVICE_RECEIVED", "SERVICE_RECEIVED_PREPAID"];
-
-    // Get journal entries for 9xxx, output VAT (6410) and input VAT (4410)
-    const entries = await prisma.journalEntry.findMany({
-      where: {
-        document: {
-          orgId,
-          status: "POSTED",
-          date: {
-            gte: startDate,
-            lte: endDate
-          },
-          // PERIOD_CLOSING transfers 9xxx balances to 9910 (retained earnings).
-          // Including it would zero out every revenue/expense line in the P&L.
-          type: { code: { not: "PERIOD_CLOSING" } }
-        },
-        OR: [
-          { account: { code: { startsWith: "9" } } },
-          {
-            account: { code: "6410" },
-            document: { type: { code: { in: OUTPUT_VAT_TYPES } } }
-          },
-          {
-            account: { code: "4410" },
-            document: { type: { code: { in: INPUT_VAT_TYPES } } }
-          }
-        ]
-      },
-      include: {
-        document: {
-          include: {
-            type: true
-          }
-        },
-        account: true
-      },
-      orderBy: {
-        date: "asc"
-      }
-    });
-
     // Generate list of months in YYYY-MM format
     const months: string[] = [];
     let curr = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
     const last = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
     while (curr <= last) {
-      const key = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, "0")}`;
-      months.push(key);
+      months.push(`${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, "0")}`);
       curr.setMonth(curr.getMonth() + 1);
     }
 
-    // Initialize arrays
-    const salesRevenue = Array(months.length).fill(null).map(() => new Decimal(0));
-    const salesVat = Array(months.length).fill(null).map(() => new Decimal(0));
-    const vatInput = Array(months.length).fill(null).map(() => new Decimal(0));
-    const cogs = Array(months.length).fill(null).map(() => new Decimal(0));
-    const salary = Array(months.length).fill(null).map(() => new Decimal(0));
-    const payrollTax = Array(months.length).fill(null).map(() => new Decimal(0));
-    const rent = Array(months.length).fill(null).map(() => new Decimal(0));
-    const advertising = Array(months.length).fill(null).map(() => new Decimal(0));
-    const depreciation = Array(months.length).fill(null).map(() => new Decimal(0));
-    const otherExpense = Array(months.length).fill(null).map(() => new Decimal(0));
-    const otherIncome = Array(months.length).fill(null).map(() => new Decimal(0));
-    const profitTaxExpense = Array(months.length).fill(null).map(() => new Decimal(0));
+    // Агрегация по коду счёта за весь период (исключая PERIOD_CLOSING)
+    const aggRows = await prisma.$queryRaw<AggRow[]>`
+      SELECT a.code,
+             SUM(je.debit)::text  AS "sumDebit",
+             SUM(je.credit)::text AS "sumCredit"
+      FROM "JournalEntry" je
+      JOIN "Document"     d ON d.id = je."documentId"
+      JOIN "DocumentType" dt ON dt.id = d."typeId"
+      JOIN "Account"      a ON a.id = je."accountId"
+      WHERE d."orgId"  = ${orgId}
+        AND d.status   = 'POSTED'
+        AND d.date    >= ${startDate}
+        AND d.date    <= ${endDate}
+        AND dt.code   != 'PERIOD_CLOSING'
+      GROUP BY a.code
+    `;
 
-    // Process entries
-    for (const entry of entries) {
-      const doc = entry.document;
-      const dateStr = `${doc.date.getFullYear()}-${String(doc.date.getMonth() + 1).padStart(2, "0")}`;
-      const monthIdx = months.indexOf(dateStr);
-      if (monthIdx === -1) continue;
-
-      const debit = new Decimal(entry.debit.toString());
-      const credit = new Decimal(entry.credit.toString());
-      const code = entry.account.code;
-
-      const payloadObj = (doc.payload || {}) as any;
-      const salaryAmt = new Decimal(payloadObj.salaryAmount || 0);
-
-      if (REVENUE_ACCOUNT_CODES.includes(code as any)) {
-        // 9030/9010/9020 кредитуются уже NET суммой (без НДС) — см. шаблоны REVENUE_VAT, INVOICE_CONFIRMED
-        salesRevenue[monthIdx] = salesRevenue[monthIdx].plus(credit).minus(debit);
-      }
-
-      // Исходящий НДС (только для справки, не вычитается из salesRevenue — она уже нетто)
-      else if (code === ACCOUNTS.TAX_PAYABLE && OUTPUT_VAT_TYPES.includes(doc.type.code)) {
-        salesVat[monthIdx] = salesVat[monthIdx].plus(credit);
-      }
-
-      // Входящий НДС: GOODS_RECEIVED / SERVICE_RECEIVED (накопительный) или SUPPLIER_PAYMENT_VAT (кассовый)
-      else if (code === ACCOUNTS.VAT_INPUT && (INPUT_VAT_TYPES.includes(doc.type.code) || doc.type.code === "SUPPLIER_PAYMENT_VAT")) {
-        vatInput[monthIdx] = vatInput[monthIdx].plus(debit);
-      }
-
-      else if (COGS_ACCOUNT_CODES.includes(code as any)) {
-        cogs[monthIdx] = cogs[monthIdx].plus(debit).minus(credit);
-      }
-
-      // Salary / Payroll taxes from SALARY_ACCRUAL
-      else if (doc.type.code === "SALARY_ACCRUAL" && code.startsWith("9")) {
-        // Entry equal to salaryAmount = gross salary cost; other 9xxx debit = social tax (employer portion)
-        if (debit.equals(salaryAmt)) {
-          salary[monthIdx] = salary[monthIdx].plus(debit);
-        } else {
-          payrollTax[monthIdx] = payrollTax[monthIdx].plus(debit);
-        }
-      }
-
-      // Rent: RENT_ACCRUAL (только 9xxx — Кт6010 не загружается WHERE-клаузой) или прямой платёж RENT
-      else if ((doc.type.code === "RENT_ACCRUAL" || doc.type.code === "RENT") && code.startsWith("9")) {
-        rent[monthIdx] = rent[monthIdx].plus(debit).minus(credit);
-      }
-
-      // Advertising
-      else if (doc.type.code === "ADVERTISING" && code.startsWith("9")) {
-        advertising[monthIdx] = advertising[monthIdx].plus(debit).minus(credit);
-      }
-
-      // Depreciation (только Дт9430 — Кт0200 не загружается WHERE-клаузой)
-      else if (doc.type.code === "DEPRECIATION_ACCRUAL" && code.startsWith("9")) {
-        depreciation[monthIdx] = depreciation[monthIdx].plus(debit);
-      }
-
-      // Profit tax expense
-      else if (code === ACCOUNTS.PROFIT_TAX_EXPENSE) {
-        profitTaxExpense[monthIdx] = profitTaxExpense[monthIdx].plus(debit).minus(credit);
-      }
-
-      // FX income: 9540 (курсовая прибыль)
-      else if (code === ACCOUNTS.FX_INCOME) {
-        otherIncome[monthIdx] = otherIncome[monthIdx].plus(credit).minus(debit);
-      }
-
-      // FX expense: 9620 (курсовые убытки)
-      else if (code === ACCOUNTS.FX_EXPENSE) {
-        otherExpense[monthIdx] = otherExpense[monthIdx].plus(debit).minus(credit);
-      }
-
-      // Interest expense: 9610
-      else if (code === ACCOUNTS.INTEREST_EXPENSE) {
-        otherExpense[monthIdx] = otherExpense[monthIdx].plus(debit).minus(credit);
-      }
-
-      // Other operational income: 93xx (Прочие операционные доходы)
-      else if (code.startsWith("93") && !REVENUE_ACCOUNT_CODES.includes(code as any)) {
-        otherIncome[monthIdx] = otherIncome[monthIdx].plus(credit).minus(debit);
-      }
-
-      else if (code.startsWith("9") && code !== "9910") {
-        if (EXPENSE_ACCOUNT_CODES.includes(code as any)) {
-          otherExpense[monthIdx] = otherExpense[monthIdx].plus(debit).minus(credit);
-        }
-      }
+    const aggByCode = new Map<string, { debit: Decimal; credit: Decimal }>();
+    for (const row of aggRows) {
+      aggByCode.set(row.code, {
+        debit:  new Decimal(row.sumDebit  || "0"),
+        credit: new Decimal(row.sumCredit || "0")
+      });
     }
 
-    // Load Tax Calendar Events for profit tax / turnover tax
-    const taxEvents = await prisma.taxCalendarEvent.findMany({
-      where: {
-        orgId,
-        type: { in: ["PROFIT_TAX", "TURNOVER_TAX"] },
-        periodId: { not: null }
-      },
-      include: {
-        period: true
-      }
-    });
+    const td = (code: string) => aggByCode.get(code)?.debit  ?? new Decimal(0);
+    const tc = (code: string) => aggByCode.get(code)?.credit ?? new Decimal(0);
+    const tcMany = (...codes: string[]) => codes.reduce((s, c) => s.plus(tc(c)), new Decimal(0));
+    const tdMany = (...codes: string[]) => codes.reduce((s, c) => s.plus(td(c)), new Decimal(0));
 
-    const taxAmount = Array(months.length).fill(null).map(() => new Decimal(0));
-    for (const event of taxEvents) {
-      if (!event.period) continue;
-      const dateStr = `${event.period.year}-${String(event.period.month).padStart(2, "0")}`;
-      const monthIdx = months.indexOf(dateStr);
-      if (monthIdx === -1) continue;
-      
-      const amt = new Decimal(event.estimatedAmount?.toString() || "0");
-      taxAmount[monthIdx] = taxAmount[monthIdx].plus(amt);
+    // Форма №2 строки
+    const line010 = tcMany("9010","9020","9030").minus(tdMany("9040","9050"));
+    const line020 = tdMany("9110","9120","9130");
+    const line030 = line010.minus(line020);
+
+    const line050 = td("9410");
+    const line060 = td("9420");
+    const line070 = td("9430");
+    const line080 = td("9440");
+    const line040 = line050.plus(line060).plus(line070).plus(line080);
+
+    const line090 = tcMany("9310","9320","9330","9340","9350","9360","9370","9380","9390");
+    const line100 = line030.minus(line040).plus(line090);
+
+    const line120 = tc("9520");
+    const line130 = tc("9530");
+    const line140 = tc("9550");
+    const line150 = tc("9540");
+    const line160 = tcMany("9510","9560","9590");
+    const line110 = line120.plus(line130).plus(line140).plus(line150).plus(line160);
+
+    const line180 = td("9610");
+    const line190 = new Decimal(0);
+    const line200 = td("9620");
+    const line210 = tdMany("9630","9690");
+    const line170 = line180.plus(line190).plus(line200).plus(line210);
+
+    const line220 = line100.plus(line110).minus(line170);
+    const line230 = tc("9710").minus(td("9720"));
+    const line240 = line220.plus(line230);
+
+    // стр. 250 — из проводок 9810; если 0 — из taxCalendarEvent
+    const line250 = td("9810");
+    let taxAmountFromCalendar = new Decimal(0);
+    if (line250.isZero()) {
+      const taxEvents = await prisma.taxCalendarEvent.findMany({
+        where: {
+          orgId,
+          type: { in: ["PROFIT_TAX", "TURNOVER_TAX"] },
+          period: { year: { gte: startDate.getFullYear() }, month: { gte: startDate.getMonth() + 1 } }
+        },
+        select: { estimatedAmount: true }
+      });
+      taxAmountFromCalendar = taxEvents.reduce(
+        (s, e) => s.plus(new Decimal(e.estimatedAmount?.toString() || "0")), new Decimal(0)
+      );
+    }
+    const line250final = line250.gt(0) ? line250 : taxAmountFromCalendar;
+
+    const line260 = td("9820");
+    const line270 = line240.minus(line250final).minus(line260);
+
+    // Помесячный разрез для ключевых строк (графики)
+    const monthlyRows = await prisma.$queryRaw<(AggRow & { month: string })[]>`
+      SELECT a.code,
+             TO_CHAR(d.date, 'YYYY-MM') AS month,
+             SUM(je.debit)::text  AS "sumDebit",
+             SUM(je.credit)::text AS "sumCredit"
+      FROM "JournalEntry" je
+      JOIN "Document"     d  ON d.id = je."documentId"
+      JOIN "DocumentType" dt ON dt.id = d."typeId"
+      JOIN "Account"      a  ON a.id = je."accountId"
+      WHERE d."orgId"  = ${orgId}
+        AND d.status   = 'POSTED'
+        AND d.date    >= ${startDate}
+        AND d.date    <= ${endDate}
+        AND dt.code   != 'PERIOD_CLOSING'
+        AND a.code IN ('9010','9020','9030','9040','9050',
+                       '9110','9120','9130',
+                       '9410','9420','9430','9440',
+                       '9310','9320','9330','9340','9350','9360','9370','9380','9390',
+                       '9810','9820','9710','9720',
+                       '9510','9520','9530','9540','9550','9560','9590',
+                       '9610','9620','9630','9690')
+      GROUP BY a.code, TO_CHAR(d.date, 'YYYY-MM')
+    `;
+
+    // Индекс помесячных данных
+    type MonthCodeKey = `${string}|${string}`;
+    const mMap = new Map<MonthCodeKey, { debit: Decimal; credit: Decimal }>();
+    for (const r of monthlyRows) {
+      const key: MonthCodeKey = `${r.month}|${r.code}`;
+      const prev = mMap.get(key) ?? { debit: new Decimal(0), credit: new Decimal(0) };
+      prev.debit  = prev.debit.plus(new Decimal(r.sumDebit   || "0"));
+      prev.credit = prev.credit.plus(new Decimal(r.sumCredit || "0"));
+      mMap.set(key, prev);
     }
 
-    // Format lines
-    const sum = (arr: Decimal[]) => arr.reduce((s, v) => s.plus(v), new Decimal(0));
+    const mtd = (month: string, code: string) => mMap.get(`${month}|${code}` as MonthCodeKey)?.debit  ?? new Decimal(0);
+    const mtc = (month: string, code: string) => mMap.get(`${month}|${code}` as MonthCodeKey)?.credit ?? new Decimal(0);
 
-    // salesRevenue (9030/9010/9020) уже является НЕТТО-выручкой (без НДС) — шаблоны кредитуют
-    // 9030 на сумму без НДС, а НДС идёт отдельно в 6410. Поэтому salesVat НЕ вычитается из
-    // salesRevenue повторно — это было бы двойным вычитанием.
-    const revenueData = [
-      { line: "Выручка от продаж", amounts: salesRevenue.map((r) => r.toNumber()), total: sum(salesRevenue).toNumber() },
-      { line: "Прочие операционные доходы", amounts: otherIncome.map((o) => o.toNumber()), total: sum(otherIncome).toNumber() }
-    ];
+    const monthlyRevenue = months.map(m =>
+      mtc(m,"9010").plus(mtc(m,"9020")).plus(mtc(m,"9030"))
+        .minus(mtd(m,"9040")).minus(mtd(m,"9050")).toNumber()
+    );
 
-    const expensesData = [
-      { line: "Себестоимость", amounts: cogs.map((c) => c.toNumber()), total: sum(cogs).toNumber() },
-      { line: "Зарплата", amounts: salary.map((s) => s.toNumber()), total: sum(salary).toNumber() },
-      { line: "Соцналог (12%)", amounts: payrollTax.map((p) => p.toNumber()), total: sum(payrollTax).toNumber() },
-      { line: "Аренда", amounts: rent.map((r) => r.toNumber()), total: sum(rent).toNumber() },
-      { line: "Реклама", amounts: advertising.map((a) => a.toNumber()), total: sum(advertising).toNumber() },
-      { line: "Амортизация", amounts: depreciation.map((d) => d.toNumber()), total: sum(depreciation).toNumber() },
-      { line: "Прочие расходы", amounts: otherExpense.map((o) => o.toNumber()), total: sum(otherExpense).toNumber() },
-      { line: "Налог на прибыль (начислен)", amounts: profitTaxExpense.map((t) => t.toNumber()), total: sum(profitTaxExpense).toNumber() }
-    ];
-
-    // Входящий НДС к вычету (выводится отдельно, если есть)
-    const vatInputData = sum(vatInput).gt(0) ? [
-      { line: "НДС входящий (к вычету)", amounts: vatInput.map((v) => v.toNumber()), total: sum(vatInput).toNumber() }
-    ] : [];
-
-    // Totals
-    const profitBeforeTax = Array(months.length).fill(null).map((_, idx) => {
-      const netRev = salesRevenue[idx].plus(otherIncome[idx]);
-      const totalExp = cogs[idx]
-        .plus(salary[idx])
-        .plus(payrollTax[idx])
-        .plus(rent[idx])
-        .plus(advertising[idx])
-        .plus(depreciation[idx])
-        .plus(otherExpense[idx]);
-      return netRev.minus(totalExp);
+    const monthlyNetProfit  = months.map(m => {
+      const r = mtc(m,"9010").plus(mtc(m,"9020")).plus(mtc(m,"9030"))
+                  .minus(mtd(m,"9040")).minus(mtd(m,"9050"));
+      const cogs = mtd(m,"9110").plus(mtd(m,"9120")).plus(mtd(m,"9130"));
+      const exp  = mtd(m,"9410").plus(mtd(m,"9420")).plus(mtd(m,"9430")).plus(mtd(m,"9440"));
+      const oi   = ["9310","9320","9330","9340","9350","9360","9370","9380","9390"]
+                     .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0));
+      const fin  = ["9510","9520","9530","9540","9550","9560","9590"]
+                     .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0));
+      const finExp = mtd(m,"9610").plus(mtd(m,"9620")).plus(mtd(m,"9630")).plus(mtd(m,"9690"));
+      const pbt  = r.minus(cogs).minus(exp).plus(oi).plus(fin).minus(finExp)
+                    .plus(mtc(m,"9710")).minus(mtd(m,"9720"));
+      const tax  = mtd(m,"9810").gt(0) ? mtd(m,"9810") : new Decimal(0);
+      return pbt.minus(tax).minus(mtd(m,"9820")).toNumber();
     });
-
-    // Use accrued profit tax from JE (9810) if available, otherwise fall back to calendar estimate
-    const netProfit = profitBeforeTax.map((p, idx) => {
-      const tax = profitTaxExpense[idx].gt(0) ? profitTaxExpense[idx] : taxAmount[idx];
-      return p.minus(tax);
-    });
-
-    // НДС к уплате (исходящий − входящий) — для отображения в P&L
-    const netVat = salesVat.map((sv, idx) => sv.minus(vatInput[idx]).toNumber());
 
     return NextResponse.json({
+      period: { from: startDate, to: endDate },
+      taxRegime: org?.taxRegime ?? "TURNOVER_TAX",
+      turnoverTaxRate: org?.turnoverTaxRate ?? 0.04,
+      lines: {
+        line010: line010.toNumber(),
+        line020: line020.toNumber(),
+        line030: line030.toNumber(),
+        line040: line040.toNumber(),
+        line050: line050.toNumber(),
+        line060: line060.toNumber(),
+        line070: line070.toNumber(),
+        line080: line080.toNumber(),
+        line090: line090.toNumber(),
+        line100: line100.toNumber(),
+        line110: line110.toNumber(),
+        line120: line120.toNumber(),
+        line130: line130.toNumber(),
+        line140: line140.toNumber(),
+        line150: line150.toNumber(),
+        line160: line160.toNumber(),
+        line170: line170.toNumber(),
+        line180: line180.toNumber(),
+        line200: line200.toNumber(),
+        line210: line210.toNumber(),
+        line220: line220.toNumber(),
+        line230: line230.toNumber(),
+        line240: line240.toNumber(),
+        line250: line250final.toNumber(),
+        line260: line260.toNumber(),
+        line270: line270.toNumber(),
+      },
       months,
-      revenue: revenueData,
-      expenses: expensesData,
-      vatInputLines: vatInputData,
-      netVat,
-      profitBeforeTax: profitBeforeTax.map((p) => p.toNumber()),
-      tax: taxAmount.map((t) => t.toNumber()),
-      netProfit: netProfit.map((n) => n.toNumber()),
-      taxRegime: org?.taxRegime ?? "TURNOVER_TAX"
+      monthlyRevenue,
+      monthlyNetProfit,
     });
   } catch (err: any) {
     if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {

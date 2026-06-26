@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
         activityCustom: true,
         aiConfidenceThreshold: true,
         maxClarificationQuestions: true,
+        turnoverTaxRate: true,
       },
     });
 
@@ -40,6 +41,10 @@ export async function PATCH(req: NextRequest) {
 
     const body = await req.json();
 
+    const turnoverTaxRate = body.turnoverTaxRate !== undefined
+      ? Math.max(0.01, Math.min(0.04, Number(body.turnoverTaxRate)))
+      : undefined;
+
     const updatedOrg = await prismaWithOrg(orgId).organization.update({
       where: { id: orgId },
       data: {
@@ -52,6 +57,7 @@ export async function PATCH(req: NextRequest) {
         activityCustom: body.activityCustom ?? null,
         aiConfidenceThreshold: body.aiConfidenceThreshold,
         maxClarificationQuestions: body.maxClarificationQuestions,
+        ...(turnoverTaxRate !== undefined && { turnoverTaxRate }),
       },
     });
 

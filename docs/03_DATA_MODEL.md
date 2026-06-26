@@ -2,7 +2,7 @@
 
 **Документ:** Data Model Reference  
 **Версия:** 2.0  
-**Дата:** 2026-06-16  
+**Дата:** 2026-06-26  
 **БД:** PostgreSQL 16, база `contador_v2`
 
 ---
@@ -69,6 +69,7 @@ model Organization {
   inn                       String?              // ИНН (9 цифр)
   taxRegime                 TaxRegime @default(TURNOVER_TAX)
   isVatPayer                Boolean   @default(false)
+  turnoverTaxRate           Float     @default(0.04)  // Ставка налога с оборота (1–4%)
   activityGroup             String?              // Группа вида деятельности
   activityDescription       String?              // Описание деятельности (для AI)
   activityCustom            String?              // Произвольное описание

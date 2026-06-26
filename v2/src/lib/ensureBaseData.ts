@@ -250,7 +250,7 @@ const baseDocumentTypes = [
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "9030", side: "debit", expression: "amount" },
+        { accountCode: "9040", side: "debit", expression: "amount" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
@@ -406,6 +406,19 @@ const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "TURNOVER_TAX_ACCRUAL",
+    name: "Начисление налога с оборота",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9810", side: "debit", expression: "taxAmount" },
+        { accountCode: "6410", side: "credit", expression: "taxAmount" }
+      ],
       opensItem: false,
       requiresCounterparty: false
     }

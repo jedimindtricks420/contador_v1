@@ -2,7 +2,7 @@
 
 **Документ:** REST API Reference  
 **Версия:** 2.0  
-**Дата:** 2026-06-16  
+**Дата:** 2026-06-26  
 **Base URL:** `https://contador.uz/v2/api`  
 **Формат:** JSON (`Content-Type: application/json`)  
 **Авторизация:** HTTP-only cookie `v2_session` (JWT)
@@ -564,9 +564,31 @@
 
 ### GET /reports/balance
 
-Бухгалтерский баланс по разделам НСБУ.
+Бухгалтерский баланс (Форма №1) — строки 010–780 по НСБУ №21.
 
-**Query:** `?periodId=uuid`
+**Query:** `?to=YYYY-MM-DD`
+
+**Response 200 (сокращённо):**
+```json
+{
+  "asOf": "2026-05-31",
+  "lines": {
+    "line010": 5000000,
+    "line130": 5000000,
+    "line220": 15000000,
+    "line390": 28000000,
+    "line400": 33000000,
+    "line410": 10000000,
+    "line450": 8500000,
+    "line480": 18500000,
+    "line680": 2000000,
+    "line770": 14500000,
+    "line780": 33000000
+  },
+  "balanceCheck": true,
+  "difference": 0
+}
+```
 
 ---
 
@@ -578,27 +600,30 @@
 
 ### GET /pnl
 
-Отчёт о прибылях и убытках.
+Отчёт о финансовых результатах (Форма №2) — строки 010–270 по НСБУ №21.
 
 **Query:** `?from=2026-01-01&to=2026-05-31`
 
 **Response 200:**
 ```json
 {
-  "months": [
-    {
-      "period": "2026-05",
-      "revenue": 15000000,
-      "cogs": 3000000,
-      "grossProfit": 12000000,
-      "expenseSales": 500000,
-      "expenseAdmin": 1200000,
-      "expenseOther": 300000,
-      "otherIncome": 150000,
-      "taxExpense": 1725000,
-      "netProfit": 8425000
-    }
-  ]
+  "period": { "from": "2026-01-01", "to": "2026-05-31" },
+  "taxRegime": "TURNOVER_TAX",
+  "turnoverTaxRate": 0.04,
+  "lines": {
+    "line010": 15000000,
+    "line020": 3000000,
+    "line030": 12000000,
+    "line040": 2000000,
+    "line100": 10000000,
+    "line220": 10000000,
+    "line240": 10000000,
+    "line250": 600000,
+    "line270": 9400000
+  },
+  "months": ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"],
+  "monthlyRevenue": [2000000, 2500000, 3000000, 3500000, 4000000],
+  "monthlyNetProfit": [1500000, 1800000, 2000000, 2200000, 1900000]
 }
 ```
 

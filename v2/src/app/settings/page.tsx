@@ -14,6 +14,7 @@ interface OrgSettings {
   activityCustom: string | null;
   aiConfidenceThreshold: number;
   maxClarificationQuestions: number;
+  turnoverTaxRate: number;
 }
 
 export default function OrgSettingsPage() {
@@ -28,7 +29,7 @@ export default function OrgSettingsPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.error) setError(data.error);
-        else setSettings(data);
+        else setSettings({ ...data, turnoverTaxRate: data.turnoverTaxRate ?? 0.04 });
         setLoading(false);
       })
       .catch((err) => {
@@ -199,6 +200,30 @@ export default function OrgSettingsPage() {
               </label>
             </div>
           </div>
+
+          {settings.taxRegime === "TURNOVER_TAX" && (
+            <div className="max-w-xs">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Ставка налога с оборота ({Math.round((settings.turnoverTaxRate ?? 0.04) * 100)}%)
+              </label>
+              <p className="text-[11px] text-gray-500 mb-2">От 1% до 4% — зависит от вида деятельности.</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min="1"
+                  max="4"
+                  step="1"
+                  value={Math.round((settings.turnoverTaxRate ?? 0.04) * 100)}
+                  onChange={(e) => {
+                    const pct = Math.max(1, Math.min(4, parseInt(e.target.value) || 4));
+                    setSettings({ ...settings, turnoverTaxRate: pct / 100 });
+                  }}
+                  className="w-20 px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black text-center font-semibold"
+                />
+                <span className="text-sm text-gray-600 font-medium">%</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* AI Settings */}

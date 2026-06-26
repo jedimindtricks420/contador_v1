@@ -342,6 +342,27 @@ export async function finalizePeriod(
         });
         await postDocument(ptaxDoc.id, tx, userId);
       }
+    } else {
+      // E3. Налог с оборота: проводка Дт 9810 — Кт 6410
+      const rate = new Decimal((org as any).turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX);
+      const turnoverTaxAmt = totalRevenue.mul(rate);
+      taxes.push({ type: "TURNOVER_TAX", amount: turnoverTaxAmt, dueDate: nextMonth20th });
+
+      const existingTtax = await tx.document.findFirst({
+        where: { orgId, periodId, type: { code: "TURNOVER_TAX_ACCRUAL" }, status: "POSTED" }
+      });
+      if (!existingTtax && turnoverTaxAmt.gt(0)) {
+        const ttaxType = await tx.documentType.findFirst({ where: { code: "TURNOVER_TAX_ACCRUAL" } });
+        if (ttaxType) {
+          const ttaxDoc = await tx.document.create({
+            data: {
+              orgId, periodId, typeId: ttaxType.id, date: accrualDate, status: "POSTED",
+              payload: { taxAmount: turnoverTaxAmt.toNumber() } as any
+            }
+          });
+          await postDocument(ttaxDoc.id, tx, userId);
+        }
+      }
     }
 
     // F. Налоговый календарь
@@ -524,7 +545,8 @@ export async function upsertTaxCalendarEventsForPeriod(periodId: string, orgId: 
       (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())), new Decimal(0)
     );
 
-    const turnoverTaxAmt = totalRevenue.mul(TAX_RATES.TURNOVER_TAX);
+    const rate = new Decimal((org as any).turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX);
+    const turnoverTaxAmt = totalRevenue.mul(rate);
 
     if (turnoverTaxAmt.gt(0)) {
       const existing = await tx.taxCalendarEvent.findFirst({

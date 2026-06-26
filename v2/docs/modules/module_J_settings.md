@@ -15,8 +15,9 @@
 {
   name: string               // Название организации
   inn: string                // ИНН (9 цифр)
-  taxRegime: TaxRegime       // GENERAL | SIMPLIFIED | TURNOVER_TAX | VAT
+  taxRegime: TaxRegime       // VAT | TURNOVER_TAX
   isVatPayer: boolean        // Плательщик НДС
+  turnoverTaxRate: number    // Ставка налога с оборота (0.01–0.04), default: 0.04
   activityGroup: string | null    // Группа вида деятельности
   activityDescription: string | null
   activityCustom: string | null
@@ -185,4 +186,4 @@ Body: { "4310": 45, ... }   // полная замена объекта дедл
 
 ---
 
-*Последнее обновление: 2026-06-16*
+*Последнее обновление: 2026-06-26*

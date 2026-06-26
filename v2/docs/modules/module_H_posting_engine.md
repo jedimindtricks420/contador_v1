@@ -19,9 +19,9 @@
 
 1. Загрузить `Document` и его `DocumentType` (с `postingTemplate`)
 2. Проверить существование периода и что он **не закрыт** (`CLOSED` / `lockDate ≠ null`)
-3. Загрузить организацию (для `isVatPayer`, `taxRegime`)
+3. Загрузить организацию (для `isVatPayer`, `taxRegime`, `turnoverTaxRate`)
 4. Определить контрагента по `payload.counterpartyInn` или `payload.counterpartyHint`; если не найден — создать автоматически
-5. Собрать `evalPayload` = payload + `isVatPayer` + `vatRate`
+5. Собрать `evalPayload` = payload + `isVatPayer` + `vatRate` + `taxAmount`
 6. Обработать строки шаблона (`template.lines`):
    - Вычислить `condition` — если ноль, пропустить строку
    - Найти `Account` по `line.accountCode`; если не найден — кинуть ошибку
@@ -154,7 +154,10 @@ Body: { documentId: string, newTypeId: string }
 | `SALARY_ACCRUAL` | 9420 | 6710, 6520 + 6410 | ФОТ + соцналог + НДФЛ |
 | `DEPRECIATION_ACCRUAL` | 9430 | 0200 | Начисление износа ОС |
 | `RENT_ACCRUAL` | 9420 | 6010 | Начисление аренды |
+| `PROFIT_TAX_ACCRUAL` | 9810 | 6410 | Налог на прибыль 15% (VAT-режим) |
+| `TURNOVER_TAX_ACCRUAL` | 9810 | 6410 | Налог с оборота (1–4%, TURNOVER_TAX) |
 | `FX_DIFFERENCE` | 5210 / 9620 | 9540 / 5210 | Доход/расход курсовой разницы |
+| `REFUND` | 9040 | 5110 | Возврат покупателю |
 
 ---
 
@@ -164,12 +167,28 @@ Body: { documentId: string, newTypeId: string }
 export const TAX_RATES = {
   VAT: 12,               // НДС 12%
   INCOME_TAX: 15,        // Налог на прибыль 15%
-  TURNOVER_TAX: 4,       // Налог с оборота 4%
   SOCIAL_TAX: 12,        // Социальный налог 12%
   PERSONAL_INCOME_TAX: 12  // НДФЛ 12%
 }
+// Налог с оборота: не константа — берётся из org.turnoverTaxRate (1–4%)
 ```
 
 ---
 
-*Последнее обновление: 2026-06-16*
+## Доступные переменные в expressionEval
+
+| Переменная | Описание |
+|-----------|---------|
+| `amount` | Сумма транзакции |
+| `vatRate` | Ставка НДС (12) |
+| `isVatPayer` | 1 (VAT) или 0 (TURNOVER_TAX) |
+| `salaryAmount` | Сумма ФОТ (SALARY_ACCRUAL) |
+| `depreciationAmount` | Сумма амортизации |
+| `rentAmount` | Сумма аренды |
+| `exchangeRate` | Курс ЦБ (FX_DIFFERENCE) |
+| `difference` | Сумма курсовой разницы |
+| `taxAmount` | Сумма налога (TURNOVER_TAX_ACCRUAL, PROFIT_TAX_ACCRUAL) |
+
+---
+
+*Последнее обновление: 2026-06-26*

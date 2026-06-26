@@ -27,6 +27,7 @@ model Organization {
   isVatPayer                Boolean               @default(false)
   createdAt                 DateTime              @default(now())
   activityDescription       String?
+  turnoverTaxRate           Float                 @default(0.04)
   aiConfidenceThreshold     Int                   @default(70)
   maxClarificationQuestions Int                   @default(10)
   settings                  Json?
