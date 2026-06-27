@@ -85,7 +85,7 @@ export async function calculateAccountCard(
     }
 
     const payload = (entry.document.payload || {}) as any;
-    const documentNumber = payload.number || payload.documentNumber || payload.id?.slice(0, 8) || "";
+    const documentNumber = payload.number || payload.documentNumber || entry.document.id.slice(0, 8);
     const counterpartyName = entry.counterparty?.name || payload.counterpartyHint || "—";
 
     rows.push({

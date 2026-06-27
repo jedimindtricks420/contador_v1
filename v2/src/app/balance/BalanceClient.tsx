@@ -219,6 +219,7 @@ export default function BalanceClient() {
                   <Row num="680" label="в т.ч. задолженность в бюджет" value={d.line680} indent />
                   <Row num="690" label="в т.ч. страхование" value={d.line690} indent />
                   <Row num="700" label="в т.ч. государственные фонды" value={d.line700} indent />
+                  <Row num="710" label="в т.ч. расчёты с персоналом (прочие)" value={d.line710} indent />
                   <Row num="720" label="в т.ч. задолженность по оплате труда" value={d.line720} indent />
                   <Row num="730" label="в т.ч. краткосрочные кредиты" value={d.line730} indent />
                   <Row num="740" label="в т.ч. займы (учредители, прочие)" value={d.line740} indent />

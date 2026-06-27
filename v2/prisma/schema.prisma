@@ -133,6 +133,7 @@ model Rule {
   documentType DocumentType  @relation(fields: [categoryId], references: [id])
   org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
+  @@unique([orgId, matchType, matchValue])
   @@index([orgId])
 }
 

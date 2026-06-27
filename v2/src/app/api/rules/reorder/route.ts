@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prismaWithOrg } from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
+import { clearRulesCache } from "@/lib/classification/rulesEngine";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -14,16 +15,19 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "ids must be an array of rule IDs" }, { status: 400 });
     }
 
-    // Update each rule's order in a transaction
+    // Use a single extended client instance so $transaction and the queries
+    // belong to the same client (required by Prisma's batch-transaction API).
+    const client = prismaWithOrg(orgId);
     const updatePromises = ids.map((id, index) =>
-      prismaWithOrg(orgId).rule.update({
+      client.rule.update({
         where: { id },
         data: { order: index },
       })
     );
 
-    await prismaWithOrg(orgId).$transaction(updatePromises);
+    await client.$transaction(updatePromises);
 
+    clearRulesCache(orgId);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error("PATCH /api/rules/reorder error:", err);

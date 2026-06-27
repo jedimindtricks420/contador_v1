@@ -28,34 +28,25 @@ export async function calculateJournal(
     documentTypeId?: string;
   } = {}
 ) {
-  const docWhere: any = {
-    orgId,
-    status: "POSTED",
-    date: { gte: from, lte: to }
-  };
+  // Build filters as independent AND clauses so that accountId and counterpartyId
+  // are checked on separate JournalEntry rows (not forced onto a single row).
+  const andClauses: any[] = [
+    { orgId, status: "POSTED", date: { gte: from, lte: to } }
+  ];
 
   if (filters.documentTypeId && filters.documentTypeId !== "ALL") {
-    docWhere.typeId = filters.documentTypeId;
+    andClauses.push({ typeId: filters.documentTypeId });
   }
 
   if (filters.accountId && filters.accountId !== "ALL") {
-    docWhere.journalEntries = {
-      some: { accountId: filters.accountId }
-    };
+    andClauses.push({ journalEntries: { some: { accountId: filters.accountId } } });
   }
 
   if (filters.counterpartyId && filters.counterpartyId !== "ALL") {
-    if (docWhere.journalEntries) {
-      docWhere.journalEntries.some = {
-        ...docWhere.journalEntries.some,
-        counterpartyId: filters.counterpartyId
-      };
-    } else {
-      docWhere.journalEntries = {
-        some: { counterpartyId: filters.counterpartyId }
-      };
-    }
+    andClauses.push({ journalEntries: { some: { counterpartyId: filters.counterpartyId } } });
   }
+
+  const docWhere: any = andClauses.length === 1 ? andClauses[0] : { AND: andClauses };
 
   const documents = await prisma.document.findMany({
     where: docWhere,

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       where: {
         orgId,
         periodId,
-        status: "IMPORTED"
+        status: { in: ["IMPORTED", "NEEDS_CLARIFICATION"] }
       }
     });
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
       where: {
         orgId,
         periodId,
-        status: "IMPORTED"
+        status: { in: ["IMPORTED", "NEEDS_CLARIFICATION"] }
       }
     });
 

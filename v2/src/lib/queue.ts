@@ -11,6 +11,12 @@ export async function getClassificationJob(periodId: string) {
 export async function startClassificationJob(orgId: string, periodId: string): Promise<string> {
   const jobId = periodId;
 
+  // Prevent double-run: if a job is already running return its ID so UI polls it
+  const existingJob = await prisma.classificationJob.findUnique({ where: { id: jobId } });
+  if (existingJob?.status === "running") {
+    return jobId;
+  }
+
   // Upsert job entry
   await prisma.classificationJob.upsert({
     where: { id: jobId },
@@ -45,9 +51,7 @@ export async function startClassificationJob(orgId: string, periodId: string): P
         whereClause.periodId = periodId;
       }
 
-      const txs = await prisma.stagedTransaction.findMany({
-        where: whereClause
-      });
+      const txs = await prisma.stagedTransaction.findMany({ where: whereClause });
 
       if (txs.length === 0) {
         await prisma.classificationJob.update({
@@ -66,17 +70,22 @@ export async function startClassificationJob(orgId: string, periodId: string): P
       // 2. Run deterministic Rules Engine first
       const ruleMatchedCount = await applyRules(orgId, txs);
 
-      // Refresh transaction list to get remaining IMPORTED transactions
-      const remainingTxs = await prisma.stagedTransaction.findMany({
-        where: whereClause
+      // Update progress after rules phase so UI shows intermediate state
+      await prisma.classificationJob.update({
+        where: { id: jobId },
+        data: { processed: ruleMatchedCount, matched: ruleMatchedCount }
       });
 
-      // Single call — classifyAllWithAI handles chunking internally and
-      // builds full business context (open items, history, rules, tax calendar).
+      // 3. Refresh list for AI — only unresolved transactions remain
+      const remainingTxs = await prisma.stagedTransaction.findMany({
+        where: { ...whereClause, status: { in: ["IMPORTED", "NEEDS_CLARIFICATION"] } }
+      });
+
+      // classifyAllWithAI handles chunking internally and builds full business context
       const { matched: aiMatchedCount, needsClarification: aiNeedsClarificationCount } =
         await classifyAllWithAI(orgId, remainingTxs);
 
-      // Mark job as completed
+      // 4. Mark job as completed
       const totalProcessed = ruleMatchedCount + aiMatchedCount + aiNeedsClarificationCount;
       await prisma.classificationJob.update({
         where: { id: jobId },
@@ -91,11 +100,8 @@ export async function startClassificationJob(orgId: string, periodId: string): P
       console.error("Background classification job failed:", err);
       await prisma.classificationJob.update({
         where: { id: jobId },
-        data: {
-          status: "failed",
-          error: err.message || "Unknown classification failure"
-        }
-      }).catch(console.error); // Catch in case DB is completely down
+        data: { status: "failed", error: err.message || "Unknown classification failure" }
+      }).catch(console.error);
     }
   })();
 

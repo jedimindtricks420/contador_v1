@@ -21,7 +21,7 @@ async function getRulesForOrg(orgId: string) {
   const rules = await prisma.rule.findMany({
     where: { orgId },
     include: { documentType: { select: { id: true, code: true, name: true } } },
-    orderBy: { order: "asc" }
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }]
   });
 
   rulesCache.set(orgId, {
@@ -58,7 +58,7 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
   let matchedCount = 0;
 
   for (const tx of transactions) {
-    if (tx.status !== "IMPORTED") continue;
+    if (tx.status !== "IMPORTED" && tx.status !== "NEEDS_CLARIFICATION") continue;
 
     // Find the first rule that matches in priority order:
     // INN -> KEYWORD -> AMOUNT_RANGE -> TREASURY_ACCOUNT
@@ -104,49 +104,41 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
       );
     }
 
-    // If matched, create Document and update StagedTransaction
+    // If matched, create Document + post + update StagedTransaction atomically
     if (matchingRule) {
       const categoryId = matchingRule.categoryId;
-
-      // Create document, then post
-      const doc = await prisma.document.create({
-        data: {
-          orgId,
-          periodId: tx.periodId,
-          typeId: categoryId,
-          date: tx.date,
-          status: "POSTED",
-          sourceTransactionId: tx.id,
-          payload: {
-            amount: Number(tx.amount),
-            description: tx.description,
-            direction: tx.direction,
-            counterpartyHint: tx.counterpartyHint || null,
-            counterpartyInn: tx.counterpartyInn || null,
-            ruleMatched: matchingRule.id
-          } as any
-        }
-      });
-
-      // Generate journal entries / postings using the posting engine
       try {
-        await postDocument(doc.id, prisma, "system");
-      } catch (postErr) {
-        console.error(`RulesEngine failed to post journal entries for document ${doc.id}:`, postErr);
-        await prisma.document.update({ where: { id: doc.id }, data: { status: "VOIDED" } });
-        continue;
+        await prisma.$transaction(async (txClient) => {
+          const doc = await txClient.document.create({
+            data: {
+              orgId,
+              periodId: tx.periodId,
+              typeId: categoryId,
+              date: tx.date,
+              status: "POSTED",
+              sourceTransactionId: tx.id,
+              payload: {
+                amount: Number(tx.amount),
+                description: tx.description,
+                direction: tx.direction,
+                counterpartyHint: tx.counterpartyHint || null,
+                counterpartyInn: tx.counterpartyInn || null,
+                ruleMatched: matchingRule.id
+              } as any
+            }
+          });
+
+          await postDocument(doc.id, txClient, "system");
+
+          await txClient.stagedTransaction.update({
+            where: { id: tx.id },
+            data: { status: "AUTO_MATCHED", documentId: doc.id }
+          });
+        });
+        matchedCount++;
+      } catch (err) {
+        console.error(`RulesEngine: failed for tx ${tx.id}:`, err);
       }
-
-      // Update transaction status
-      await prisma.stagedTransaction.update({
-        where: { id: tx.id },
-        data: {
-          status: "AUTO_MATCHED",
-          documentId: doc.id
-        }
-      });
-
-      matchedCount++;
     }
   }
 

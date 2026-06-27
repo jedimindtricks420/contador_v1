@@ -117,7 +117,8 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
       return scope[token];
     }
 
-    // Fallback/Default to zero for optional or omitted variables
+    // Unknown variable — warn loudly so typos are diagnosable; return 0 so balance check catches it
+    console.warn(`[expressionEval] unknown variable "${token}" in expression — check document payload`);
     return new Decimal(0);
   }
 

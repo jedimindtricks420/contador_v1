@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActiveOrgId } from "@/lib/context";
 import prisma from "@/lib/prisma";
+import { TRANSIT_INNS } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,10 +28,12 @@ export async function GET(req: NextRequest) {
     const groupsMap = new Map<string, any>();
 
     for (const tx of transactions) {
-      // Group key: use INN if available, else counterpartyHint, fallback to description
-      const groupKey = tx.counterpartyInn 
-        ? `inn:${tx.counterpartyInn}` 
-        : (tx.counterpartyHint ? `hint:${tx.counterpartyHint}` : `desc:${tx.description}`);
+      // For transit INNs (Казначейство, НБУ, etc.) the INN is meaningless for grouping —
+      // all unrelated payments share the same INN. Use description prefix instead.
+      const isTransit = tx.counterpartyInn ? TRANSIT_INNS.has(tx.counterpartyInn) : false;
+      const groupKey = (tx.counterpartyInn && !isTransit)
+        ? `inn:${tx.counterpartyInn}`
+        : (tx.counterpartyHint ? `hint:${tx.counterpartyHint}` : `desc:${tx.description.substring(0, 60)}`);
 
       if (!groupsMap.has(groupKey)) {
         groupsMap.set(groupKey, {

@@ -353,13 +353,35 @@ export default function TransactionsClient() {
   const handleConfirmRule = async (saveRule: boolean) => {
     if (!rulePromptTx) return;
     if (saveRule) {
-      const matchType = rulePromptTx.counterpartyInn ? "INN" : "KEYWORD";
-      const matchValue = rulePromptTx.counterpartyInn || rulePromptTx.counterpartyHint || rulePromptTx.description;
+      // INN is reliable only if it's not a transit account.
+      // Fall back to counterpartyHint (company name) — never use the full description
+      // because it contains dates/amounts that won't match future transactions.
+      const TRANSIT_INNS = new Set([
+        "302179836", "207680039", "201116085", "207004110", "200892596", "303245419"
+      ]);
+      const isTransit = rulePromptTx.counterpartyInn ? TRANSIT_INNS.has(rulePromptTx.counterpartyInn) : false;
+      const matchType = (rulePromptTx.counterpartyInn && !isTransit) ? "INN" : "KEYWORD";
+      const matchValue = (rulePromptTx.counterpartyInn && !isTransit)
+        ? rulePromptTx.counterpartyInn
+        : (rulePromptTx.counterpartyHint?.trim() || null);
+
+      // Skip rule creation if there's no reliable match signal
+      if (!matchValue) {
+        setRulePromptTx(null);
+        setRulePromptCategory("");
+        return;
+      }
+
       try {
         const res = await fetch("/v2/api/rules", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ matchType, matchValue, categoryId: rulePromptCategory }),
+          body: JSON.stringify({
+            matchType,
+            matchValue,
+            categoryId: rulePromptCategory,
+            direction: rulePromptTx.direction,
+          }),
         });
         if (res.ok) {
           const data = await res.json();

@@ -2,7 +2,7 @@ import { OpenAI } from "openai";
 import prisma from "../prisma";
 import { StagedTransaction } from "@prisma/client";
 import Decimal from "decimal.js";
-import { AI } from "../constants";
+import { AI, TRANSIT_INNS } from "../constants";
 import { getActivityLabel } from "../activityCategories";
 import { postDocument } from "../posting/postingEngine";
 import { clearRulesCache } from "./rulesEngine";
@@ -32,16 +32,6 @@ const DEBIT_ONLY_CODES = new Set([
   "INTERNAL_TRANSFER",
 ]);
 
-// ─── Transit INNs (Uzbekistan) ─────────────────────────────────────────────────
-// When counterpartyInn matches these, the real payer/recipient is in `description`.
-const TRANSIT_INNS = new Set([
-  "302179836", // Казначейство МФ РУз (центральное)
-  "207680039", // Казначейство (региональные управления)
-  "201116085", // НБУ — Национальный банк ВЭД
-  "207004110", // Узбекфинансы
-  "200892596", // Центральный банк РУз
-  "303245419", // Биржа (УзРЦБ)
-]);
 
 // ─── Account helpers ───────────────────────────────────────────────────────────
 const ACCOUNT_LABELS: Record<string, string> = {
@@ -208,6 +198,8 @@ interface ClassificationResult {
   extractedInn: string;
   vatApplicable: boolean;
   reasoning: string;
+  suggestedRuleType: "INN" | "KEYWORD" | "NONE";
+  suggestedRuleValue: string;
 }
 
 /**
@@ -353,7 +345,22 @@ ${JSON.stringify(catalog, null, 2)}
 19. Возврат/корректировка покупателю (уменьшает выручку) → REFUND (DEBIT)
 20. При неуверенности — выбирай ближайшее, но снижай confidence < ${confidenceThreshold}
 
-В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на directionLabel, историю или открытые позиции.`;
+В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на directionLabel, историю или открытые позиции.
+
+━━━ ПРАВИЛО ДЛЯ АВТОМАТИЗАЦИИ (suggestedRuleType / suggestedRuleValue) ━━━
+Выбери ЛУЧШИЙ признак для автоматической классификации похожих операций в будущем.
+
+suggestedRuleType:
+• "KEYWORD" — ПРИОРИТЕТ: используй, когда description содержит характерное ключевое слово (название компании, тип услуги, вид платежа). ОБЯЗАТЕЛЬНО для isTransit=true — ИНН транзитного счёта не характеризует реальный платёж.
+• "INN"     — только если extractedInn принадлежит РЕАЛЬНОМУ (не транзитному) контрагенту, AND этот контрагент делает ОДИН тип операции с данной организацией. Не используй INN если тот же контрагент может делать разные типы операций.
+• "NONE"    — если нет надёжного признака для автоматизации.
+
+suggestedRuleValue:
+• Для "KEYWORD": КОРОТКАЯ характерная фраза из description (3–40 символов). Выбирай название компании, вид услуги или тип платежа. Примеры: "Tashkent Plaza", "аренда офиса", "ИНПС", "Payme", "электроэнергия", "таможенный сбор".
+• Для "INN": значение из extractedInn.
+• Для "NONE": пустая строка "".
+
+ВАЖНО: isTransit=true → ВСЕГДА "KEYWORD", НИКОГДА не "INN".`;
 
   // ── JSON schema for AI response ─────────────────────────────────────────────
   const responseFormatSchema = {
@@ -368,15 +375,17 @@ ${JSON.stringify(catalog, null, 2)}
             items: {
               type: "object" as const,
               properties: {
-                transactionId:       { type: "string" as const },
-                categoryCode:        { type: "string" as const },
-                confidence:          { type: "integer" as const },
+                transactionId:         { type: "string" as const },
+                categoryCode:          { type: "string" as const },
+                confidence:            { type: "integer" as const },
                 extractedCounterparty: { type: "string" as const },
-                extractedInn:        { type: "string" as const },
-                vatApplicable:       { type: "boolean" as const },
-                reasoning:           { type: "string" as const },
+                extractedInn:          { type: "string" as const },
+                vatApplicable:         { type: "boolean" as const },
+                reasoning:             { type: "string" as const },
+                suggestedRuleType:     { type: "string" as const },
+                suggestedRuleValue:    { type: "string" as const },
               },
-              required: ["transactionId", "categoryCode", "confidence", "extractedCounterparty", "extractedInn", "vatApplicable", "reasoning"],
+              required: ["transactionId", "categoryCode", "confidence", "extractedCounterparty", "extractedInn", "vatApplicable", "reasoning", "suggestedRuleType", "suggestedRuleValue"],
               additionalProperties: false,
             }
           }
@@ -476,75 +485,85 @@ ${JSON.stringify(catalog, null, 2)}
       }
 
       if (res.confidence >= confidenceThreshold) {
-        // Create document
-        let doc: any;
+        // Create document + post + update StagedTransaction atomically.
+        // On any failure the DB transaction rolls back — no partial/orphaned entries.
         try {
-          doc = await prisma.document.create({
-            data: {
-              orgId,
-              periodId: tx.periodId,
-              typeId: resolvedTypeId,
-              date: tx.date,
-              status: "POSTED",
-              sourceTransactionId: tx.id,
-              payload: {
-                amount: Number(tx.amount),
-                description: tx.description,
-                direction: tx.direction,
-                counterpartyHint: res.extractedCounterparty || tx.counterpartyHint || null,
-                counterpartyInn: res.extractedInn || tx.counterpartyInn || null,
-                aiConfidence: res.confidence,
-                aiReasoning: res.reasoning,
-              } as any
-            }
-          });
-        } catch (createErr: any) {
-          console.error(`AI: document.create failed for tx ${tx.id}:`, createErr.message);
-          await prisma.stagedTransaction.update({
-            where: { id: tx.id },
-            data: { status: "NEEDS_CLARIFICATION", aiSuggestion: aiSuggestion as any }
-          });
-          needsClarification++;
-          continue;
-        }
-
-        try {
-          await postDocument(doc.id, prisma, "system");
-        } catch (postErr: any) {
-          console.error(`AI: postDocument failed for doc ${doc.id}:`, postErr.message);
-          await prisma.document.update({ where: { id: doc.id }, data: { status: "VOIDED" } });
-          await prisma.stagedTransaction.update({
-            where: { id: tx.id },
-            data: { status: "NEEDS_CLARIFICATION", aiSuggestion: aiSuggestion as any }
-          });
-          needsClarification++;
-          continue;
-        }
-
-        await prisma.stagedTransaction.update({
-          where: { id: tx.id },
-          data: { status: "AUTO_MATCHED", documentId: doc.id, aiSuggestion: aiSuggestion as any }
-        });
-
-        // Persist rule for future deterministic re-use
-        const ruleInn = res.extractedInn || tx.counterpartyInn;
-        if (ruleInn) {
-          const existing = await prisma.rule.findFirst({
-            where: { orgId, matchType: "INN", matchValue: ruleInn, categoryId: resolvedTypeId }
-          });
-          if (!existing) {
-            await prisma.rule.create({
-              data: { orgId, matchType: "INN", matchValue: ruleInn, categoryId: resolvedTypeId, createdFrom: "AI_SUGGESTED" }
+          await prisma.$transaction(async (txClient) => {
+            const doc = await txClient.document.create({
+              data: {
+                orgId,
+                periodId: tx.periodId,
+                typeId: resolvedTypeId,
+                date: tx.date,
+                status: "POSTED",
+                sourceTransactionId: tx.id,
+                payload: {
+                  amount: Number(tx.amount),
+                  description: tx.description,
+                  direction: tx.direction,
+                  counterpartyHint: res.extractedCounterparty || tx.counterpartyHint || null,
+                  counterpartyInn: res.extractedInn || tx.counterpartyInn || null,
+                  aiConfidence: res.confidence,
+                  aiReasoning: res.reasoning,
+                } as any
+              }
             });
-            clearRulesCache(orgId);
+            await postDocument(doc.id, txClient, "system");
+            await txClient.stagedTransaction.update({
+              where: { id: tx.id },
+              data: { status: "AUTO_MATCHED", documentId: doc.id, aiSuggestion: aiSuggestion as any }
+            });
+          });
+        } catch (txErr: any) {
+          console.error(`AI: transaction failed for tx ${tx.id}:`, txErr.message);
+          await prisma.stagedTransaction.update({
+            where: { id: tx.id },
+            data: { status: "NEEDS_CLARIFICATION", aiSuggestion: aiSuggestion as any }
+          });
+          needsClarification++;
+          continue;
+        }
+
+        // Persist rule for future deterministic re-use.
+        // AI decides the best match signal (suggestedRuleType / suggestedRuleValue).
+        // Transit INNs are never used as INN rules — fall back to keyword.
+        const txMeta = enriched.find(e => e.id === tx.id);
+        const suggestedType = (res.suggestedRuleType || "NONE") as string;
+        const suggestedValue = (res.suggestedRuleValue || "").trim();
+
+        let finalMatchType: "INN" | "KEYWORD" | null = null;
+        let finalMatchValue = "";
+
+        if (suggestedType === "INN" && suggestedValue.length > 2 && !txMeta?.isTransit) {
+          finalMatchType = "INN";
+          finalMatchValue = suggestedValue;
+        } else if (suggestedType === "KEYWORD" && suggestedValue.length > 2) {
+          finalMatchType = "KEYWORD";
+          finalMatchValue = suggestedValue;
+        } else if (suggestedType === "INN" && txMeta?.isTransit) {
+          // Transit account — fall back to keyword from extracted counterparty or description hint
+          const fallback = (res.extractedCounterparty || "").trim();
+          if (fallback.length > 2) {
+            finalMatchType = "KEYWORD";
+            finalMatchValue = fallback;
           }
-        } else if (res.extractedCounterparty && res.extractedCounterparty.length > 3) {
+        }
+
+        if (finalMatchType && finalMatchValue) {
+          // Dedup: skip if any rule with same type+value already exists for this org
           const existing = await prisma.rule.findFirst({
-            where: { orgId, matchType: "KEYWORD", matchValue: res.extractedCounterparty, categoryId: resolvedTypeId }
+            where: { orgId, matchType: finalMatchType, matchValue: finalMatchValue }
           });
           if (!existing) {
             await prisma.rule.create({
-              data: { orgId, matchType: "KEYWORD", matchValue: res.extractedCounterparty, categoryId: resolvedTypeId, createdFrom: "AI_SUGGESTED" }
+              data: {
+                orgId,
+                matchType: finalMatchType,
+                matchValue: finalMatchValue,
+                categoryId: resolvedTypeId,
+                createdFrom: "AI_SUGGESTED",
+                direction: tx.direction,
+              }
             });
             clearRulesCache(orgId);
           }

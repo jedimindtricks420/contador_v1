@@ -87,6 +87,18 @@ export const CLOSING = {
   TAX_DUE_DAY: 20,        // payroll/VAT taxes due on 20th of next month
 } as const;
 
+// Transit INNs: payments routed through these accounts do not identify
+// the real payer — the actual counterparty is encoded in the description.
+// Never create INN-based classification rules for these INNs.
+export const TRANSIT_INNS = new Set([
+  "302179836", // Казначейство МФ РУз (центральное)
+  "207680039", // Казначейство (региональные управления)
+  "201116085", // НБУ — Национальный банк ВЭД
+  "207004110", // Узбекфинансы
+  "200892596", // Центральный банк РУз
+  "303245419", // Биржа (УзРЦБ)
+]);
+
 // AI classification
 export const AI = {
   CONFIDENCE_THRESHOLD: 70,

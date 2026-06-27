@@ -37,40 +37,43 @@ export async function POST(
     let failed = 0;
 
     for (const tx of transactions) {
-      let doc: { id: string } | null = null;
+      // Skip transactions whose direction doesn't match the rule's direction filter
+      if (rule.direction && rule.direction !== tx.direction) {
+        failed++;
+        continue;
+      }
+
       try {
-        doc = await prisma.document.create({
-          data: {
-            orgId,
-            periodId: tx.periodId,
-            typeId: rule.categoryId,
-            date: tx.date,
-            status: "POSTED",
-            sourceTransactionId: tx.id,
-            payload: {
-              amount: Number(tx.amount),
-              description: tx.description,
-              direction: tx.direction,
-              counterpartyHint: tx.counterpartyHint || null,
-              counterpartyInn: tx.counterpartyInn || null,
-              ruleMatched: rule.id,
-            } as any,
-          },
+        await prisma.$transaction(async (txClient) => {
+          const doc = await txClient.document.create({
+            data: {
+              orgId,
+              periodId: tx.periodId,
+              typeId: rule.categoryId,
+              date: tx.date,
+              status: "POSTED",
+              sourceTransactionId: tx.id,
+              payload: {
+                amount: Number(tx.amount),
+                description: tx.description,
+                direction: tx.direction,
+                counterpartyHint: tx.counterpartyHint || null,
+                counterpartyInn: tx.counterpartyInn || null,
+                ruleMatched: rule.id,
+              } as any,
+            },
+          });
+
+          await postDocument(doc.id, txClient, "system");
+
+          await txClient.stagedTransaction.update({
+            where: { id: tx.id },
+            data: { status: "AUTO_MATCHED", documentId: doc.id },
+          });
         });
-
-        await postDocument(doc.id, prisma, "system");
-
-        await prisma.stagedTransaction.update({
-          where: { id: tx.id },
-          data: { status: "AUTO_MATCHED", documentId: doc.id },
-        });
-
         applied++;
       } catch (err) {
         console.error(`rules/apply: failed for tx ${tx.id}:`, err);
-        if (doc) {
-          await prisma.document.update({ where: { id: doc.id }, data: { status: "VOIDED" } }).catch(() => {});
-        }
         failed++;
       }
     }

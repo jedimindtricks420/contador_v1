@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
       { code: "FOUNDER_LOAN", name: "Займы от учредителя" },
       { code: "CAPITAL_CONTRIBUTION", name: "Пополнение уставного капитала" },
       { code: "BANK_LOAN", name: "Банковские кредиты" },
+      { code: "FX_GAIN", name: "Положительные курсовые разницы" },
       { code: "OTHER_INFLOW", name: "Прочие поступления" }
     ];
 
@@ -93,6 +94,7 @@ export async function GET(req: NextRequest) {
       { code: "DEPOSIT", name: "Гарантийный депозит" },
       { code: "CAPEX", name: "Капитальные расходы (ОС)" },
       { code: "LOAN_REPAYMENT", name: "Погашение кредитов / займов" },
+      { code: "FX_LOSS", name: "Отрицательные курсовые разницы" },
       { code: "OTHER_OUTFLOW", name: "Прочие расходы" }
     ];
 
@@ -113,7 +115,27 @@ export async function GET(req: NextRequest) {
     for (const entry of entries) {
       const doc = entry.document;
       if (doc.type.code === "INTERNAL_TRANSFER") continue;
-      if (doc.type.code === "FX_DIFFERENCE") continue;
+
+      // FX_DIFFERENCE entries affect the bank balance (5210) — include as separate category
+      // so that openingBalance + netFlow = closingBalance.
+      if (doc.type.code === "FX_DIFFERENCE") {
+        const dateStr = `${doc.date.getFullYear()}-${String(doc.date.getMonth() + 1).padStart(2, "0")}`;
+        const monthIdx = months.indexOf(dateStr);
+        if (monthIdx === -1) continue;
+
+        const debit = new Decimal(entry.debit.toString());
+        const credit = new Decimal(entry.credit.toString());
+
+        if (debit.gt(0)) {
+          const arr = incomeMap.get("FX_GAIN");
+          if (arr) { arr[monthIdx] = arr[monthIdx].plus(debit); netFlow[monthIdx] = netFlow[monthIdx].plus(debit); }
+        }
+        if (credit.gt(0)) {
+          const arr = expenseMap.get("FX_LOSS");
+          if (arr) { arr[monthIdx] = arr[monthIdx].plus(credit); netFlow[monthIdx] = netFlow[monthIdx].minus(credit); }
+        }
+        continue;
+      }
 
       const dateStr = `${doc.date.getFullYear()}-${String(doc.date.getMonth() + 1).padStart(2, "0")}`;
       const monthIdx = months.indexOf(dateStr);

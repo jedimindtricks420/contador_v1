@@ -3,6 +3,7 @@ import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { postDocument, repostDocument } from "@/lib/posting/postingEngine";
 import { clearRulesCache } from "@/lib/classification/rulesEngine";
+import { TRANSIT_INNS } from "@/lib/constants";
 
 /**
  * Assigns or changes the classification category of a staged transaction.
@@ -96,17 +97,16 @@ export async function PATCH(
 
       let ruleCreated = false;
       if (createRule) {
-        const matchType = stagedTx.counterpartyInn ? "INN" : "KEYWORD";
-        const matchValue = stagedTx.counterpartyInn || stagedTx.counterpartyHint;
+        const isTransit = stagedTx.counterpartyInn ? TRANSIT_INNS.has(stagedTx.counterpartyInn) : false;
+        // Never create INN rules for transit accounts (Казначейство, НБУ, etc.)
+        const matchType = (stagedTx.counterpartyInn && !isTransit) ? "INN" : "KEYWORD";
+        const matchValue = (stagedTx.counterpartyInn && !isTransit)
+          ? stagedTx.counterpartyInn
+          : (stagedTx.counterpartyHint?.trim() || null);
 
         if (matchValue) {
-          // Check if rule already exists to avoid unique constraint issues
           const existingRule = await tx.rule.findFirst({
-            where: {
-              orgId,
-              matchType,
-              matchValue
-            }
+            where: { orgId, matchType, matchValue }
           });
 
           if (!existingRule) {
@@ -116,7 +116,8 @@ export async function PATCH(
                 matchType,
                 matchValue,
                 categoryId: documentTypeId,
-                createdFrom: "USER_ANSWER"
+                createdFrom: "USER_ANSWER",
+                direction: stagedTx.direction
               }
             });
             ruleCreated = true;

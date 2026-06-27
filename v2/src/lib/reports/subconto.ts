@@ -145,12 +145,12 @@ export async function calculateSubconto(
   rows.sort((a, b) => a.counterpartyName.localeCompare(b.counterpartyName) || a.accountCode.localeCompare(b.accountCode));
 
   const totals = {
-    openingDebit: rows.reduce((sum, r) => sum + r.openingDebit, 0),
-    openingCredit: rows.reduce((sum, r) => sum + r.openingCredit, 0),
-    debitTurnover: rows.reduce((sum, r) => sum + r.debitTurnover, 0),
-    creditTurnover: rows.reduce((sum, r) => sum + r.creditTurnover, 0),
-    closingDebit: rows.reduce((sum, r) => sum + r.closingDebit, 0),
-    closingCredit: rows.reduce((sum, r) => sum + r.closingCredit, 0)
+    openingDebit:  rows.reduce((s, r) => s.plus(new Decimal(r.openingDebit)),  new Decimal(0)).toNumber(),
+    openingCredit: rows.reduce((s, r) => s.plus(new Decimal(r.openingCredit)), new Decimal(0)).toNumber(),
+    debitTurnover: rows.reduce((s, r) => s.plus(new Decimal(r.debitTurnover)), new Decimal(0)).toNumber(),
+    creditTurnover:rows.reduce((s, r) => s.plus(new Decimal(r.creditTurnover)),new Decimal(0)).toNumber(),
+    closingDebit:  rows.reduce((s, r) => s.plus(new Decimal(r.closingDebit)),  new Decimal(0)).toNumber(),
+    closingCredit: rows.reduce((s, r) => s.plus(new Decimal(r.closingCredit)), new Decimal(0)).toNumber(),
   };
 
   return { rows, totals };

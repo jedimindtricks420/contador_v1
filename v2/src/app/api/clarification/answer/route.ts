@@ -3,6 +3,7 @@ import { getActiveOrgId, getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { clearRulesCache } from "@/lib/classification/rulesEngine";
 import { postDocument } from "@/lib/posting/postingEngine";
+import { TRANSIT_INNS } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
     // Perform database operations inside a Prisma transaction
     const result = await prisma.$transaction(async (tx) => {
       let createdDocsCount = 0;
+      const classifiedDirections: string[] = [];
 
       for (const txId of transactionIds) {
         const stagedTx = await tx.stagedTransaction.findFirst({
@@ -38,6 +40,8 @@ export async function POST(req: NextRequest) {
         });
 
         if (!stagedTx) continue;
+
+        classifiedDirections.push(stagedTx.direction);
 
         // Create the POSTED document
         const doc = await tx.document.create({
@@ -74,30 +78,35 @@ export async function POST(req: NextRequest) {
         createdDocsCount++;
       }
 
+      // Direction for the rule: use it only if all classified transactions share one direction
+      const uniqueDirs = [...new Set(classifiedDirections)];
+      const ruleDirection = uniqueDirs.length === 1 ? uniqueDirs[0] : null;
+
       let ruleCreated = false;
 
       // Create rule if requested
       if (createRule && ruleMatchType && ruleMatchValue) {
-        // Prevent duplicate rules
-        const existingRule = await tx.rule.findFirst({
-          where: {
-            orgId,
-            matchType: ruleMatchType,
-            matchValue: ruleMatchValue
-          }
-        });
+        // Guard: never create INN rules for transit accounts (Казначейство, НБУ, etc.)
+        const isTransitInn = ruleMatchType === "INN" && TRANSIT_INNS.has(ruleMatchValue);
 
-        if (!existingRule) {
-          await tx.rule.create({
-            data: {
-              orgId,
-              matchType: ruleMatchType,
-              matchValue: ruleMatchValue,
-              categoryId: documentTypeId,
-              createdFrom: "USER_ANSWER"
-            }
+        if (!isTransitInn) {
+          const existingRule = await tx.rule.findFirst({
+            where: { orgId, matchType: ruleMatchType, matchValue: ruleMatchValue }
           });
-          ruleCreated = true;
+
+          if (!existingRule) {
+            await tx.rule.create({
+              data: {
+                orgId,
+                matchType: ruleMatchType,
+                matchValue: ruleMatchValue,
+                categoryId: documentTypeId,
+                createdFrom: "USER_ANSWER",
+                direction: ruleDirection
+              }
+            });
+            ruleCreated = true;
+          }
         }
       }
 

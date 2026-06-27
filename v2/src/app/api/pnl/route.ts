@@ -97,21 +97,37 @@ export async function GET(req: NextRequest) {
     const line230 = tc("9710").minus(td("9720"));
     const line240 = line220.plus(line230);
 
-    // стр. 250 — из проводок 9810; если 0 — из taxCalendarEvent
+    // стр. 250 — из проводок 9810; если 0 — из taxCalendarEvent только по периодам в диапазоне
     const line250 = td("9810");
     let taxAmountFromCalendar = new Decimal(0);
     if (line250.isZero()) {
-      const taxEvents = await prisma.taxCalendarEvent.findMany({
-        where: {
-          orgId,
-          type: { in: ["PROFIT_TAX", "TURNOVER_TAX"] },
-          period: { year: { gte: startDate.getFullYear() }, month: { gte: startDate.getMonth() + 1 } }
-        },
-        select: { estimatedAmount: true }
+      // Берём только события, привязанные к периодам внутри диапазона дат,
+      // чтобы не захватить налоги соседних периодов.
+      const periodsInRange = await prisma.period.findMany({
+        where: { orgId },
+        select: { id: true, year: true, month: true }
       });
-      taxAmountFromCalendar = taxEvents.reduce(
-        (s, e) => s.plus(new Decimal(e.estimatedAmount?.toString() || "0")), new Decimal(0)
-      );
+      const periodIdsInRange = periodsInRange
+        .filter(p => {
+          const pDate = new Date(p.year, p.month - 1, 1);
+          return pDate >= new Date(startDate.getFullYear(), startDate.getMonth(), 1)
+              && pDate <= new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+        })
+        .map(p => p.id);
+
+      if (periodIdsInRange.length > 0) {
+        const taxEvents = await prisma.taxCalendarEvent.findMany({
+          where: {
+            orgId,
+            periodId: { in: periodIdsInRange },
+            type: { in: ["PROFIT_TAX", "TURNOVER_TAX"] }
+          },
+          select: { estimatedAmount: true }
+        });
+        taxAmountFromCalendar = taxEvents.reduce(
+          (s, e) => s.plus(new Decimal(e.estimatedAmount?.toString() || "0")), new Decimal(0)
+        );
+      }
     }
     const line250final = line250.gt(0) ? line250 : taxAmountFromCalendar;
 

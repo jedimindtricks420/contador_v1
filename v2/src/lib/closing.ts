@@ -352,16 +352,30 @@ export async function finalizePeriod(
         where: { orgId, periodId, type: { code: "TURNOVER_TAX_ACCRUAL" }, status: "POSTED" }
       });
       if (!existingTtax && turnoverTaxAmt.gt(0)) {
-        const ttaxType = await tx.documentType.findFirst({ where: { code: "TURNOVER_TAX_ACCRUAL" } });
-        if (ttaxType) {
-          const ttaxDoc = await tx.document.create({
+        // Create the document type if it was not seeded yet (mirrors PROFIT_TAX_ACCRUAL pattern)
+        let ttaxType = await tx.documentType.findFirst({ where: { code: "TURNOVER_TAX_ACCRUAL" } });
+        if (!ttaxType) {
+          ttaxType = await tx.documentType.create({
             data: {
-              orgId, periodId, typeId: ttaxType.id, date: accrualDate, status: "POSTED",
-              payload: { taxAmount: turnoverTaxAmt.toNumber() } as any
+              code: "TURNOVER_TAX_ACCRUAL",
+              name: "Начисление налога с оборота",
+              postingTemplate: {
+                lines: [
+                  { accountCode: ACCOUNTS.PROFIT_TAX_EXPENSE, side: "debit",  expression: "taxAmount" },
+                  { accountCode: ACCOUNTS.TAX_PAYABLE,        side: "credit", expression: "taxAmount" }
+                ],
+                opensItem: false
+              }
             }
           });
-          await postDocument(ttaxDoc.id, tx, userId);
         }
+        const ttaxDoc = await tx.document.create({
+          data: {
+            orgId, periodId, typeId: ttaxType.id, date: accrualDate, status: "POSTED",
+            payload: { taxAmount: turnoverTaxAmt.toNumber() } as any
+          }
+        });
+        await postDocument(ttaxDoc.id, tx, userId);
       }
     }
 
@@ -444,6 +458,66 @@ export async function finalizePeriod(
       }
     }
 
+    // H2. Автоматический перенос 9910 → 8710 при закрытии декабря (реформация года)
+    if (period.month === 12) {
+      const existingYE = await tx.document.findFirst({
+        where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
+      });
+      if (!existingYE) {
+        const net9910Rows = await tx.$queryRaw<{ net: string }[]>`
+          SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
+          FROM "JournalEntry" je
+          JOIN "Document" d ON d.id = je."documentId"
+          JOIN "Account" a ON a.id = je."accountId"
+          WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
+            AND EXTRACT(YEAR FROM d.date) = ${period.year}
+            AND a.code = '9910'
+        `;
+        const net9910 = new Decimal(net9910Rows[0]?.net || "0");
+        if (!net9910.isZero()) {
+          const acc8710 = await tx.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } });
+          if (acc9910 && acc8710) {
+            let yearEndType = await tx.documentType.findUnique({ where: { code: "YEAR_END_CLOSE" } });
+            if (!yearEndType) {
+              yearEndType = await tx.documentType.create({
+                data: {
+                  code: "YEAR_END_CLOSE",
+                  name: "Перенос финансового результата в нераспределённую прибыль",
+                  postingTemplate: { lines: [], opensItem: false }
+                }
+              });
+            }
+            const yeDate = new Date(period.year, 11, 31);
+            const yeDoc = await tx.document.create({
+              data: {
+                orgId, periodId, typeId: yearEndType.id,
+                date: yeDate, status: "POSTED",
+                payload: { type: "year_end_close", year: period.year, net9910: net9910.toNumber() } as any
+              }
+            });
+            const amt = net9910.abs();
+            if (net9910.gt(0)) {
+              // Дебетовый остаток 9910 = убыток: Дт 8710 — Кт 9910
+              await tx.journalEntry.createMany({
+                data: [
+                  { documentId: yeDoc.id, accountId: acc8710.id, debit: amt, credit: new Decimal(0), date: yeDate },
+                  { documentId: yeDoc.id, accountId: acc9910.id, debit: new Decimal(0), credit: amt, date: yeDate }
+                ]
+              });
+            } else {
+              // Кредитовый остаток 9910 = прибыль: Дт 9910 — Кт 8710
+              await tx.journalEntry.createMany({
+                data: [
+                  { documentId: yeDoc.id, accountId: acc9910.id, debit: amt, credit: new Decimal(0), date: yeDate },
+                  { documentId: yeDoc.id, accountId: acc8710.id, debit: new Decimal(0), credit: amt, date: yeDate }
+                ]
+              });
+            }
+          }
+        }
+      }
+    }
+
     // I. Заблокировать период
     const lastDay = new Date(period.year, period.month, 0);
     const updatedPeriod = await tx.period.update({
@@ -478,7 +552,7 @@ export async function upsertTaxCalendarEventsForPeriod(periodId: string, orgId: 
         document: {
           periodId,
           orgId,
-          type: { code: { notIn: ["SALARY_ACCRUAL", "PROFIT_TAX_ACCRUAL"] } }
+          type: { code: { notIn: ["SALARY_ACCRUAL", "PROFIT_TAX_ACCRUAL", "TURNOVER_TAX_ACCRUAL"] } }
         },
         account: { code: ACCOUNTS.TAX_PAYABLE },
         credit: { gt: 0 }

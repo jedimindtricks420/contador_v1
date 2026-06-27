@@ -44,13 +44,22 @@ export async function GET(req: NextRequest) {
       }, new Decimal(0));
     }
 
-    // Кредитовое сальдо — для пассивных/контрарных счетов
+    // Кредитовое сальдо — для пассивных/контрарных счетов (отсекает отрицательные)
     function balCredit(...codes: string[]): Decimal {
       return codes.reduce((s, c) => {
         const row = cumulByCode.get(c);
         if (!row) return s;
         const net = row.sumCredit.minus(row.sumDebit);
         return s.plus(net.gt(0) ? net : new Decimal(0));
+      }, new Decimal(0));
+    }
+
+    // Чистое сальдо (Кт − Дт) без отсечения — для счетов с возможным дебетовым остатком (8710)
+    function balNet(...codes: string[]): Decimal {
+      return codes.reduce((s, c) => {
+        const row = cumulByCode.get(c);
+        if (!row) return s;
+        return s.plus(row.sumCredit.minus(row.sumDebit));
       }, new Decimal(0));
     }
 
@@ -71,7 +80,7 @@ export async function GET(req: NextRequest) {
     // ─── АКТИВ ───────────────────────────────────────────────────────
 
     // Раздел I. Долгосрочные активы
-    const line010 = balDebit("0100","0310");
+    const line010 = balDebit("0100");         // ОС — только первоначальная стоимость
     const line011 = balCredit("0200");
     const line012 = line010.minus(line011);
 
@@ -86,7 +95,8 @@ export async function GET(req: NextRequest) {
     const line080 = balDebit("0690");
     const line030 = line040.plus(line050).plus(line060).plus(line070).plus(line080);
 
-    const line090 = balDebit("0710","0720");
+    // 0310 = капзатраты на арендованное имущество → долгосрочные арендованные активы
+    const line090 = balDebit("0310","0710","0720");
     const line100 = balDebit("0810","0820","0830","0840","0850","0860","0870","0890");
     const line110 = balDebit("0910","0920","0930","0940");
     const line120 = balDebit("0950","0960","0990");
@@ -140,9 +150,8 @@ export async function GET(req: NextRequest) {
     const line420 = balCredit("8410","8420");
     const line430 = balCredit("8510","8520","8530");
     const line440 = balDebit("8610","8620");
-    const line450raw = balCredit("8710");
-    // transitNet = Кт − Дт по TRANSIT счетам: >0 → прибыль, <0 → убыток
-    const line450 = line450raw.plus(transitNet);
+    // balNet сохраняет отрицательное значение при дебетовом остатке 8710 (непокрытый убыток)
+    const line450 = balNet("8710").plus(transitNet);
     const line460 = balCredit("8810","8820","8830","8840","8890");
     const line470 = balCredit("8910");
     const line480 = line410.plus(line420).plus(line430).minus(line440)
@@ -186,7 +195,7 @@ export async function GET(req: NextRequest) {
     const line770 = line490.plus(line600);
     const line780 = line480.plus(line770);
 
-    const balanceOk = line400.minus(line780).abs().lte(1);
+    const balanceOk = line400.equals(line780);
 
     const n = (d: Decimal) => d.toNumber();
 

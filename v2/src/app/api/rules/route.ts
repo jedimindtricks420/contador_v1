@@ -8,13 +8,15 @@ export async function GET() {
     const rules = await prisma.rule.findMany({
       where: { orgId },
       include: { documentType: { select: { name: true, code: true } } },
-      orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     });
     return NextResponse.json(rules);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 401 });
   }
 }
+
+const VALID_MATCH_TYPES = ["INN", "KEYWORD", "AMOUNT_RANGE", "TREASURY_ACCOUNT"];
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,6 +25,10 @@ export async function POST(req: NextRequest) {
 
     if (!matchType || !matchValue || !categoryId) {
       return NextResponse.json({ error: "matchType, matchValue, categoryId обязательны" }, { status: 400 });
+    }
+
+    if (!VALID_MATCH_TYPES.includes(matchType)) {
+      return NextResponse.json({ error: `Недопустимый тип правила. Допустимые: ${VALID_MATCH_TYPES.join(", ")}` }, { status: 400 });
     }
 
     const rule = await prisma.rule.create({

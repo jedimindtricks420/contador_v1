@@ -154,6 +154,9 @@ export async function postDocument(
     }
 
     const itemAmount = evaluate("amount", evalPayload);
+    if (itemAmount.isZero()) {
+      throw new Error(`OpenItem не создан: поле "amount" равно нулю или отсутствует в payload документа ${doc.id}`);
+    }
     const riskDeadline = getRiskDeadline(template.itemAccountCode, doc.date);
 
     openItem = await tx.openItem.create({
@@ -253,6 +256,16 @@ export async function postDocument(
       },
       data: { status: "DONE" }
     });
+  } else if (doc.type.code === "INPS_PAYMENT") {
+    await tx.taxCalendarEvent.updateMany({
+      where: {
+        orgId: doc.orgId,
+        type: "INPS" as any,
+        status: "PENDING",
+        dueDate: { lte: doc.date }
+      },
+      data: { status: "DONE" }
+    });
   }
 
   return { journalEntries: createdEntries, openItem };
@@ -335,6 +348,8 @@ export async function voidDocument(
 /**
  * Reposts a document by voiding existing journal entries, updating its category,
  * and generating new entries.
+ * voidDocument sets linked StagedTransactions to NEEDS_CLARIFICATION/null —
+ * we restore them to CONFIRMED/documentId after a successful repost.
  */
 export async function repostDocument(
   documentId: string,
@@ -342,18 +357,31 @@ export async function repostDocument(
   tx: any = prisma,
   passedUserId?: string
 ) {
-  // 1. Void document
+  // Save linked staged transaction IDs before voiding clears them
+  const linkedStagedTxs = await tx.stagedTransaction.findMany({
+    where: { documentId },
+    select: { id: true }
+  });
+
+  // 1. Void document (this detaches StagedTransactions → NEEDS_CLARIFICATION)
   await voidDocument(documentId, tx, passedUserId);
 
   // 2. Update type and return to POSTED status
   await tx.document.update({
     where: { id: documentId },
-    data: {
-      typeId: newTypeId,
-      status: "POSTED"
-    }
+    data: { typeId: newTypeId, status: "POSTED" }
   });
 
   // 3. Repost document entries
-  return postDocument(documentId, tx, passedUserId);
+  const result = await postDocument(documentId, tx, passedUserId);
+
+  // 4. Restore staged transaction links cleared by voidDocument
+  if (linkedStagedTxs.length > 0) {
+    await tx.stagedTransaction.updateMany({
+      where: { id: { in: linkedStagedTxs.map((t: any) => t.id) } },
+      data: { status: "CONFIRMED", documentId }
+    });
+  }
+
+  return result;
 }
