@@ -38,7 +38,11 @@ export async function getClosingState(periodId: string) {
   return state;
 }
 
-export async function saveClosingState(periodId: string, patch: any) {
+export async function saveClosingState(periodId: string, patch: any, orgId?: string) {
+  if (orgId) {
+    const ok = await prisma.period.findFirst({ where: { id: periodId, orgId } });
+    if (!ok) throw new Error("Period not found or access denied");
+  }
   const current = await getClosingState(periodId);
   const updated = { ...current, ...patch };
   closingStates.set(periodId, updated);

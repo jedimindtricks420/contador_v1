@@ -1,7 +1,8 @@
 # Модуль H — Движок проводок (Posting Engine)
 
 **Статус:** ✅ Реализован  
-**Файлы:** `src/lib/posting/postingEngine.ts`, `src/lib/posting/expressionEval.ts`, `src/app/api/posting/`
+**Файлы:** `src/lib/posting/postingEngine.ts`, `src/lib/posting/expressionEval.ts`, `src/app/api/posting/`  
+**Последнее обновление:** 2026-06-30
 
 ---
 
@@ -11,66 +12,76 @@
 
 ---
 
-## Функции движка
-
-### `postDocument(documentId, tx?, userId?)`
+## postDocument(documentId, tx?, userId?)
 
 10-шаговый алгоритм:
 
-1. Загрузить `Document` и его `DocumentType` (с `postingTemplate`)
-2. Проверить существование периода и что он **не закрыт** (`CLOSED` / `lockDate ≠ null`)
-3. Загрузить организацию (для `isVatPayer`, `taxRegime`, `turnoverTaxRate`)
-4. Определить контрагента по `payload.counterpartyInn` или `payload.counterpartyHint`; если не найден — создать автоматически
-5. Собрать `evalPayload` = payload + `isVatPayer` + `vatRate` + `taxAmount`
-6. Обработать строки шаблона (`template.lines`):
-   - Вычислить `condition` — если ноль, пропустить строку
-   - Найти `Account` по `line.accountCode`; если не найден — кинуть ошибку
-   - Вычислить `amount` через `evaluate(line.expression, evalPayload)`
-   - Строки с нулевой суммой пропускаются
-7. Валидация баланса: `Σ Дт == Σ Кт` — иначе ошибка
-8. Записать `JournalEntry[]` в БД
-9. Если `template.opensItem == true` → создать `OpenItem` с буферным счётом `template.itemAccountCode` и дедлайном риска
-10. Записать `AuditLog` (action: `POST_DOCUMENT`)
+1. Загрузить Document + DocumentType (с postingTemplate). Если документ VOIDED — вернуть `{ journalEntries: [] }`.
+2. Проверить период: не CLOSED и `lockDate === null`.
+3. Загрузить организацию (isVatPayer, vatRate).
+4. Определить контрагента по `payload.counterpartyInn` (приоритет) или `payload.counterpartyHint`. Поиск по имени: **case-insensitive** (`mode: "insensitive"`). Если не найден — создать автоматически.
+5. Собрать `evalPayload` = payload + isVatPayer + vatRate.
+6. Обработать строки шаблона:
+   - Если есть `condition` — вычислить; 0 → пропустить строку
+   - Код счёта может быть динамическим (`"$fieldName"`) — берётся из payload
+   - Найти Account по `code`; не найден → ошибка с кодом счёта
+   - Вычислить сумму через `evaluate(expression, evalPayload)`; 0 → пропустить
+7. Валидация: Σ Дт == Σ Кт (иначе ошибка с суммами).
+8. Записать JournalEntry[] в БД.
+9a. Если `template.opensItem === true` → создать OpenItem (буферный счёт `template.itemAccountCode`, дедлайн `getRiskDeadline()`).
+9b. Если `template.closesOpenItemByAccount` задан → найти OPEN позицию (orgId + счёт + counterpartyId); предпочесть точное совпадение по сумме, иначе самую старую; закрыть (`status: "CLOSED"`).
+    - Применяется для: **SUPPLIER_REFUND** (закрывает 4310), **ADVANCE_RETURN_SENT** (закрывает 6310)
+10. Записать AuditLog (action: `POST_DOCUMENT`).
 
-### `voidDocument(documentId, tx?, userId?)`
+**После записи:**  
+Вызывает `upsertTaxCalendarEventsForPeriod(periodId, orgId, tx)` — ошибки перехватываются молча (только console.error).
+
+**Автозакрытие налоговых событий:**
+- `TAX_PAYMENT` → DONE для VAT, PERSONAL_INCOME_TAX, PROFIT_TAX, TURNOVER_TAX (dueDate ≤ даты документа)
+- `SOCIAL_TAX_PAYMENT` → DONE для SOCIAL_TAX
+- `INPS_PAYMENT` → DONE для INPS
+
+---
+
+## voidDocument(documentId, tx?, userId?)
 
 1. Загрузить документ, проверить период
-2. `Document.status = VOIDED`
-3. `JournalEntry.deleteMany({ documentId })`
-4. Закрыть связанные OpenItem: `updateMany({ openingDocumentId, status: "OPEN" }) → status: "CLOSED"`
-5. Записать `AuditLog` (action: `VOID_DOCUMENT`)
+2. Document.status = VOIDED
+3. JournalEntry.deleteMany({ documentId })
+4. Закрыть связанные OpenItem: updateMany({ openingDocumentId, status: "OPEN" }) → status: "CLOSED"
+5. Записать AuditLog (action: `VOID_DOCUMENT`)
 
-### `repostDocument(documentId, newTypeId, tx?, userId?)`
+---
 
-1. `voidDocument()` — аннулировать текущие проводки
-2. `Document.typeId = newTypeId`, `Document.status = POSTED`
-3. `postDocument()` — генерация новых проводок по новому шаблону
+## repostDocument(documentId, newTypeId, tx?, userId?)
+
+1. voidDocument() — аннулировать текущие проводки
+2. Document.typeId = newTypeId, status = POSTED
+3. postDocument() — новые проводки по новому шаблону
 
 ---
 
 ## PostingTemplate
 
-Хранится в `DocumentType.postingTemplate` (JSON в БД).
-
 ```typescript
 interface PostingTemplate {
   lines: PostingLine[]
-  opensItem?: boolean         // создавать ли OpenItem
-  itemAccountCode?: string    // буферный счёт для OpenItem
+  opensItem?: boolean
+  itemAccountCode?: string
+  closesOpenItemByAccount?: string   // авто-закрыть открытую позицию на этом счёте
 }
 
 interface PostingLine {
-  accountCode: string         // код счёта из плана счетов
+  accountCode: string         // код счёта или "$fieldName"
   side: "debit" | "credit"
   expression: string          // математическое выражение
-  condition?: string          // если задано — строка вычисляется, 0 = пропустить
+  condition?: string          // 0 = пропустить строку
   subcontoType?: "counterparty" | "contract"
 }
 ```
 
-### Примеры шаблонов
+### Пример: REVENUE_VAT
 
-**REVENUE_VAT (Поступление с НДС):**
 ```json
 {
   "lines": [
@@ -81,29 +92,12 @@ interface PostingLine {
 }
 ```
 
-**SUPPLIER_PAYMENT (Оплата поставщику):**
-```json
-{
-  "lines": [
-    { "accountCode": "6010", "side": "debit",  "expression": "amount", "subcontoType": "counterparty" },
-    { "accountCode": "5110", "side": "credit", "expression": "amount" }
-  ]
-}
-```
+### Пример: SALARY_ACCRUAL
 
-**SALARY_ACCRUAL (Начисление ФОТ):**
-```json
-{
-  "lines": [
-    { "accountCode": "9420", "side": "debit",  "expression": "salaryAmount" },
-    { "accountCode": "6710", "side": "credit", "expression": "salaryAmount" },
-    { "accountCode": "6710", "side": "debit",  "expression": "salaryAmount * 0.12" },
-    { "accountCode": "6410", "side": "credit", "expression": "salaryAmount * 0.12" },
-    { "accountCode": "9420", "side": "debit",  "expression": "salaryAmount * 0.12" },
-    { "accountCode": "6520", "side": "credit", "expression": "salaryAmount * 0.12" }
-  ]
-}
-```
+Брутто ФОТ: Дт 9420 → Кт 6710  
+ИНПС 0.1%: Дт 6710 → Кт 6530  
+НДФЛ в бюджет 11.9%: Дт 6710 → Кт 6410  
+Соцналог 12%: Дт 9420 → Кт 6520
 
 ---
 
@@ -113,8 +107,7 @@ interface PostingLine {
 evaluate(expression: string, payload: Record<string, any>): Decimal
 ```
 
-Поддерживаемые операции: `+`, `-`, `*`, `/`, `(`, `)`.  
-Переменные подставляются из `payload` (например, `amount`, `vatRate`, `salaryAmount`).
+Операции: `+`, `-`, `*`, `/`, `(`, `)`. Переменные из evalPayload.
 
 ---
 
@@ -122,22 +115,19 @@ evaluate(expression: string, payload: Record<string, any>): Decimal
 
 ```
 POST /api/posting/post
-Body: { documentId: string }
-→ { journalEntries: JournalEntry[], openItem?: OpenItem }
+Body: { documentId }
+→ { journalEntries, openItem? }
 
 POST /api/posting/void
-Body: { documentId: string }
+Body: { documentId }
 → { ok: true }
 
 POST /api/posting/repost
-Body: { documentId: string, newTypeId: string }
-→ { journalEntries: JournalEntry[], openItem?: OpenItem }
+Body: { documentId, newTypeId }
+→ { journalEntries, openItem? }
 ```
 
-**Защиты:**
-- Период CLOSED → 423 Locked
-- Несбалансированный шаблон → 422 Unprocessable
-- Счёт не найден → 422 с указанием кода счёта
+**Защиты:** период CLOSED → 423; несбалансированный шаблон → 422; счёт не найден → 422.
 
 ---
 
@@ -145,50 +135,72 @@ Body: { documentId: string, newTypeId: string }
 
 | code | Дебет | Кредит | Примечание |
 |------|-------|--------|-----------|
-| `REVENUE_VAT` | 5110 | 9030 + 6410 | НДС включён в сумму |
+| `REVENUE_VAT` | 5110 | 9030 + 6410 | НДС включён |
 | `REVENUE_NO_VAT` | 5110 | 9010 | Без НДС |
-| `SUPPLIER_PAYMENT` | 6010 | 5110 | Контрагент → субконто |
-| `SALARY` | 6710 | 5110 | Выплата с расчётного счёта |
-| `TAX_PAYMENT` | 6410 | 5110 | Уплата в бюджет |
-| `RENT` | 6010 | 5110 | Оплата аренды |
-| `SALARY_ACCRUAL` | 9420 | 6710, 6520 + 6410 | ФОТ + соцналог + НДФЛ |
-| `DEPRECIATION_ACCRUAL` | 9430 | 0200 | Начисление износа ОС |
+| `SUPPLIER_PAYMENT` | 6010 | 5110 | Субконто контрагент |
+| `SALARY` | 6710 | 5110 | Выплата зарплаты |
+| `TAX_PAYMENT` | 6410 | 5110 | Закрывает VAT/НДФЛ/НнП/НсО события |
+| `INPS_PAYMENT` | 6530 | 5110 | Закрывает INPS события |
+| `SOCIAL_TAX_PAYMENT` | 6520 | 5110 | Закрывает SOCIAL_TAX события |
+| `RENT` | 6010 | 5110 | Аренда (оплата) |
+| `SALARY_ACCRUAL` | 9420 | 6710+6520+6530+6410 | ФОТ + налоги |
+| `DEPRECIATION_ACCRUAL` | 9430 | 0200 | Амортизация ОС |
 | `RENT_ACCRUAL` | 9420 | 6010 | Начисление аренды |
-| `PROFIT_TAX_ACCRUAL` | 9810 | 6410 | Налог на прибыль 15% (VAT-режим) |
-| `TURNOVER_TAX_ACCRUAL` | 9810 | 6410 | Налог с оборота (1–4%, TURNOVER_TAX) |
-| `FX_DIFFERENCE` | 5210 / 9620 | 9540 / 5210 | Доход/расход курсовой разницы |
-| `REFUND` | 9040 | 5110 | Возврат покупателю |
+| `PROFIT_TAX_ACCRUAL` | 9810 | 6410 | Налог на прибыль 15% |
+| `TURNOVER_TAX_ACCRUAL` | 9810 | 6410 | Налог с оборота |
+| `FX_DIFFERENCE` | 5210 / 9620 | 9540 / 5210 | Счета 9540/9620 (FX_INCOME/FX_EXPENSE) |
+| `ADVANCE_PAID` | 4310 | 5110 | opensItem: true, счёт 4310 |
+| `ADVANCE_RECEIVED` | 5110 | 6310 | opensItem: true, счёт 6310 |
+| `SUPPLIER_REFUND` | 5110 | 4310 | closesOpenItemByAccount: "4310" |
+| `ADVANCE_RETURN_SENT` | 6310 | 5110 | closesOpenItemByAccount: "6310" |
+| `PERIOD_CLOSING` | 9xxx/9910 | 9910/9xxx | Реформация баланса |
+| `YEAR_END_CLOSE` | 9910/8710 | 8710/9910 | Перенос в 8710 |
 
 ---
 
-## Налоговые константы (constants.ts: TAX_RATES)
+## Налоговые константы (`constants.ts: TAX_RATES`)
 
 ```typescript
-export const TAX_RATES = {
-  VAT: 12,               // НДС 12%
-  INCOME_TAX: 15,        // Налог на прибыль 15%
-  SOCIAL_TAX: 12,        // Социальный налог 12%
-  PERSONAL_INCOME_TAX: 12  // НДФЛ 12%
+TAX_RATES = {
+  NDFL: 0.12,         // НДФЛ суммарно
+  NDFL_BUDGET: 0.119, // НДФЛ в бюджет 11.9%
+  INPS: 0.001,        // ИНПС 0.1%
+  SOCIAL_TAX: 0.12,   // Соцналог 12%
+  VAT: 0.12,          // НДС 12%
+  PROFIT_TAX: 0.15,   // Налог на прибыль 15%
+  TURNOVER_TAX: 0.04, // Налог с оборота (дефолт; переопределяется org.turnoverTaxRate)
 }
-// Налог с оборота: не константа — берётся из org.turnoverTaxRate (1–4%)
 ```
 
 ---
 
-## Доступные переменные в expressionEval
+## Переменные в expressionEval
 
 | Переменная | Описание |
 |-----------|---------|
 | `amount` | Сумма транзакции |
-| `vatRate` | Ставка НДС (12) |
-| `isVatPayer` | 1 (VAT) или 0 (TURNOVER_TAX) |
-| `salaryAmount` | Сумма ФОТ (SALARY_ACCRUAL) |
+| `vatRate` | Ставка НДС (12 если плательщик, 0 иначе) |
+| `salaryAmount` | Сумма ФОТ |
 | `depreciationAmount` | Сумма амортизации |
 | `rentAmount` | Сумма аренды |
-| `exchangeRate` | Курс ЦБ (FX_DIFFERENCE) |
-| `difference` | Сумма курсовой разницы |
-| `taxAmount` | Сумма налога (TURNOVER_TAX_ACCRUAL, PROFIT_TAX_ACCRUAL) |
+| `fxDifference` | Сумма курсовой разницы |
+| `taxAmount` | Сумма налога |
 
 ---
 
-*Последнее обновление: 2026-06-26*
+## prismaWithOrg(orgId)
+
+**Файл:** `src/lib/prisma.ts` — Prisma Extension для автоматической изоляции по orgId.
+
+| Операция | Действие |
+|---------|---------|
+| findMany / findFirst / count / updateMany / deleteMany | Добавляет `WHERE orgId` |
+| create | Добавляет `data.orgId` |
+| createMany | Добавляет `orgId` в каждый элемент |
+| upsert | Добавляет `where.orgId` + `create.orgId` |
+| findUnique / findUniqueOrThrow | Выполняет запрос, затем проверяет `result.orgId === orgId` |
+| update / delete | Сначала `findFirst({ id, orgId })`; ошибка FORBIDDEN если не найдено |
+
+---
+
+*Последнее обновление: 2026-06-30*

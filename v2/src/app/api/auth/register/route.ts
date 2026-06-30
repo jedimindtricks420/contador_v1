@@ -5,10 +5,15 @@ import { createSession, COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, name, orgName, inn } = await req.json();
+    const { email: rawEmail, password, name, orgName, inn } = await req.json();
 
-    if (!email || !password || !orgName) {
+    if (!rawEmail || !password || !orgName) {
       return NextResponse.json({ error: "email, password, orgName обязательны" }, { status: 400 });
+    }
+
+    const email = rawEmail.toLowerCase().trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Неверный формат email" }, { status: 400 });
     }
 
     if (password.length < 8) {

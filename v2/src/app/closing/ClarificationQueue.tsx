@@ -120,6 +120,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
   const [showSkipAllConfirm, setShowSkipAllConfirm] = useState(false);
   const [aiRunning, setAiRunning] = useState(false);
   const [aiProgress, setAiProgress] = useState<{ processed: number; total: number } | null>(null);
+  const autoAiTriggered = useRef(false);
 
   // Category selections per group
   const [selectedCategories, setSelectedCategories] = useState<Record<string, string>>({});
@@ -199,6 +200,14 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
   useEffect(() => {
     loadQueue();
   }, [periodId]);
+
+  // Auto-run AI on first load if there are unprocessed (IMPORTED) transactions
+  useEffect(() => {
+    if (!loading && !autoAiTriggered.current && groups.some(g => g.hasImported)) {
+      autoAiTriggered.current = true;
+      handleRunAI();
+    }
+  }, [loading]);
 
   const handleAnswer = async (group: ClarificationGroup, forceCategoryId?: string) => {
     const categoryId = forceCategoryId || selectedCategories[group.groupId];
@@ -348,12 +357,26 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
       </div>
 
       {/* Banner for unprocessed IMPORTED transactions */}
-      {groups.some(g => g.hasImported) && !aiRunning && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800">
-          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
-          <span>
-            Некоторые операции ещё не были обработаны ИИ (показаны ниже). Нажмите <strong>Распознать ИИ</strong> для автоматической классификации, или назначьте категорию вручную.
-          </span>
+      {groups.some(g => g.hasImported) && (
+        <div className={`flex items-start gap-2 rounded p-3 text-xs ${aiRunning ? "bg-blue-50 border border-blue-200 text-blue-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
+          {aiRunning ? (
+            <>
+              <svg className="animate-spin h-3.5 w-3.5 shrink-0 mt-0.5 text-blue-500" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              <span>
+                ИИ классифицирует операции автоматически{aiProgress ? ` (${aiProgress.processed} из ${aiProgress.total})` : "..."}
+              </span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
+              <span>
+                Некоторые операции не были обработаны ИИ. Нажмите <strong>Распознать ИИ</strong> для повторной классификации, или назначьте категорию вручную.
+              </span>
+            </>
+          )}
         </div>
       )}
 

@@ -52,7 +52,7 @@ export async function PUT(req: NextRequest) {
     const { id, ...data } = body;
 
     const template = await prismaWithOrg(orgId).taxDeadlineTemplate.update({
-      where: { id },
+      where: { id, orgId },
       data: {
         dayOfMonth: data.dayOfMonth,
         frequency: data.frequency,

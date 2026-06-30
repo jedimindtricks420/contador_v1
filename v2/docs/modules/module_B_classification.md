@@ -1,7 +1,8 @@
 # Модуль B — Классификация операций
 
 **Статус:** ✅ Реализован  
-**Файлы:** `src/lib/classification/`, `src/app/api/classification/`, `src/app/api/clarification/`, `src/app/closing/ClarificationQueue.tsx`
+**Файлы:** `src/lib/classification/`, `src/app/api/classification/`, `src/app/api/clarification/`, `src/app/closing/ClarificationQueue.tsx`  
+**Последнее обновление:** 2026-06-30
 
 ---
 
@@ -42,20 +43,24 @@ Body: { periodId }
 → { matched, remaining }
 ```
 
+**Обработка ошибок:** при `UNAUTHORIZED` или `NO_ACTIVE_ORG` → 401 (не 500).
+
 ---
 
 ## B2. AI-классификатор
 
 **Файл:** `src/lib/classification/aiClassifier.ts`  
-**Модель:** `gpt-4o-mini` (из `constants.ts: AI_MODEL`)
+**API:** `POST /api/classification/run-ai`  
+**Модель:** `gpt-4o-mini` (переопределяется через `process.env.OPENAI_MODEL`)  
+**Требование:** тариф PRO (`getUserActivePro()` проверяется в route.ts)
 
 ### Алгоритм
 
 1. Выбрать IMPORTED транзакции (не захваченные правилами)
 2. Собрать список DocumentType из БД
-3. Разбить на батчи по 20 (`AI_BATCH_SIZE`)
+3. Разбить на батчи по `AI.BATCH_SIZE` (100)
 4. На каждый батч — один запрос к GPT-4o-mini
-5. Промпт включает: список DocumentType + org.taxRegime + org.isVatPayer + org.activityDescription
+5. Промпт включает: список DocumentType + `org.taxRegime` + `org.isVatPayer` + `org.activityDescription`
 6. AI возвращает: `transactionId`, `documentTypeCode`, `confidence`, `reason`
 7. `confidence >= org.aiConfidenceThreshold` → `AUTO_MATCHED`
 8. `confidence < threshold` → `NEEDS_CLARIFICATION`, сохраняет `aiSuggestion` JSON
@@ -70,15 +75,42 @@ Body: { periodId }
 ```
 POST /api/classification/run-ai
 Body: { periodId }
-→ { processed, autoMatched, needsClarification }
+→ { jobId }   — ID фоновой задачи (queue.ts)
 
 GET /api/classification/status/[periodId]
 → { status: "running"|"done", progress: { processed, total } }
 ```
 
+**Обработка ошибок:** при `UNAUTHORIZED` → 401; остальные ошибки → 500 с универсальным сообщением (без деталей `err.message`).
+
 ---
 
-## B3. Очередь уточнений
+## B3. AI-сверка (ai-reconcile)
+
+**Файл:** `src/app/api/classification/ai-reconcile/route.ts`  
+**Требование:** тариф PRO
+
+Сопоставляет банковские авансы (открытые позиции) с ЭСФ Soliq когда автоматические алгоритмы не справились. Используется Azure OpenAI (AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY).
+
+### Защиты
+
+1. **Проверка владения:** переданные `bankIds` (ID открытых позиций) сверяются с `orgId` через `prisma.openItem.count({ where: { id: { in: bankIds }, orgId } })`. Если количество не совпадает → 400.
+2. **Лимит размера:** `bankOnly.length > 200 || soliqOnly.length > 200` → 400 (максимум 200 элементов в каждом списке).
+3. **Пустые списки:** если один из списков пустой → возвращает `{ matches: [] }` без запроса к AI.
+
+### API
+
+```
+POST /api/classification/ai-reconcile
+Body: { bankOnly: [...], soliqOnly: [...] }
+→ { matches: [{ bankId, soliqId, reason }] }
+```
+
+**Ошибки:** 401 при `UNAUTHORIZED`, 500 с общим сообщением `"Ошибка ИИ-сверки"` (без `err.message`).
+
+---
+
+## B4. Очередь уточнений
 
 **Компонент:** `src/app/closing/ClarificationQueue.tsx`  
 **API:** `GET /api/clarification/queue`, `POST /api/clarification/answer`
@@ -140,4 +172,4 @@ IMPORTED
 
 ---
 
-*Последнее обновление: 2026-06-26*
+*Последнее обновление: 2026-06-30*

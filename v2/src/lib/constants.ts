@@ -52,6 +52,8 @@ export const ACCOUNTS = {
   FIXED_ASSET: "0100",           // Основные средства (первоначальная стоимость)
 } as const;
 
+export const MARKETPLACE_INNS = ["302179836", "302061230", "309532578", "205370258"];
+
 export const BANK_ACCOUNT_CODES = [ACCOUNTS.BANK_UZS, ACCOUNTS.BANK_USD, ACCOUNTS.TRANSIT];
 export const BANK_USD_CODES = [ACCOUNTS.BANK_USD];
 export const BANK_UZS_CODES = [ACCOUNTS.BANK_UZS, ACCOUNTS.TRANSIT];

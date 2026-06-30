@@ -33,6 +33,7 @@ const PORT = process.env.ADMIN_PORT || 3031;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecretadmin";
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use((req: Request, _res: Response, next: NextFunction) => { if (req.body === undefined) req.body = {}; next(); });
 
 // ─────────────────────────────────────────────
@@ -40,14 +41,21 @@ app.use((req: Request, _res: Response, next: NextFunction) => { if (req.body ===
 // ─────────────────────────────────────────────
 
 const PAYME_ERRORS = {
-  AUTH_ERROR: { code: -32504, message: { ru: 'Ошибка авторизации', uz: 'Avtorizatsiya xatosi', en: 'Auth error' } },
-  ORDER_NOT_FOUND: { code: -31050, message: { ru: 'Заказ не найден', uz: 'Buyurtma topilmadi', en: 'Order not found' } },
-  ORDER_ALREADY_PAID: { code: -31051, message: { ru: 'Заказ уже оплачен', uz: 'Buyurtma to\'landgan', en: 'Already paid' } },
-  TRANSACTION_NOT_FOUND: { code: -31003, message: { ru: 'Транзакция не найдена', uz: 'Tranzaksiya topilmadi', en: 'Transaction not found' } },
-  WRONG_AMOUNT: { code: -31001, message: { ru: 'Неверная сумма', uz: 'Noto\'g\'ri summa', en: 'Wrong amount' } },
-  CANNOT_PERFORM: { code: -31008, message: { ru: 'Невозможно выполнить', uz: 'Bajarib bo\'lmaydi', en: 'Cannot perform' } },
-  METHOD_NOT_FOUND: { code: -32601, message: { ru: 'Метод не найден', uz: 'Metod topilmadi', en: 'Method not found' } },
-  SYSTEM_ERROR: { code: -32400, message: { ru: 'Системная ошибка', uz: 'Tizim xatosi', en: 'System error' } }
+  // Transport / System
+  TRANSPORT_ERROR:      { code: -32300, message: { uz: 'Transport xatosi', ru: 'Ошибка транспорта', en: 'Transport error' } },
+  SYSTEM_ERROR:         { code: -32400, message: { uz: 'Tizim xatosi', ru: 'Системная ошибка', en: 'System error' } },
+  METHOD_NOT_FOUND:     { code: -32601, message: { uz: 'Metod topilmadi', ru: 'Метод не найден', en: 'Method not found' } },
+  AUTH_ERROR:           { code: -32504, message: { uz: 'Ushbu usulni bajarishga ruxsat yo\'q', ru: 'Недостаточно прав для выполнения метода', en: 'Insufficient privilege to perform this method' } },
+  // Business logic
+  WRONG_AMOUNT:         { code: -31001, message: { uz: 'Noto\'g\'ri summa', ru: 'Недопустимая сумма', en: 'Invalid amount' } },
+  TRANSACTION_NOT_FOUND:{ code: -31003, message: { uz: 'Tranzaksiya topilmadi', ru: 'Транзакция не найдена', en: 'Transaction not found' } },
+  CANNOT_CANCEL:        { code: -31007, message: { uz: 'Tranzaksiyani bekor qilib bo\'lmaydi', ru: 'Невозможно отменить транзакцию', en: 'Unable to cancel transaction' } },
+  CANNOT_PERFORM:       { code: -31008, message: { uz: 'Operatsiyani bajarib bo\'lmadi', ru: 'Невозможно выполнить операцию', en: 'Unable to perform operation' } },
+  // Order / Account errors
+  ORDER_NOT_FOUND:      { code: -31050, message: { uz: 'Biz sizning hisobingizni topolmadik', ru: 'Мы не нашли вашу учетную запись', en: 'We couldn\'t find your account' } },
+  ORDER_CANCELLED:      { code: -31051, message: { uz: 'Buyurtma bekor qilindi', ru: 'Заказ отменен', en: 'Order cancelled' } },
+  ORDER_ALREADY_PAID:   { code: -31052, message: { uz: 'Buyurtma allaqachon to\'langan', ru: 'Заказ уже оплачен', en: 'Order already paid' } },
+  ORDER_HAS_TRANSACTION:{ code: -31053, message: { uz: 'Buyurtmada boshqa tranzaksiya mavjud', ru: 'По заказу уже есть другая транзакция', en: 'Order already has another transaction' } },
 };
 
 const CLICK_ERRORS = {
@@ -55,9 +63,11 @@ const CLICK_ERRORS = {
   SIGN_CHECK_FAILED: -1,
   WRONG_AMOUNT: -2,
   ALREADY_PAID: -4,
-  USER_NOT_FOUND: -5,
+  ORDER_NOT_FOUND: -5,
   TRANSACTION_NOT_FOUND: -6,
-  CANCELLED: -9
+  CANNOT_CANCEL: -7,
+  CANCELLED: -9,
+  SYSTEM_ERROR: -10
 };
 
 function checkPaymeAuth(authHeader: string | undefined, config: any) {
@@ -87,7 +97,8 @@ function generatePaymeUrl(orderId: string, amountTiyin: number, config: any) {
 function generateClickUrl(orderId: string, amount: number, config: any) {
   const merchantId = config.click_merchant_id;
   const serviceId = config.click_service_id;
-  return `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${amount}&transaction_param=${orderId}`;
+  const returnUrl = "https://contador.uz/settings/subscription?payment=success";
+  return `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${amount}&transaction_param=${orderId}&return_url=${encodeURIComponent(returnUrl)}`;
 }
 
 async function fulfillSubscription(paymentId: string, externalId: string) {
@@ -114,6 +125,15 @@ async function fulfillSubscription(paymentId: string, externalId: string) {
 
 async function getPaymentConfig() {
   return await prisma.paymentConfig.findUnique({ where: { id: "default" } });
+}
+
+async function generateOrderCode(): Promise<string> {
+  for (let i = 0; i < 20; i++) {
+    const code = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
+    const exists = await prismaV2.payment.findUnique({ where: { orderCode: code } });
+    if (!exists) return code;
+  }
+  throw new Error('Не удалось сгенерировать уникальный код заказа');
 }
 
 async function fulfillSubscriptionV2(paymentId: string, externalId: string) {
@@ -265,45 +285,55 @@ publicRouter.post("/payments/payme", publicLimiter, async (req: Request, res: Re
 // Click Callback
 publicRouter.post("/payments/click/prepare", publicLimiter, async (req: Request, res: Response) => {
   const p = req.body;
-  const config = await getPaymentConfig();
-  if (!verifyClickSignature(p, 0, config?.click_secret_key || "")) {
-    return res.json({ error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+  try {
+    const config = await getPaymentConfig();
+    if (!verifyClickSignature(p, 0, config?.click_secret_key || "")) {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+    }
+
+    const payment = await prisma.payment.findUnique({ where: { id: p.merchant_trans_id } });
+    if (!payment) return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.ORDER_NOT_FOUND, error_note: "Order not found" });
+    if (parseFloat(String(payment.amount)) !== parseFloat(p.amount)) return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.WRONG_AMOUNT, error_note: "Wrong amount" });
+    if (payment.status === "SUCCESS") return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.id, error: CLICK_ERRORS.ALREADY_PAID, error_note: "Already paid" });
+
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { external_id: String(p.click_trans_id), processing_status: "PROCESSING" }
+    });
+
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.id, error: 0, error_note: "Success" });
+  } catch (err: any) {
+    console.error("[V1 Click Prepare] Error:", err);
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SYSTEM_ERROR, error_note: "System error" });
   }
-
-  const payment = await prisma.payment.findUnique({ where: { id: p.merchant_trans_id } });
-  if (!payment) return res.json({ error: CLICK_ERRORS.USER_NOT_FOUND, error_note: "Order not found" });
-  if (parseFloat(String(payment.amount)) !== parseFloat(p.amount)) return res.json({ error: CLICK_ERRORS.WRONG_AMOUNT, error_note: "Wrong amount" });
-  if (payment.status === "SUCCESS") return res.json({ error: CLICK_ERRORS.ALREADY_PAID, error_note: "Already paid" });
-
-  await prisma.payment.update({
-    where: { id: payment.id },
-    data: { external_id: String(p.click_trans_id), processing_status: "PROCESSING" }
-  });
-
-  res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.id, error: 0, error_note: "Success" });
 });
 
 publicRouter.post("/payments/click/complete", publicLimiter, async (req: Request, res: Response) => {
   const p = req.body;
-  const config = await getPaymentConfig();
-  if (!verifyClickSignature(p, 1, config?.click_secret_key || "")) {
-    return res.json({ error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+  try {
+    const config = await getPaymentConfig();
+    if (!verifyClickSignature(p, 1, config?.click_secret_key || "")) {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+    }
+
+    const payment = await prisma.payment.findUnique({ where: { id: p.merchant_trans_id } });
+    if (!payment || p.merchant_prepare_id !== payment.id) return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.TRANSACTION_NOT_FOUND, error_note: "Invalid prepare id" });
+
+    if (parseInt(p.error) < 0) {
+      await prisma.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.CANCELLED, error_note: "Cancelled" });
+    }
+
+    if (payment.status === "SUCCESS") {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0, error_note: "Success" });
+    }
+
+    await fulfillSubscription(payment.id, String(p.click_trans_id));
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0, error_note: "Success" });
+  } catch (err: any) {
+    console.error("[V1 Click Complete] Error:", err);
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SYSTEM_ERROR, error_note: "System error" });
   }
-
-  const payment = await prisma.payment.findUnique({ where: { id: p.merchant_trans_id } });
-  if (!payment || p.merchant_prepare_id !== payment.id) return res.json({ error: CLICK_ERRORS.TRANSACTION_NOT_FOUND, error_note: "Invalid prepare id" });
-
-  if (parseInt(p.error) < 0) {
-    await prisma.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-    return res.json({ error: CLICK_ERRORS.CANCELLED, error_note: "Cancelled" });
-  }
-
-  if (payment.status === "SUCCESS") {
-    return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0 });
-  }
-
-  await fulfillSubscription(payment.id, String(p.click_trans_id));
-  res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0, error_note: "Success" });
 });
 
 // ─── V2 PAYMENT ROUTES ───────────────────────────────────────────────────────
@@ -315,32 +345,39 @@ publicRouter.post("/v2/payments/initiate", publicLimiter, async (req: Request, r
     return res.status(400).json({ error: "Invalid orgId or provider" });
   }
 
-  const config = await getPaymentConfig();
-  if (!config) return res.status(500).json({ error: "Payment system not configured" });
+  try {
+    const config = await getPaymentConfig();
+    if (!config) return res.status(500).json({ error: "Payment system not configured" });
 
-  const amount = config.pro_price_yearly || 299000;
-  const pendingExternalId = `PENDING_${randomBytes(8).toString("hex")}`;
+    const amount = config.pro_price_yearly || 299000;
+    const pendingExternalId = `PENDING_${randomBytes(8).toString("hex")}`;
+    const orderCode = await generateOrderCode();
 
-  const payment = await prismaV2.payment.create({
-    data: {
-      orgId,
-      provider,
-      externalId: pendingExternalId,
-      amount: amount,
-      currency: "UZS",
-      status: "PENDING",
-      daysGranted: 365
+    const payment = await prismaV2.payment.create({
+      data: {
+        orgId,
+        provider,
+        orderCode,
+        externalId: pendingExternalId,
+        amount: amount,
+        currency: "UZS",
+        status: "PENDING",
+        daysGranted: 365
+      }
+    });
+
+    let url = "";
+    if (provider === "PAYME") {
+      url = generatePaymeUrl(orderCode, amount * 100, config);
+    } else {
+      url = generateClickUrl(orderCode, amount, config);
     }
-  });
 
-  let url = "";
-  if (provider === "PAYME") {
-    url = generatePaymeUrl(payment.id, amount * 100, config);
-  } else {
-    url = generateClickUrl(payment.id, amount, config);
+    res.json({ success: true, url, paymentId: orderCode });
+  } catch (err: any) {
+    console.error("[V2 Initiate Payment] Error:", err);
+    res.status(500).json({ error: "Payment initiation failed", detail: err?.message });
   }
-
-  res.json({ success: true, url, paymentId: payment.id });
 });
 
 // V2 - Payme Webhook
@@ -355,20 +392,20 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
     switch (method) {
       case "CheckPerformTransaction": {
         const providedKey = Object.keys(params.account || {})[0] || "order_id";
-        const paymentId = params.account?.[providedKey];
-        if (!paymentId) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
+        const orderCode = params.account?.[providedKey];
+        if (!orderCode) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
 
-        const payment = await prismaV2.payment.findUnique({ where: { id: paymentId } });
+        const payment = await prismaV2.payment.findUnique({ where: { orderCode } });
         if (!payment) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
         if (Number(payment.amount) * 100 !== params.amount) throw PAYME_ERRORS.WRONG_AMOUNT;
         if (payment.status === "SUCCESS") throw PAYME_ERRORS.ORDER_ALREADY_PAID;
-        if (payment.status === "FAILED") throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "Transaction cancelled" };
+        if (payment.status === "FAILED") throw PAYME_ERRORS.ORDER_CANCELLED;
         return res.json({ result: { allow: true }, id });
       }
       case "CreateTransaction": {
         const providedKey = Object.keys(params.account || {})[0] || "order_id";
-        const paymentId = params.account?.[providedKey];
-        if (!paymentId) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
+        const orderCode = params.account?.[providedKey];
+        if (!orderCode) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
 
         if (Date.now() - params.time > 43200000) {
           throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "timeout" };
@@ -376,53 +413,53 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
 
         const existing = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (existing) {
-          return res.json({ result: { create_time: existing.createdAt.getTime(), transaction: existing.id, state: existing.status === "SUCCESS" ? 2 : (existing.status === "FAILED" ? (existing.completedAt ? -2 : -1) : 1) }, id });
+          return res.json({ result: { create_time: existing.createdAt.getTime(), transaction: existing.orderCode, state: existing.status === "SUCCESS" ? 2 : (existing.status === "FAILED" ? (existing.completedAt ? -2 : -1) : 1) }, id });
         }
 
-        const payment = await prismaV2.payment.findUnique({ where: { id: paymentId } });
+        const payment = await prismaV2.payment.findUnique({ where: { orderCode } });
         if (!payment) throw { ...PAYME_ERRORS.ORDER_NOT_FOUND, data: providedKey };
-        if (payment.externalId && !payment.externalId.startsWith("PENDING_") && payment.externalId !== params.id) throw PAYME_ERRORS.CANNOT_PERFORM;
+        if (payment.externalId && !payment.externalId.startsWith("PENDING_") && payment.externalId !== params.id) throw PAYME_ERRORS.ORDER_HAS_TRANSACTION;
         if (Number(payment.amount) * 100 !== params.amount) throw PAYME_ERRORS.WRONG_AMOUNT;
         if (payment.status === "SUCCESS") throw PAYME_ERRORS.ORDER_ALREADY_PAID;
-        if (payment.status === "FAILED") throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "Transaction cancelled" };
+        if (payment.status === "FAILED") throw PAYME_ERRORS.ORDER_CANCELLED;
 
         await prismaV2.payment.update({
-          where: { id: paymentId },
+          where: { id: payment.id },
           data: { externalId: params.id }
         });
-        return res.json({ result: { create_time: payment.createdAt.getTime(), transaction: payment.id, state: 1 }, id });
+        return res.json({ result: { create_time: payment.createdAt.getTime(), transaction: payment.orderCode, state: 1 }, id });
       }
       case "PerformTransaction": {
         const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
         if (payment.status === "SUCCESS" && payment.completedAt) {
-          return res.json({ result: { transaction: payment.id, perform_time: payment.completedAt.getTime(), state: 2 }, id });
+          return res.json({ result: { transaction: payment.orderCode, perform_time: payment.completedAt.getTime(), state: 2 }, id });
         }
         if (payment.status === "FAILED") {
           throw { ...PAYME_ERRORS.CANNOT_PERFORM, data: "Transaction cancelled" };
         }
         await fulfillSubscriptionV2(payment.id, params.id);
         const updated = await prismaV2.payment.findUnique({ where: { id: payment.id } });
-        return res.json({ result: { transaction: updated!.id, perform_time: updated!.completedAt ? updated!.completedAt.getTime() : Date.now(), state: 2 }, id });
+        return res.json({ result: { transaction: updated!.orderCode, perform_time: updated!.completedAt ? updated!.completedAt.getTime() : Date.now(), state: 2 }, id });
       }
       case "CancelTransaction": {
         const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
-        
+
         const now = new Date();
         if (payment.status === "FAILED") {
-          return res.json({ result: { transaction: payment.id, cancel_time: payment.cancelTime ? payment.cancelTime.getTime() : now.getTime(), state: payment.completedAt ? -2 : -1 }, id });
+          return res.json({ result: { transaction: payment.orderCode, cancel_time: payment.cancelTime ? payment.cancelTime.getTime() : now.getTime(), state: payment.completedAt ? -2 : -1 }, id });
         }
         await prismaV2.payment.update({
           where: { id: payment.id },
           data: { status: "FAILED", cancelTime: now, cancelReason: String(params.reason) }
         });
-        return res.json({ result: { transaction: payment.id, cancel_time: now.getTime(), state: payment.completedAt ? -2 : -1 }, id });
+        return res.json({ result: { transaction: payment.orderCode, cancel_time: now.getTime(), state: payment.completedAt ? -2 : -1 }, id });
       }
       case "CheckTransaction": {
         const payment = await prismaV2.payment.findFirst({ where: { externalId: params.id } });
         if (!payment) throw PAYME_ERRORS.TRANSACTION_NOT_FOUND;
-        
+
         let state = 1;
         if (payment.status === "SUCCESS") state = 2;
         else if (payment.status === "FAILED") state = payment.completedAt ? -2 : -1;
@@ -432,7 +469,7 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
             create_time: payment.createdAt.getTime(),
             perform_time: payment.completedAt?.getTime() || 0,
             cancel_time: payment.cancelTime?.getTime() || 0,
-            transaction: payment.id,
+            transaction: payment.orderCode,
             state: state,
             reason: payment.cancelReason ? parseInt(payment.cancelReason) : null
           },
@@ -458,11 +495,11 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
             id: attempt.externalId,
             time: attempt.createdAt.getTime(),
             amount: Number(attempt.amount) * 100,
-            account: { order_id: attempt.id },
+            account: { order_id: attempt.orderCode },
             create_time: attempt.createdAt.getTime(),
             perform_time: attempt.completedAt?.getTime() || 0,
             cancel_time: attempt.cancelTime?.getTime() || 0,
-            transaction: attempt.id,
+            transaction: attempt.orderCode,
             state: state,
             reason: attempt.cancelReason ? parseInt(attempt.cancelReason) : null
           };
@@ -479,50 +516,60 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
 // V2 - Click Prepare
 publicRouter.post("/v2/payments/click/prepare", publicLimiter, async (req: Request, res: Response) => {
   const p = req.body;
-  const config = await getPaymentConfig();
-  if (!verifyClickSignature(p, 0, config?.click_secret_key || "")) {
-    return res.json({ error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+  try {
+    const config = await getPaymentConfig();
+    if (!verifyClickSignature(p, 0, config?.click_secret_key || "")) {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+    }
+
+    const payment = await prismaV2.payment.findUnique({ where: { orderCode: p.merchant_trans_id } });
+    if (!payment) return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.ORDER_NOT_FOUND, error_note: "Order not found" });
+    if (parseFloat(String(payment.amount)) !== parseFloat(p.amount)) {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.WRONG_AMOUNT, error_note: "Wrong amount" });
+    }
+    if (payment.status === "SUCCESS") return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.orderCode, error: CLICK_ERRORS.ALREADY_PAID, error_note: "Already paid" });
+
+    await prismaV2.payment.update({
+      where: { id: payment.id },
+      data: { externalId: String(p.click_trans_id), status: "PROCESSING" }
+    });
+
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.orderCode, error: 0, error_note: "Success" });
+  } catch (err: any) {
+    console.error("[V2 Click Prepare] Error:", err);
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SYSTEM_ERROR, error_note: "System error" });
   }
-
-  const payment = await prismaV2.payment.findUnique({ where: { id: p.merchant_trans_id } });
-  if (!payment) return res.json({ error: CLICK_ERRORS.USER_NOT_FOUND, error_note: "Order not found" });
-  if (parseFloat(String(payment.amount)) !== parseFloat(p.amount)) {
-    return res.json({ error: CLICK_ERRORS.WRONG_AMOUNT, error_note: "Wrong amount" });
-  }
-  if (payment.status === "SUCCESS") return res.json({ error: CLICK_ERRORS.ALREADY_PAID, error_note: "Already paid" });
-
-  await prismaV2.payment.update({
-    where: { id: payment.id },
-    data: { externalId: String(p.click_trans_id) }
-  });
-
-  res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_prepare_id: payment.id, error: 0, error_note: "Success" });
 });
 
 // V2 - Click Complete
 publicRouter.post("/v2/payments/click/complete", publicLimiter, async (req: Request, res: Response) => {
   const p = req.body;
-  const config = await getPaymentConfig();
-  if (!verifyClickSignature(p, 1, config?.click_secret_key || "")) {
-    return res.json({ error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
-  }
+  try {
+    const config = await getPaymentConfig();
+    if (!verifyClickSignature(p, 1, config?.click_secret_key || "")) {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SIGN_CHECK_FAILED, error_note: "Sign failed" });
+    }
 
-  const payment = await prismaV2.payment.findUnique({ where: { id: p.merchant_trans_id } });
-  if (!payment || p.merchant_prepare_id !== payment.id) {
-    return res.json({ error: CLICK_ERRORS.TRANSACTION_NOT_FOUND, error_note: "Invalid prepare id" });
-  }
+    const payment = await prismaV2.payment.findUnique({ where: { orderCode: p.merchant_trans_id } });
+    if (!payment || p.merchant_prepare_id !== payment.orderCode) {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.TRANSACTION_NOT_FOUND, error_note: "Invalid prepare id" });
+    }
 
-  if (parseInt(p.error) < 0) {
-    await prismaV2.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
-    return res.json({ error: CLICK_ERRORS.CANCELLED, error_note: "Cancelled" });
-  }
+    if (parseInt(p.error) < 0) {
+      await prismaV2.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.CANCELLED, error_note: "Cancelled" });
+    }
 
-  if (payment.status === "SUCCESS") {
-    return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0 });
-  }
+    if (payment.status === "SUCCESS") {
+      return res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.orderCode, error: 0, error_note: "Success" });
+    }
 
-  await fulfillSubscriptionV2(payment.id, String(p.click_trans_id));
-  res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.id, error: 0, error_note: "Success" });
+    await fulfillSubscriptionV2(payment.id, String(p.click_trans_id));
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, merchant_confirm_id: payment.orderCode, error: 0, error_note: "Success" });
+  } catch (err: any) {
+    console.error("[V2 Click Complete] Error:", err);
+    res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SYSTEM_ERROR, error_note: "System error" });
+  }
 });
 
 // V2 User voucher redemption (called by v2 BFF — no admin auth needed, orgId comes from session via BFF)

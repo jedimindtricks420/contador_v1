@@ -45,13 +45,9 @@ export async function PATCH(
         }
       });
     } else {
-      // Void postings if document exists
+      // Void postings if document exists — must succeed before marking SKIPPED
       if (stagedTx.documentId) {
-        try {
-          await voidDocument(stagedTx.documentId, prisma, membership.userId);
-        } catch (voidErr) {
-          console.error(`Failed to void document ${stagedTx.documentId} on skip:`, voidErr);
-        }
+        await voidDocument(stagedTx.documentId, prisma, membership.userId);
       }
 
       updatedTx = await prisma.stagedTransaction.update({

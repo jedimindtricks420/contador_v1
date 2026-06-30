@@ -27,6 +27,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
     console.error("RUN AI ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка запуска ИИ-классификации" }, { status: 500 });
   }
 }

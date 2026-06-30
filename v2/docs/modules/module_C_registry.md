@@ -1,13 +1,59 @@
 # Модуль C — Реестр транзакций и документов
 
 **Статус:** ✅ Реализован  
-**Файлы:** `src/app/transactions/TransactionsClient.tsx`, `src/app/api/transactions/`
+**Файлы:** `src/app/transactions/TransactionsClient.tsx`, `src/app/api/transactions/route.ts`  
+**Последнее обновление:** 2026-06-30
 
 ---
 
 ## Назначение
 
 Просмотр и ручная корректировка `StagedTransaction` — всех импортированных операций периода. Позволяет изменить тип документа, пропустить транзакцию или отменить пропуск.
+
+---
+
+## API транзакций
+
+### GET /api/transactions
+
+```
+GET /api/transactions?periodId=&status=&search=&page=&limit=&accountId=&direction=&categoryId=
+```
+
+**Фильтрация по статусу:**
+
+| Значение `status` | Условие в WHERE |
+|------------------|----------------|
+| `attention` | `status = "NEEDS_CLARIFICATION"` |
+| `uncategorized` | `status IN ("IMPORTED", "NEEDS_CLARIFICATION")` |
+| `A,B` (через запятую) | `status IN ("A", "B")` |
+| любое одно значение | `status = value` |
+
+**Поиск:** параметр `search` транслируется в Prisma OR-условие на стороне БД:
+```typescript
+where.OR = [
+  { description: { contains: search, mode: "insensitive" } },
+  { counterpartyHint: { contains: search, mode: "insensitive" } },
+  { counterpartyInn: { contains: search, mode: "insensitive" } },
+]
+```
+
+**Лимит:** `Math.min(2000, parseInt(limit || "50"))` — максимум 2000 строк на страницу.
+
+**Ответ:**
+```typescript
+{
+  items: StagedTransaction[],
+  total: number,
+  page: number,
+  pages: number
+}
+```
+
+Каждая транзакция включает:
+- `bankAccount: { name, currency }`
+- `period: { year, month }`
+- `document: { id, type: { id, name, code }, journalEntries: [{ account: { code, name } }] }`
 
 ---
 
@@ -18,23 +64,25 @@
 | Фильтр | API-параметр | Описание |
 |--------|-------------|---------|
 | Период | `periodId` | Выбор из списка периодов |
-| Статус | `status` | ALL / IMPORTED / AUTO_MATCHED / NEEDS_CLARIFICATION / CONFIRMED / POSTED / SKIPPED |
-| Поиск | `search` | По description и counterpartyHint |
+| Статус | `status` | ALL / IMPORTED / AUTO_MATCHED / NEEDS_CLARIFICATION / CONFIRMED / POSTED / SKIPPED / uncategorized |
+| Поиск | `search` | По description, counterpartyHint, counterpartyInn (case-insensitive, в БД) |
 
 ### Действия
 
 | Действие | API | Поведение |
 |---------|-----|----------|
-| Изменить тип документа | `PATCH /api/transactions/[id]/category` | Управляемый select + кнопка «✓» |
+| Изменить тип документа | `PATCH /api/transactions/[id]/category` | Управляемый select + кнопка подтверждения |
 | Пропустить | `PATCH /api/transactions/[id]/skip` `{ skip: true }` | status → SKIPPED |
 | Снять пропуск | `PATCH /api/transactions/[id]/skip` `{ skip: false }` | status → IMPORTED |
 
-### UI особенности
+**Пропуск (Skip):** вызывает `voidDocument` если у транзакции уже есть документ. Ошибка `voidDocument` теперь **пробрасывается** (не перехватывается молча) — клиент получает корректный статус ошибки.
 
-- Поиск с 15-секундным debounce
-- Спиннер вместо кнопки «✗» пока идёт поиск
+### UI особенности (`TransactionsClient.tsx`)
+
+- `loadTransactions(page?)` принимает явный аргумент `page` для исправления ошибки устаревшего замыкания (stale closure) — при пагинации используется переданное значение, а не захваченное состояние
+- Polling (автообновление) хранится в `pollIntervalRef` (useRef), очищается при unmount компонента
+- Транзит-ИНН (`TRANSIT_INNS`) импортируется из `src/lib/constants.ts`
 - Ошибки API показываются в инлайн-баннере (не через `alert()`)
-- Toast с отменой удаления правила — показывается 15 секунд
 
 ---
 
@@ -51,7 +99,7 @@ interface Document {
   periodId: string
   date: Date
   status: "POSTED" | "VOIDED"
-  payload: Json         // Данные для шаблона проводки
+  payload: Json         // данные для шаблона проводки
   sourceTransactionId?: string
 }
 ```
@@ -75,13 +123,19 @@ interface Document {
 | `REVENUE_NO_VAT` | Поступление без НДС |
 | `SUPPLIER_PAYMENT` | Оплата поставщику |
 | `SALARY` | Выплата зарплаты |
-| `TAX_PAYMENT` | Уплата налога |
-| `RENT` | Аренда |
+| `TAX_PAYMENT` | Уплата налога (НДФЛ, НДС, НнП, НсО) |
+| `INPS_PAYMENT` | Уплата ИНПС |
+| `SOCIAL_TAX_PAYMENT` | Уплата соцналога |
+| `RENT` | Аренда (оплата по выписке) |
+| `ADVANCE_PAID` | Аванс выданный поставщику |
+| `ADVANCE_RECEIVED` | Аванс полученный от покупателя |
 | `SALARY_ACCRUAL` | Начисление ФОТ |
 | `DEPRECIATION_ACCRUAL` | Начисление амортизации |
-| `RENT_ACCRUAL` | Начисление аренды |
+| `RENT_ACCRUAL` | Начисление аренды (неденежное) |
 | `FX_DIFFERENCE` | Курсовая разница |
+| `PERIOD_CLOSING` | Реформация баланса (закрытие TRANSIT-счетов) |
+| `YEAR_END_CLOSE` | Перенос 9910 → 8710 (годовое закрытие) |
 
 ---
 
-*Последнее обновление: 2026-06-26*
+*Последнее обновление: 2026-06-30*

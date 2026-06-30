@@ -1,7 +1,8 @@
 # Модуль D — Открытые позиции (Open Items)
 
 **Статус:** ✅ Реализован  
-**Файлы:** `src/app/open-positions/OpenPositionsClient.tsx`, `src/app/api/open-items/`
+**Файлы:** `src/app/open-positions/OpenPositionsClient.tsx`, `src/app/api/open-items/route.ts`, `src/app/api/open-items/[id]/close/`, `src/app/api/open-items/[id]/reopen/`  
+**Последнее обновление:** 2026-06-30
 
 ---
 
@@ -24,8 +25,9 @@ interface OpenItem {
   amount: Decimal
   dateOpened: Date
   dateClosed?: Date
-  status: "OPEN" | "CLOSED" | "RISK"
   riskDeadline?: Date
+  status: "OPEN" | "CLOSED" | "RISK"
+  affectedPeriodId?: string
 }
 ```
 
@@ -41,18 +43,87 @@ interface OpenItem {
 
 ---
 
-## Автоматические дедлайны риска
+## Автоматические дедлайны риска (из `constants.ts`)
 
-| Счёт | Описание | Дедлайн |
-|------|---------|---------|
-| 4220 | Подотчётные суммы (командировки) | 10 дней |
-| 4310 | Авансы выданные поставщикам | 30 дней |
-| 6310 | Авансы полученные от покупателей | 30 дней |
-| 6990 | Неидентифицированные поступления | 30 дней |
-| 5830 | Краткосрочные депозиты | 365 дней |
-| 6820 | Займы от учредителей | 365 дней |
+| Счёт | Описание | Дедлайн (RISK_DAYS) |
+|------|---------|---------------------|
+| 4220 | Подотчётные суммы (командировки) | 10 дней (`ACCOUNTABLE`) |
+| 4310, 6310, 6990 | Авансы выданные/полученные, невыясненные | 30 дней (`DEFAULT`) |
+| 5830, 6820 | Краткосрочные депозиты, займы учредителей | 365 дней (`LONG_TERM`) |
 
-При `openItem.riskDeadline < now()` → статус автоматически меняется на `RISK`.
+При `openItem.riskDeadline < now()` — функция `markRiskyItems(orgId)` обновляет статус на `RISK`. Вызывается автоматически при каждом GET /api/open-items.
+
+---
+
+## API
+
+### GET /api/open-items
+
+```
+GET /api/open-items?status=OPEN|CLOSED|RISK|UNRESOLVED|ALL&accountCode=&periodId=&search=
+```
+
+**Фильтр `status`:**
+- `OPEN`, `RISK`, `CLOSED` — по конкретному статусу
+- `UNRESOLVED` — `status IN ("OPEN", "RISK")`
+- `ALL` (по умолчанию) — без фильтра
+
+**Поиск `search`:** транслируется в Prisma OR на стороне БД:
+```typescript
+where.OR = [
+  { counterparty: { name: { contains: search, mode: "insensitive" } } },
+  { counterparty: { inn: { contains: search } } },
+]
+```
+
+**Важно:** без ограничения `take` — возвращаются **все** отфильтрованные позиции.
+
+**Итоги (`summary`):** вычисляются через `prisma.openItem.aggregate()` без сканирования всех строк:
+```typescript
+prisma.openItem.aggregate({
+  where: { orgId, status: "OPEN" },
+  _count: true,
+  _sum: { amount: true }
+})
+```
+
+**Ответ:**
+```typescript
+{
+  items: OpenItem[],
+  summary: {
+    totalOpen: number,
+    totalRisk: number,
+    amountOpen: number,
+    amountRisk: number,
+    byAccount: [{ accountCode, name, count, amount }]
+  }
+}
+```
+
+### PATCH /api/open-items/[id]/close
+
+Ручное закрытие позиции (через кнопку «Закрыть» в UI).
+
+```
+PATCH /api/open-items/[id]/close
+Body: { reason?: string }
+→ { item: OpenItem }
+```
+
+Используется `where: { id, orgId }` — изоляция по организации.  
+Ошибка 500 возвращает **универсальное** сообщение (не `err.message`).
+
+### POST /api/open-items/[id]/reopen
+
+Повторное открытие вручную закрытой позиции.
+
+```
+POST /api/open-items/[id]/reopen
+→ { item: OpenItem }
+```
+
+Используется `where: { id, orgId }` — изоляция по организации.
 
 ---
 
@@ -68,26 +139,11 @@ interface OpenItem {
 }
 ```
 
----
+**Автозакрытие** происходит при проведении документов с полем шаблона `closesOpenItemByAccount`:
+- `SUPPLIER_REFUND` — закрывает позицию на счёте 4310
+- `ADVANCE_RETURN_SENT` — закрывает позицию на счёте 6310
 
-## API
-
-```
-GET /api/open-items?status=OPEN|CLOSED|RISK|UNRESOLVED&accountId=&periodId=&search=
-→ { items: OpenItem[], total: number }
-
-PATCH /api/open-items/[id]/close
-Body: { reason?: string }
-→ { item: OpenItem }
-
-POST /api/open-items/[id]/reopen
-→ { item: OpenItem }
-```
-
-### Ручное закрытие
-
-Нажатие «Закрыть» в UI → модальное подтверждение → `PATCH /api/open-items/[id]/close`.  
-Нажатие «Открыть повторно» → `POST /api/open-items/[id]/reopen` (только для позиций со статусом `CLOSED`, закрытых вручную).
+Подробнее — в Модуле H.
 
 ---
 
@@ -103,8 +159,8 @@ POST /api/open-items/[id]/reopen
 
 ## Настройка дедлайнов
 
-`GET/POST /api/settings/open-item-deadlines` — переопределение дедлайнов риска на уровне организации.
+`GET/PATCH /api/settings/open-item-deadlines` — переопределение дедлайнов риска на уровне организации (хранится в `Organization.settings`).
 
 ---
 
-*Последнее обновление: 2026-06-26*
+*Последнее обновление: 2026-06-30*

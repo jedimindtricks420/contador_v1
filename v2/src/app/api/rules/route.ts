@@ -12,7 +12,10 @@ export async function GET() {
     });
     return NextResponse.json(rules);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 401 });
+    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
+    return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
   }
 }
 
@@ -39,6 +42,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(rule, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
   }
 }

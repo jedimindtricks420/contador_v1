@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { formatSum, formatDate, periodLabel } from "@/lib/format";
+import { TRANSIT_INNS } from "@/lib/constants";
 
 interface BankAccount {
   id: string;
@@ -202,6 +203,13 @@ export default function TransactionsClient() {
 
   const [aiRunning, setAiRunning] = useState(false);
   const [aiProgress, setAiProgress] = useState<{ processed: number; total: number } | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, []);
 
   const handleRunAI = async () => {
     setAiRunning(true);
@@ -221,7 +229,7 @@ export default function TransactionsClient() {
       }
 
       // Poll status every 2s, capture processed/total for progress bar
-      const pollId = setInterval(async () => {
+      pollIntervalRef.current = setInterval(async () => {
         try {
           const stRes = await fetch(`/v2/api/classification/status/${selectedPeriod}`);
           if (stRes.ok) {
@@ -230,7 +238,8 @@ export default function TransactionsClient() {
               setAiProgress({ processed: st.processed ?? 0, total: st.total });
             }
             if (st.status === "done" || st.status === "failed") {
-              clearInterval(pollId);
+              clearInterval(pollIntervalRef.current!);
+              pollIntervalRef.current = null;
               setAiRunning(false);
               setAiProgress(null);
               if (st.status === "failed") setActionError(`Ошибка ИИ: ${st.error}`);
@@ -262,11 +271,11 @@ export default function TransactionsClient() {
     }
   };
 
-  const loadTransactions = async () => {
+  const loadTransactions = async (page?: number) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append("page", currentPage.toString());
+      params.append("page", (page ?? currentPage).toString());
       params.append("limit", "50");
       if (statusFilter !== "ALL") params.append("status", statusFilter);
       if (selectedPeriod !== "ALL") params.append("periodId", selectedPeriod);
@@ -302,7 +311,7 @@ export default function TransactionsClient() {
   useEffect(() => {
     const delay = setTimeout(() => {
       setCurrentPage(1);
-      loadTransactions();
+      loadTransactions(1);
     }, 350);
     return () => clearTimeout(delay);
   }, [searchQuery]);
@@ -356,9 +365,6 @@ export default function TransactionsClient() {
       // INN is reliable only if it's not a transit account.
       // Fall back to counterpartyHint (company name) — never use the full description
       // because it contains dates/amounts that won't match future transactions.
-      const TRANSIT_INNS = new Set([
-        "302179836", "207680039", "201116085", "207004110", "200892596", "303245419"
-      ]);
       const isTransit = rulePromptTx.counterpartyInn ? TRANSIT_INNS.has(rulePromptTx.counterpartyInn) : false;
       const matchType = (rulePromptTx.counterpartyInn && !isTransit) ? "INN" : "KEYWORD";
       const matchValue = (rulePromptTx.counterpartyInn && !isTransit)

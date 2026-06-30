@@ -189,7 +189,7 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
               <CalendarClock size={14} />Декабрь — закрытие года
             </div>
             <p className="text-xs text-amber-700">
-              Перенесите финансовый результат с счёта 9910 на нераспределённую прибыль (8510).
+              Перенесите финансовый результат с счёта 9910 на нераспределённую прибыль (8710).
               Это фиксирует итоговую прибыль/убыток года в балансе.
             </p>
             {yearEndConfirmStep === "idle" && (
@@ -198,14 +198,14 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
                 disabled={yearEndLoading}
                 className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-5 rounded transition disabled:opacity-50"
               >
-                Перенести прибыль в нераспределённую (9910 → 8510)
+                Перенести прибыль в нераспределённую (9910 → 8710)
               </button>
             )}
             {yearEndConfirmStep === "confirm" && (
               <div className="bg-amber-100 border border-amber-300 rounded p-3 space-y-3">
                 <p className="text-xs font-semibold text-amber-900">
                   <AlertTriangle size={13} className="inline mr-1.5" />
-                  Будет создана проводка Дт 9910 / Кт 8510. Это действие нельзя отменить.
+                  Будет создана проводка Дт 9910 / Кт 8710. Это действие нельзя отменить.
                 </p>
                 <div className="flex gap-2">
                   <button

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveOrgId } from "@/lib/context";
+import { getActiveOrgId, getActiveMembership } from "@/lib/context";
 import { prismaWithOrg } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const org = await prismaWithOrg(orgId).organization.findUnique({
       where: { id: orgId },
@@ -28,7 +27,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(org);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "UNAUTHORIZED" || error.message === "NO_ACTIVE_ORG")
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     console.error("GET /api/settings/org error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
@@ -37,12 +38,16 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
-    if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const membership = await getActiveMembership();
+    if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
+      return NextResponse.json({ error: "Only admins can update org settings" }, { status: 403 });
+    }
 
     const body = await req.json();
 
     const turnoverTaxRate = body.turnoverTaxRate !== undefined
-      ? Math.max(0.01, Math.min(0.04, Number(body.turnoverTaxRate)))
+      ? Math.max(0.01, Math.min(0.25, Number(body.turnoverTaxRate)))
       : undefined;
 
     const updatedOrg = await prismaWithOrg(orgId).organization.update({
@@ -62,7 +67,9 @@ export async function PATCH(req: NextRequest) {
     });
 
     return NextResponse.json(updatedOrg);
-  } catch (error) {
+  } catch (error: any) {
+    if (error.message === "UNAUTHORIZED" || error.message === "NO_ACTIVE_ORG")
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     console.error("PATCH /api/settings/org error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

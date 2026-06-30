@@ -30,6 +30,9 @@ export async function DELETE(
     }
 
     if (memberToRemove.role === "OWNER") {
+      if (membership.role !== "OWNER") {
+        return NextResponse.json({ error: "Only owners can remove other owners" }, { status: 403 });
+      }
       const ownersCount = await prisma.orgMember.count({
         where: { orgId, role: "OWNER" },
       });

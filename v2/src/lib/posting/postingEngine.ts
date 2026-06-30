@@ -53,7 +53,7 @@ export async function postDocument(
       });
     } else if (payloadHint) {
       counterparty = await tx.counterparty.findFirst({
-        where: { orgId: doc.orgId, name: String(payloadHint) }
+        where: { orgId: doc.orgId, name: { equals: String(payloadHint), mode: "insensitive" } }
       });
     }
 

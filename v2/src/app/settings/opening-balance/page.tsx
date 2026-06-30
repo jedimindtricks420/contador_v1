@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import ClientLayout from "@/components/Layout/ClientLayout";
 import { CheckCircle2, AlertCircle, Plus, Trash2, X } from "lucide-react";
 
 interface BalanceLine {
@@ -71,8 +70,7 @@ export default function OpeningBalancePage() {
   };
 
   return (
-    <ClientLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Начальные остатки</h1>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -202,7 +200,6 @@ export default function OpeningBalancePage() {
             </div>
           </div>
         )}
-      </div>
-    </ClientLayout>
+    </div>
   );
 }

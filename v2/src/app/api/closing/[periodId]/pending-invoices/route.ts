@@ -3,7 +3,7 @@ import { getActiveOrgId, getUser } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { postDocument } from "@/lib/posting/postingEngine";
 import { upsertTaxCalendarEventsForPeriod } from "@/lib/closing";
-import { TAX_RATES } from "@/lib/constants";
+import { TAX_RATES, ACCOUNTS } from "@/lib/constants";
 
 export async function GET(
   req: NextRequest,
@@ -23,7 +23,7 @@ export async function GET(
         orgId,
         affectedPeriodId: periodId,
         status: { in: ["OPEN", "RISK"] },
-        account: { code: { in: ["6310", "4310"] } }
+        account: { code: { in: [ACCOUNTS.ADVANCE_RECEIVED, ACCOUNTS.ADVANCE_PAID_GOODS] } }
       },
       include: { counterparty: true, account: true }
     });
@@ -80,7 +80,7 @@ export async function POST(
     const vatAmount = isVat ? Math.round((amount - (amount / vatDivisor)) * 100) / 100 : 0;
 
     let docTypeCode = "INVOICE_CONFIRMED_PREPAID";
-    if (openItem.account.code === "4310") {
+    if (openItem.account.code === ACCOUNTS.ADVANCE_PAID_GOODS) {
       docTypeCode = "GOODS_RECEIVED_PREPAID";
     }
 

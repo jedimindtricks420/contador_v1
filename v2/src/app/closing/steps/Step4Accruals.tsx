@@ -39,7 +39,8 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
         })
         .catch(() => {});
     }
-  }, [periodId, initialAccruals]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodId, initialAccruals.salaryAmount, initialAccruals.depreciationAmount, initialAccruals.rentAmount]);
 
   const hasSavedData =
     (initialAccruals.salaryAmount || 0) > 0 ||

@@ -86,31 +86,41 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
       setWizardState((prev: any) => ({ ...prev, ...stepPayload }));
     }
 
-    const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
-    let hasPending = false;
-    if (pendingRes.ok) {
-      const pendingData = await pendingRes.json();
-      hasPending = pendingData && pendingData.length > 0;
-      setHasPendingInvoices(hasPending);
-    }
+    try {
+      const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
+      let hasPending = false;
+      if (pendingRes.ok) {
+        const pendingData = await pendingRes.json();
+        hasPending = pendingData && pendingData.length > 0;
+        setHasPendingInvoices(hasPending);
+      }
 
-    const nextStep = activeStep + 1;
-    const maxStep = hasPending ? 8 : 7;
-    setActiveStep(Math.min(nextStep, maxStep));
+      const nextStep = activeStep + 1;
+      const maxStep = hasPending ? 8 : 7;
+      setActiveStep(Math.min(nextStep, maxStep));
+    } catch (err) {
+      console.error("handleNextStep error:", err);
+      setActiveStep((prev) => Math.min(prev + 1, 8));
+    }
   };
 
   const handlePrevStep = async () => {
-    const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
-    let hasPending = false;
-    if (pendingRes.ok) {
-      const pendingData = await pendingRes.json();
-      hasPending = pendingData && pendingData.length > 0;
-      setHasPendingInvoices(hasPending);
-    }
+    try {
+      const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
+      let hasPending = false;
+      if (pendingRes.ok) {
+        const pendingData = await pendingRes.json();
+        hasPending = pendingData && pendingData.length > 0;
+        setHasPendingInvoices(hasPending);
+      }
 
-    if (activeStep === (hasPending ? 8 : 7)) {
-      setActiveStep(hasPending ? 7 : 6);
-    } else {
+      if (activeStep === (hasPending ? 8 : 7)) {
+        setActiveStep(hasPending ? 7 : 6);
+      } else {
+        setActiveStep((prev) => Math.max(prev - 1, 1));
+      }
+    } catch (err) {
+      console.error("handlePrevStep error:", err);
       setActiveStep((prev) => Math.max(prev - 1, 1));
     }
   };
@@ -224,7 +234,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
             periodId={period.id}
             onNext={handleNextStep}
             onPrev={handlePrevStep}
-            initialAccruals={wizardState.accruals}
+            initialAccruals={wizardState?.accruals ?? { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 }}
           />
         )}
         {activeStep === 5 && (
@@ -232,7 +242,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
             periodId={period.id}
             onNext={handleNextStep}
             onPrev={handlePrevStep}
-            initialFxDiff={wizardState.fxDiff}
+            initialFxDiff={wizardState?.fxDiff ?? { exchangeRate: 0, difference: 0 }}
           />
         )}
         {activeStep === 6 && (
@@ -240,7 +250,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
             periodId={period.id}
             onNext={handleNextStep}
             onPrev={handlePrevStep}
-            initialSoliqMatched={wizardState.soliqMatched}
+            initialSoliqMatched={wizardState?.soliqMatched ?? { matched: 0, unmatched: 0 }}
           />
         )}
         {activeStep === 7 && hasPendingInvoices && (

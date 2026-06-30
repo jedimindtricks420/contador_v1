@@ -57,6 +57,7 @@ function Row({ num, label, value, indent, bold, total, minus, alwaysShow }: RowP
 export default function BalanceClient() {
   const [data, setData] = useState<BalanceData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const now = new Date();
   const [toStr, setToStr] = useState(
@@ -65,11 +66,14 @@ export default function BalanceClient() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await fetch(`/v2/api/reports/balance?to=${toStr}`);
+      if (!res.ok) throw new Error(`Ошибка загрузки: ${res.status}`);
       setData(await res.json());
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setLoadError(e.message || "Ошибка загрузки баланса");
     } finally {
       setLoading(false);
     }
@@ -78,6 +82,15 @@ export default function BalanceClient() {
   useEffect(() => { load(); }, [toStr]);
 
   const d = data as any;
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[40vh] gap-3 text-rose-500">
+        <span className="text-sm font-semibold">{loadError}</span>
+        <button onClick={load} className="text-xs text-gray-500 underline">Повторить</button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

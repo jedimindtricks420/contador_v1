@@ -93,10 +93,15 @@ export default function RulesPage() {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkApplying, setBulkApplying] = useState(false);
 
-  // Delete confirm
+  // Delete confirm (single)
   const [deleteRuleTarget, setDeleteRuleTarget] = useState<Rule | null>(null);
   const [deleteError, setDeleteError] = useState<string>("");
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Bulk selection & delete
+  const [selectedRuleIds, setSelectedRuleIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<"selected" | "all" | null>(null);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // Reorder state
   const [reordering, setReordering] = useState(false);
@@ -319,6 +324,38 @@ export default function RulesPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    setBulkDeleteLoading(true);
+    try {
+      const idsToDelete = bulkDeleteConfirm === "all"
+        ? rules.map((r) => r.id)
+        : Array.from(selectedRuleIds);
+      await Promise.all(idsToDelete.map((id) => fetch(`/v2/api/rules/${id}`, { method: "DELETE" })));
+      setSelectedRuleIds(new Set());
+      setBulkDeleteConfirm(null);
+      loadData();
+    } catch (err) {
+      console.error("Bulk delete failed:", err);
+    } finally {
+      setBulkDeleteLoading(false);
+    }
+  };
+
+  const allFilteredSelected =
+    filteredRules.length > 0 && filteredRules.every((r) => selectedRuleIds.has(r.id));
+
+  const toggleSelectAll = () => {
+    setSelectedRuleIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredRules.forEach((r) => next.delete(r.id));
+      } else {
+        filteredRules.forEach((r) => next.add(r.id));
+      }
+      return next;
+    });
+  };
+
   const manualCount = rules.filter((r) => r.createdFrom === "MANUAL").length;
   const autoCount = rules.filter((r) => r.createdFrom === "USER_ANSWER").length;
 
@@ -333,12 +370,22 @@ export default function RulesPage() {
               Настройка правил для распределения входящих банковских операций по категориям и счетам
             </p>
           </div>
-          <button
-            onClick={openCreateModal}
-            className="bg-black hover:opacity-80 text-white text-xs font-bold py-2.5 px-6 rounded transition duration-200 shadow-sm flex items-center gap-2"
-          >
-            <span>+</span> Добавить правило
-          </button>
+          <div className="flex items-center gap-3">
+            {rules.length > 0 && (
+              <button
+                onClick={() => setBulkDeleteConfirm("all")}
+                className="text-xs font-bold text-rose-600 border border-rose-200 hover:bg-rose-50 py-2.5 px-4 rounded transition flex items-center gap-1.5"
+              >
+                <Trash2 size={13} /> Удалить все
+              </button>
+            )}
+            <button
+              onClick={openCreateModal}
+              className="bg-black hover:opacity-80 text-white text-xs font-bold py-2.5 px-6 rounded transition duration-200 shadow-sm flex items-center gap-2"
+            >
+              <span>+</span> Добавить правило
+            </button>
+          </div>
         </div>
 
         {/* Stats Blocks */}
@@ -420,12 +467,42 @@ export default function RulesPage() {
           </div>
         </div>
 
+        {/* Bulk action toolbar */}
+        {selectedRuleIds.size > 0 && (
+          <div className="flex items-center justify-between bg-gray-900 text-white rounded px-4 py-2.5 text-xs font-semibold">
+            <span>{selectedRuleIds.size} правил{selectedRuleIds.size === 1 ? "о" : selectedRuleIds.size < 5 ? "а" : ""} выбрано</span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSelectedRuleIds(new Set())}
+                className="text-gray-400 hover:text-white transition"
+              >
+                Снять выделение
+              </button>
+              <button
+                onClick={() => setBulkDeleteConfirm("selected")}
+                className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold py-1.5 px-4 rounded transition"
+              >
+                <Trash2 size={12} /> Удалить выбранные
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Rules Table */}
         <div className="bg-white rounded border border-gray-200 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <th className="py-3 pl-4 pr-2 w-9">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      disabled={filteredRules.length === 0}
+                      className="rounded cursor-pointer"
+                    />
+                  </th>
                   <th className="py-3 px-5">Тип сопоставления</th>
                   <th className="py-3 px-5">Искомый шаблон / Значение</th>
                   <th className="py-3 px-5">Категория (Document Type)</th>
@@ -438,7 +515,7 @@ export default function RulesPage() {
               <tbody className="text-xs text-gray-700 divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-gray-400 font-medium">
+                    <td colSpan={8} className="py-12 text-center text-gray-400 font-medium">
                       <div className="flex justify-center items-center gap-2">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-300"></div>
                         Загрузка правил...
@@ -447,7 +524,7 @@ export default function RulesPage() {
                   </tr>
                 ) : filteredRules.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-16 text-center text-gray-400 space-y-2">
+                    <td colSpan={8} className="py-16 text-center text-gray-400 space-y-2">
                       <div className="text-3xl">⚙️</div>
                       {rules.length === 0 ? (
                         <>
@@ -480,7 +557,19 @@ export default function RulesPage() {
                     };
 
                     return (
-                      <tr key={rule.id} className="hover:bg-gray-50/50 transition duration-150">
+                      <tr key={rule.id} className={`hover:bg-gray-50/50 transition duration-150 ${selectedRuleIds.has(rule.id) ? "bg-gray-50" : ""}`}>
+                        <td className="py-3.5 pl-4 pr-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedRuleIds.has(rule.id)}
+                            onChange={(e) => {
+                              const next = new Set(selectedRuleIds);
+                              e.target.checked ? next.add(rule.id) : next.delete(rule.id);
+                              setSelectedRuleIds(next);
+                            }}
+                            className="rounded cursor-pointer"
+                          />
+                        </td>
                         <td className="py-3.5 px-5">
                           <span
                             className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-semibold border ${typeStyle.bg} ${typeStyle.text}`}
@@ -561,6 +650,46 @@ export default function RulesPage() {
           </div>
         </div>
       </div>
+
+      {/* Bulk delete confirm modal */}
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded border border-gray-200 shadow-xl max-w-sm w-full p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                <h3 className="text-sm font-bold text-gray-900">
+                  {bulkDeleteConfirm === "all" ? "Удалить все правила?" : `Удалить ${selectedRuleIds.size} правил${selectedRuleIds.size === 1 ? "о" : selectedRuleIds.size < 5 ? "а" : ""}?`}
+                </h3>
+              </div>
+              <button onClick={() => setBulkDeleteConfirm(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-600">
+              {bulkDeleteConfirm === "all"
+                ? `Будут удалены все ${rules.length} правил. Новые транзакции потребуют ручной классификации.`
+                : "Выбранные правила будут удалены. Новые транзакции по ним потребуют ручной классификации."}
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setBulkDeleteConfirm(null)}
+                disabled={bulkDeleteLoading}
+                className="flex-1 text-xs border border-gray-200 text-gray-700 font-bold py-2.5 rounded hover:bg-gray-50 transition"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleteLoading}
+                className="flex-1 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded transition disabled:opacity-50"
+              >
+                {bulkDeleteLoading ? "Удаляем..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete rule confirm modal */}
       {deleteRuleTarget && (

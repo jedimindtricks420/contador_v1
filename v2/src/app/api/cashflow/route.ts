@@ -238,8 +238,10 @@ export async function GET(req: NextRequest) {
 
     // Остатки на начало и конец периода по кассовым счетам
     type BalRow = { total: string };
-    const hasMixedCurrencies = accountCodes.some(c => BANK_UZS_CODES.includes(c as any))
-      && accountCodes.some(c => BANK_USD_CODES.includes(c as any));
+    const orgBankAccounts = await prisma.bankAccount.findMany({ where: { orgId } });
+    const hasMixedCurrencies = accountId === "ALL"
+      ? orgBankAccounts.some(a => a.currency !== "USD") && orgBankAccounts.some(a => a.currency === "USD")
+      : accountCodes.some(c => BANK_UZS_CODES.includes(c as any)) && accountCodes.some(c => BANK_USD_CODES.includes(c as any));
 
     const [openRows, closeRows, openRowsUZS, closeRowsUZS, openRowsUSD, closeRowsUSD] = await Promise.all([
       prisma.$queryRaw<BalRow[]>`

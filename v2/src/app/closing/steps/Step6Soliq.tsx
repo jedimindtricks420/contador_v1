@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BarChart2, Check, AlertTriangle } from "lucide-react";
 import { formatSum } from "@/lib/format";
 
@@ -22,6 +22,8 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [aiMatching, setAiMatching] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const autoAiTriggered = useRef(false);
 
   const handleUpload = async () => {
     if (!soliqFile) return;
@@ -85,8 +87,9 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
 
   const handleAiMatch = async () => {
     if (!reconciliation || reconciliation.bankOnly.length === 0 || reconciliation.soliqOnly.length === 0) return;
-    
+
     setAiMatching(true);
+    setAiError(null);
     try {
       const res = await fetch("/v2/api/classification/ai-reconcile", {
         method: "POST",
@@ -96,8 +99,12 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
           soliqOnly: reconciliation.soliqOnly
         })
       });
-      
+
       const data = await res.json();
+      if (!res.ok) {
+        setAiError(data.error || `Ошибка ИИ-сверки (${res.status})`);
+        return;
+      }
       if (res.ok && data.matches && data.matches.length > 0) {
         const newReconciliation = { ...reconciliation };
         
@@ -134,18 +141,33 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
 
             // Update counts
             newReconciliation.matched++;
-            newReconciliation.unmatched--;
+            newReconciliation.unmatched = Math.max(0, newReconciliation.unmatched - 1);
           }
         });
         
         setReconciliation(newReconciliation);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("AI Match error:", err);
+      setAiError(err?.message || "Ошибка сети при ИИ-сверке");
     } finally {
       setAiMatching(false);
     }
   };
+
+  // Auto-trigger AI matching after upload if there are unmatched items on both sides
+  useEffect(() => {
+    if (
+      reconciliation &&
+      !autoAiTriggered.current &&
+      reconciliation.bankOnly.length > 0 &&
+      reconciliation.soliqOnly.length > 0
+    ) {
+      autoAiTriggered.current = true;
+      handleAiMatch();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconciliation]);
 
   return (
     <div className="space-y-6">
@@ -219,19 +241,48 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
                 НДС (Soliq): {formatSum(reconciliation.taxSummary.vat)}
               </div>
             )}
-            
-            {reconciliation.bankOnly.length > 0 && reconciliation.soliqOnly.length > 0 && (
+            {reconciliation.bankOnly.length > 0 && reconciliation.soliqOnly.length > 0 && !aiMatching && (
               <div className="ml-auto">
                 <button
                   onClick={handleAiMatch}
                   disabled={aiMatching}
                   className="text-[10px] font-bold bg-black text-white px-4 py-2 uppercase tracking-widest hover:opacity-80 transition-opacity disabled:opacity-50"
                 >
-                  {aiMatching ? "Распознавание..." : "Распознать ИИ"}
+                  Распознать ИИ
                 </button>
               </div>
             )}
           </div>
+
+          {/* AI error banner */}
+          {aiError && (
+            <div className="flex items-center gap-2 rounded p-3 text-xs max-w-2xl bg-rose-50 border border-rose-200 text-rose-800">
+              <AlertTriangle size={13} className="shrink-0" />
+              <span>{aiError}</span>
+            </div>
+          )}
+
+          {/* AI status banner — shown while auto-matching or after */}
+          {(aiMatching || (reconciliation.bankOnly.length === 0 && reconciliation.soliqOnly.length === 0 && reconciliation.matched > 0)) && (
+            <div className={`flex items-center gap-2 rounded p-3 text-xs max-w-2xl ${aiMatching ? "bg-blue-50 border border-blue-200 text-blue-800" : "bg-green-50 border border-green-200 text-green-800"}`}>
+              {aiMatching ? (
+                <>
+                  <svg className="animate-spin h-3.5 w-3.5 shrink-0 text-blue-500" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <span>
+                    ИИ сопоставляет {reconciliation.bankOnly.length} банковских записей с {reconciliation.soliqOnly.length} ЭСФ...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Check size={13} className="shrink-0 text-green-600" />
+                  <span>ИИ завершил сопоставление — все позиции обработаны</span>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Grid comparison */}
           <div className="border border-gray-200 rounded overflow-hidden max-w-3xl">

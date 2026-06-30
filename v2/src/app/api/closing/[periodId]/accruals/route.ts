@@ -60,7 +60,7 @@ export async function DELETE(
 
     await saveClosingState(periodId, {
       accruals: { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 }
-    });
+    }, orgId);
 
     return NextResponse.json({ reset: true });
   } catch (err: any) {

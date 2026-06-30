@@ -17,7 +17,7 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
   const [usdAccounts, setUsdAccounts] = useState<any[]>([]);
   const [exchangeRate, setExchangeRate] = useState(String(initialFxDiff.exchangeRate || ""));
   const [difference, setDifference] = useState(String(initialFxDiff.difference || 0));
-  const [prevRate, setPrevRate] = useState(0);
+  const [prevRate, setPrevRate] = useState(initialFxDiff.exchangeRate || 0);
   const [rateLoading, setRateLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -188,7 +188,7 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
         </div>
 
         <div className="text-[10px] text-gray-400 font-semibold bg-gray-50 p-2.5 rounded border border-gray-100">
-          Курс загружен с сайта ЦБ РУз автоматически. Положительное значение курсовой разницы создаст доходную проводку (Дт 5210 — Кт 9030), отрицательное — расходную (Дт 9430 — Кт 5210).
+          Курс загружен с сайта ЦБ РУз автоматически. Положительное значение курсовой разницы создаст доходную проводку (Дт 5210 — Кт 9540), отрицательное — расходную (Дт 9620 — Кт 5210).
         </div>
 
         {validationError && (

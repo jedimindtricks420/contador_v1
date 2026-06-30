@@ -6,8 +6,7 @@ import prisma from "@/lib/prisma";
 import { parseSoliqExcel } from "@/lib/parsers/parserSoliq";
 import { postDocument } from "@/lib/posting/postingEngine";
 import Decimal from "decimal.js";
-
-const MARKETPLACE_INNS = ["302179836", "302061230", "309532578", "205370258"];
+import { MARKETPLACE_INNS, ACCOUNTS } from "@/lib/constants";
 
 function isMarketplace(inn?: string, name?: string): boolean {
   if (inn && MARKETPLACE_INNS.includes(inn)) return true;
@@ -100,7 +99,7 @@ export async function POST(req: NextRequest) {
     const soliqOnlyList: any[] = [];
 
     // We will augment the parsed items with match information so the frontend can pass it to /complete
-    const processedEsfItems = [];
+    const processedEsfItems: any[] = [];
 
     // ── Pass 1: exact INN match ─────────────────────────────────────────────
     // We use a mutable copy of openItems so matched items are not reused.
@@ -119,8 +118,12 @@ export async function POST(req: NextRequest) {
 
         const itemAmt = new Decimal(item.amount.toString()).toNumber();
 
-        // Marketplace: amount tolerance up to 15% (commission case)
-        if (esf.direction === "REVENUE" && isMarket && item.account.code === "6310") {
+        // Marketplace: also check bank item name — Soliq marketplace ESF often has blank counterpartyName
+        const isMarketByBank = isMarketplace(item.counterparty?.inn ?? undefined, item.counterparty?.name ?? "");
+        const effectiveIsMarket = isMarket || isMarketByBank;
+
+        // Marketplace: amount tolerance up to 15% (platform commission deducted before remittance)
+        if (esf.direction === "REVENUE" && effectiveIsMarket && item.account.code === ACCOUNTS.ADVANCE_RECEIVED) {
           return itemAmt <= grossAmount && (grossAmount - itemAmt) < grossAmount * 0.15;
         }
 
@@ -153,8 +156,13 @@ export async function POST(req: NextRequest) {
       const grossAmount = esf.amount + esf.vatAmount;
 
       const matchIndex = remainingOpenItems.findIndex(item => {
-        // Skip if counterparty has an INN that differs from ESF (would have been caught in pass 1)
-        if (item.counterparty?.inn && item.counterparty.inn !== esf.inn) return false;
+        // When INNs both exist but differ, only proceed if names are highly similar —
+        // covers INN data-quality mismatches (e.g. bank "388710993" vs Soliq "308710993"
+        // for the same company). A threshold of 0.85 means essentially identical names.
+        if (item.counterparty?.inn && item.counterparty.inn !== esf.inn) {
+          const sim = nameSimilarity(item.counterparty?.name || "", esf.counterpartyName);
+          if (sim < 0.85) return false;
+        }
 
         const itemAmt = new Decimal(item.amount.toString()).toNumber();
         const amountClose =
@@ -171,7 +179,6 @@ export async function POST(req: NextRequest) {
         remainingOpenItems.splice(matchIndex, 1);
 
         matched++;
-        unmatched = Math.max(0, unmatched - 1); // undo earlier unmatched count
         matchesList.push({ counterpartyName: esf.counterpartyName, amount: grossAmount });
 
         // Update the processedEsfItem that was originally marked UNMATCHED
@@ -199,6 +206,68 @@ export async function POST(req: NextRequest) {
           netAmount: esf.amount,
           vatAmount: esf.vatAmount
         });
+      }
+    }
+
+    // ── Pass 3: EXPENSE ESF vs outgoing DEBIT transactions ───────────────────
+    // Purchase invoices (direction=EXPENSE) have no open items — the payment goes
+    // directly to a supplier account. Match them against DEBIT bank transactions
+    // within this period by INN (exact) or name (fuzzy) + amount.
+    const stillUnmatchedExpenses = unmatchedEsfItems.filter(esf => {
+      if (esf.direction !== "EXPENSE") return false;
+      return processedEsfItems.some(
+        p => p.inn === esf.inn && p.counterpartyName === esf.counterpartyName && p.matchStatus === "UNMATCHED"
+      );
+    });
+
+    if (stillUnmatchedExpenses.length > 0) {
+      const outgoingTxs = await prisma.stagedTransaction.findMany({
+        where: { orgId, periodId, direction: "DEBIT" }
+      });
+
+      const usedTxIds = new Set<string>();
+
+      for (const esf of stillUnmatchedExpenses) {
+        const grossAmount = esf.amount + esf.vatAmount;
+
+        const matchTx = outgoingTxs.find(tx => {
+          if (usedTxIds.has(tx.id)) return false;
+          const txAmt = new Decimal(tx.amount.toString()).toNumber();
+          const amountClose =
+            Math.abs(txAmt - grossAmount) < 1.01 ||
+            Math.abs(txAmt - esf.amount) < 1.01;
+          if (!amountClose) return false;
+          if (tx.counterpartyInn && tx.counterpartyInn === esf.inn) return true;
+          return nameSimilarity(tx.counterpartyHint || "", esf.counterpartyName) >= FUZZY_THRESHOLD;
+        });
+
+        if (matchTx) {
+          usedTxIds.add(matchTx.id);
+
+          const idx = processedEsfItems.findIndex(
+            p => p.inn === esf.inn && p.counterpartyName === esf.counterpartyName && p.matchStatus === "UNMATCHED"
+          );
+          if (idx !== -1) {
+            processedEsfItems[idx] = {
+              ...esf,
+              matchStatus: "MATCHED",
+              matchedOpenItemId: matchTx.id,
+              matchedAccountCode: ACCOUNTS.PAYABLES,
+              matchedAmount: new Decimal(matchTx.amount.toString()).toNumber(),
+              expenseMatch: true
+            };
+          }
+
+          const soliqIdx = soliqOnlyList.findIndex(
+            s => s.inn === esf.inn && Math.abs(s.amount - grossAmount) < 1.01
+          );
+          if (soliqIdx !== -1) {
+            soliqOnlyList.splice(soliqIdx, 1);
+            unmatched = Math.max(0, unmatched - 1);
+            matched++;
+            matchesList.push({ counterpartyName: esf.counterpartyName, amount: grossAmount });
+          }
+        }
       }
     }
 

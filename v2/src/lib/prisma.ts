@@ -65,7 +65,7 @@ export function prismaWithOrg(orgId: string) {
                   if (!existing) throw new Error("FORBIDDEN");
                 }
               }
-            } else if (operation === "create" || operation === "createMany") {
+            } else if (operation === "create" || operation === "createMany" || operation === "upsert") {
               if (operation === "create") {
                 (args as any).data = { ...(args as any).data, orgId };
               } else if (operation === "createMany") {
@@ -74,6 +74,10 @@ export function prismaWithOrg(orgId: string) {
                 } else {
                   (args as any).data = { ...(args as any).data, orgId };
                 }
+              } else if (operation === "upsert") {
+                (args as any).where = { ...(args as any).where, orgId };
+                (args as any).create = { ...(args as any).create, orgId };
+                (args as any).update = (args as any).update;
               }
             }
           }

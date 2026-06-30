@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveOrgId } from "@/lib/context";
+import { getActiveOrgId, getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 
 export async function POST(
@@ -34,6 +34,12 @@ export async function POST(
 
     // Warn if wizard was never run (no accrual documents exist)
     const { force } = await req.json().catch(() => ({ force: false }));
+    if (force) {
+      const membership = await getActiveMembership();
+      if (membership.role !== "OWNER" && membership.role !== "ADMIN") {
+        return NextResponse.json({ error: "Только владелец или администратор может принудительно закрыть период" }, { status: 403 });
+      }
+    }
     if (!force) {
       const accrualCount = await prisma.document.count({
         where: {
@@ -50,15 +56,19 @@ export async function POST(
       }
     }
 
-    const updated = await prisma.period.update({
-      where: { id },
+    const updated = await prisma.period.updateMany({
+      where: { id, orgId },
       data: {
         status: "CLOSED",
         lockDate: new Date()
       }
     });
+    if (updated.count === 0) {
+      return NextResponse.json({ error: "Период не найден" }, { status: 404 });
+    }
+    const closedPeriod = await prisma.period.findUnique({ where: { id } });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(closedPeriod);
   } catch (err: any) {
     console.error("CLOSE PERIOD ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });

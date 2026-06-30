@@ -61,16 +61,16 @@ export async function POST(req: NextRequest) {
     if (isNewUser && passwordPlain) {
       const sent = await sendInviteEmail(email, orgName, passwordPlain).catch(() => false);
       if (!sent) {
-        // SMTP failed or not configured — log password server-side only
-        console.log(`[invite] SMTP not configured. Temp password for ${email} (server-only):`, passwordPlain);
+        // SMTP failed or not configured — password is returned in mockInvitePassword field below
       }
     }
 
     const emailEnabled = !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    const isDev = process.env.NODE_ENV !== "production";
     return NextResponse.json({
       member: newMember,
-      // Only expose plaintext password when SMTP is not configured (dev mode)
-      mockInvitePassword: emailEnabled ? null : passwordPlain,
+      // Only expose plaintext password in dev when SMTP is not configured
+      mockInvitePassword: (!emailEnabled && isDev) ? passwordPlain : null,
     });
   } catch (err: any) {
     if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG" || err.message === "FORBIDDEN") {

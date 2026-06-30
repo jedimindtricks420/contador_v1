@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveMembership, forbidden, badRequest } from "@/lib/context";
+import { getActiveMembership, badRequest } from "@/lib/context";
 import { calculateAccountAnalysis } from "@/lib/reports/accountAnalysis";
 
 export async function GET(req: NextRequest) {

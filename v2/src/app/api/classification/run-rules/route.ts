@@ -32,7 +32,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ matched, remaining });
   } catch (err: any) {
+    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG")
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     console.error("RUN RULES ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка применения правил" }, { status: 500 });
   }
 }

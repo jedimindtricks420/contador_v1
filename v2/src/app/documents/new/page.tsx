@@ -95,7 +95,7 @@ export default function NewDocumentPage() {
       });
       if (res.ok) {
         setSuccess(true);
-        setTimeout(() => router.push("/v2/documents"), 1500);
+        setTimeout(() => router.push("/documents"), 1500);
       } else {
         const err = await res.json();
         setError(err.error || "Ошибка при создании документа");

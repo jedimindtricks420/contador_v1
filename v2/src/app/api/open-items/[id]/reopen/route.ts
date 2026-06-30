@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const updated = await prisma.openItem.update({
-      where: { id },
+      where: { id, orgId },
       data: {
         status: "OPEN",
         dateClosed: null,
@@ -33,6 +33,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json(updated);
   } catch (err: any) {
     console.error("REOPEN OPEN ITEM ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка при переоткрытии позиции" }, { status: 500 });
   }
 }

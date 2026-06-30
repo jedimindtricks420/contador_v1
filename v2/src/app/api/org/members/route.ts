@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getActiveMembership, getActiveOrgId } from "@/lib/context";
+import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
   try {
-    const orgId = await getActiveOrgId();
-    await getActiveMembership(); // Ensure they have access
+    const membership = await getActiveMembership();
+    const orgId = membership.orgId;
 
     const members = await prisma.orgMember.findMany({
       where: { orgId },

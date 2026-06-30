@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveClosingState, getClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
+import { ACCOUNTS } from "@/lib/constants";
 
 export async function POST(
   req: NextRequest,
@@ -20,6 +21,9 @@ export async function POST(
     }
 
     const stepNum = parseInt(stepNumber);
+    if (isNaN(stepNum) || stepNum < 1 || stepNum > 8) {
+      return NextResponse.json({ error: "Неверный номер шага" }, { status: 400 });
+    }
     const body = await req.json();
 
     if (stepNum === 4) {
@@ -29,14 +33,14 @@ export async function POST(
           depreciationAmount: parseFloat(body.depreciationAmount) || 0,
           rentAmount: parseFloat(body.rentAmount) || 0
         }
-      });
+      }, orgId);
     } else if (stepNum === 5) {
       await saveClosingState(periodId, {
         fxDiff: {
           exchangeRate: parseFloat(body.exchangeRate) || 0,
           difference: parseFloat(body.difference) || 0
         }
-      });
+      }, orgId);
     } else if (stepNum === 6) {
       // Execute the Soliq reconciliation if payload is provided
       if (body.parsedPayload) {
@@ -103,7 +107,7 @@ export async function POST(
               };
               
               if (esf.direction === "REVENUE") {
-                if (esf.matchedAccountCode === "6310" && (grossAmount - esf.matchedAmount > 0) && (grossAmount - esf.matchedAmount < grossAmount * 0.15)) {
+                if (esf.matchedAccountCode === ACCOUNTS.ADVANCE_RECEIVED && (grossAmount - esf.matchedAmount > 0) && (grossAmount - esf.matchedAmount < grossAmount * 0.15)) {
                   docTypeCode = "MARKETPLACE_REVENUE";
                   payload = {
                     netAmount: esf.matchedAmount,
@@ -135,22 +139,26 @@ export async function POST(
               });
               
               await postDocument(doc.id, tx, "system");
-              
-              // Close the open item — verify it belongs to this org before updating (IDOR prevention)
-              const openItem = await tx.openItem.findFirst({
-                where: { id: esf.matchedOpenItemId, orgId }
-              });
-              if (!openItem) {
-                throw new Error(`Open item ${esf.matchedOpenItemId} not found for this organization`);
-              }
-              await tx.openItem.update({
-                where: { id: esf.matchedOpenItemId },
-                data: {
-                  status: "CLOSED",
-                  closingDocumentId: doc.id,
-                  dateClosed: new Date(esf.date)
+
+              // Close the open item only for REVENUE matches.
+              // EXPENSE matches (Pass 3) reference a StagedTransaction id, not an OpenItem —
+              // there is no advance position to close for outgoing supplier payments.
+              if (!esf.expenseMatch) {
+                const openItem = await tx.openItem.findFirst({
+                  where: { id: esf.matchedOpenItemId, orgId }
+                });
+                if (!openItem) {
+                  throw new Error(`Open item ${esf.matchedOpenItemId} not found for this organization`);
                 }
-              });
+                await tx.openItem.update({
+                  where: { id: esf.matchedOpenItemId },
+                  data: {
+                    status: "CLOSED",
+                    closingDocumentId: doc.id,
+                    dateClosed: new Date(esf.date)
+                  }
+                });
+              }
             } else if (esf.matchStatus === "UNMATCHED") {
               // Postpaid case
               let docTypeCode = "INVOICE_CONFIRMED";
@@ -182,7 +190,7 @@ export async function POST(
           }
         }, {
           maxWait: 5000,
-          timeout: 20000
+          timeout: 120000
         });
       }
 
@@ -191,11 +199,11 @@ export async function POST(
           matched: parseInt(body.matched) || 0,
           unmatched: parseInt(body.unmatched) || 0
         }
-      });
+      }, orgId);
     }
 
     const nextStep = stepNum + 1;
-    await saveClosingState(periodId, { currentStep: nextStep });
+    await saveClosingState(periodId, { currentStep: nextStep }, orgId);
 
     const updated = await getClosingState(periodId);
     return NextResponse.json({ nextStep, summary: updated });

@@ -6,6 +6,7 @@ import crypto from "crypto";
 import { parse1CExchange } from "@/lib/parsers/parser1c";
 import { parseBankExcel } from "@/lib/parsers/parserBankExcel";
 import { ParsedTransaction } from "@/lib/parsers/types";
+import { Prisma } from "@prisma/client";
 
 export async function POST(req: NextRequest) {
   try {
@@ -129,9 +130,12 @@ export async function POST(req: NextRequest) {
         });
         imported++;
         netDelta += tx.direction === "CREDIT" ? tx.amount : -tx.amount;
-      } catch {
-        // Duplicate hash - skip it
-        duplicates++;
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          duplicates++;
+        } else {
+          throw e;
+        }
       }
     }
 

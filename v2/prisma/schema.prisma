@@ -297,6 +297,7 @@ model Subscription {
 
 model Payment {
   id          String       @id @default(uuid())
+  orderCode   String?      @unique
   orgId       String
   provider    String
   externalId  String       @unique
@@ -312,6 +313,7 @@ model Payment {
 
   @@index([orgId])
   @@index([externalId])
+  @@index([orderCode])
 }
 
 model Voucher {

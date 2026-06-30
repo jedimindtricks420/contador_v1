@@ -42,7 +42,15 @@ export async function GET(req: NextRequest) {
       where.affectedPeriodId = periodId;
     }
 
-    // Fetch matching open items
+    // Push search filter to DB on counterparty name/INN
+    if (search.trim()) {
+      where.OR = [
+        { counterparty: { name: { contains: search, mode: "insensitive" } } },
+        { counterparty: { inn: { contains: search } } },
+      ];
+    }
+
+    // Fetch matching open items (no arbitrary take limit — all filtered results returned)
     const items = await prisma.openItem.findMany({
       where,
       include: {
@@ -52,47 +60,34 @@ export async function GET(req: NextRequest) {
         closingDocument: { include: { type: true } }
       },
       orderBy: { dateOpened: "desc" },
-      take: 1000
     });
 
-    // Filter in-memory for search query matching counterparty, INN, or description
-    let filteredItems = items;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      filteredItems = items.filter(item => {
-        const counterpartyMatch =
-          item.counterparty?.name.toLowerCase().includes(q) ||
-          item.counterparty?.inn?.includes(q);
+    // Compute summaries via aggregates (no row limit)
+    const [openAgg, riskAgg, allUnresolvedForGrouping] = await Promise.all([
+      prisma.openItem.aggregate({
+        where: { orgId, status: "OPEN" },
+        _count: true,
+        _sum: { amount: true },
+      }),
+      prisma.openItem.aggregate({
+        where: { orgId, status: "RISK" },
+        _count: true,
+        _sum: { amount: true },
+      }),
+      prisma.openItem.findMany({
+        where: { orgId, status: { in: ["OPEN", "RISK"] } },
+        include: { account: true },
+      }),
+    ]);
 
-        const docPayload = item.openingDocument?.payload as any;
-        const descriptionMatch =
-          docPayload?.description?.toLowerCase().includes(q) ||
-          docPayload?.counterpartyHint?.toLowerCase().includes(q);
-
-        return counterpartyMatch || descriptionMatch;
-      });
-    }
-
-    // Compute summaries on all unresolved items for this organization
-    const allUnresolved = await prisma.openItem.findMany({
-      where: {
-        orgId,
-        status: { in: ["OPEN", "RISK"] }
-      },
-      include: {
-        account: true
-      },
-      take: 5000
-    });
-
-    const totalOpen = allUnresolved.length;
-    const totalRisk = allUnresolved.filter(i => i.status === "RISK").length;
-    const amountOpen = allUnresolved.reduce((sum, i) => sum.plus(new Decimal(i.amount.toString())), new Decimal(0));
-    const amountRisk = allUnresolved.filter(i => i.status === "RISK").reduce((sum, i) => sum.plus(new Decimal(i.amount.toString())), new Decimal(0));
+    const totalOpen = openAgg._count;
+    const totalRisk = riskAgg._count;
+    const amountOpen = new Decimal(openAgg._sum.amount?.toString() ?? "0");
+    const amountRisk = new Decimal(riskAgg._sum.amount?.toString() ?? "0");
 
     // Grouping unresolved statistics by buffer account
     const accountsMap = new Map<string, { accountCode: string; name: string; count: number; amount: Decimal }>();
-    for (const item of allUnresolved) {
+    for (const item of allUnresolvedForGrouping) {
       const accCode = item.account.code;
       const accName = item.account.name;
       const existing = accountsMap.get(accCode);
@@ -115,6 +110,8 @@ export async function GET(req: NextRequest) {
       count: x.count,
       amount: x.amount.toNumber()
     }));
+
+    const filteredItems = items;
 
     return NextResponse.json({
       items: filteredItems,

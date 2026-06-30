@@ -31,18 +31,14 @@ export default function Step3Registry({ periodId, onNext, onPrev }: Step3Registr
     setLoadError(false);
     try {
       const [txRes, docRes] = await Promise.all([
-        fetch(`/v2/api/transactions?periodId=${periodId}`),
+        fetch(`/v2/api/transactions?periodId=${periodId}&status=uncategorized&limit=2000`),
         fetch("/v2/api/document-types")
       ]);
       const txData = await txRes.json();
       const docData = await docRes.json();
 
       setDocTypes(docData);
-      // Filter in-memory to find only IMPORTED or NEEDS_CLARIFICATION (uncategorized)
-      const uncategorized = (txData.items || []).filter(
-        (t: Transaction) => t.status === "IMPORTED" || t.status === "NEEDS_CLARIFICATION"
-      );
-      setTxs(uncategorized);
+      setTxs(txData.items || []);
     } catch (err) {
       console.error(err);
       setLoadError(true);

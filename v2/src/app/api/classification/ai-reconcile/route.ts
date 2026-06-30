@@ -23,8 +23,25 @@ export async function POST(req: NextRequest) {
     const orgId = session.activeOrgId;
     const { bankOnly, soliqOnly } = await req.json();
 
-    if (!bankOnly || !soliqOnly || bankOnly.length === 0 || soliqOnly.length === 0) {
+    if (!bankOnly || !soliqOnly || !Array.isArray(bankOnly) || !Array.isArray(soliqOnly)) {
+      return NextResponse.json({ error: "Некорректный формат данных" }, { status: 400 });
+    }
+
+    if (bankOnly.length === 0 || soliqOnly.length === 0) {
       return NextResponse.json({ matches: [] });
+    }
+
+    if (bankOnly.length > 200 || soliqOnly.length > 200) {
+      return NextResponse.json({ error: "Слишком много элементов для сверки (макс. 200)" }, { status: 400 });
+    }
+
+    // Validate that submitted bankOnly IDs belong to this org's open items
+    const bankIds = bankOnly.map((b: any) => b.id).filter(Boolean);
+    if (bankIds.length > 0) {
+      const owned = await prisma.openItem.count({ where: { id: { in: bankIds }, orgId } });
+      if (owned !== bankIds.length) {
+        return NextResponse.json({ error: "Недопустимые данные запроса" }, { status: 400 });
+      }
     }
 
     const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
@@ -46,9 +63,10 @@ export async function POST(req: NextRequest) {
 - Поэтому ИНН и название контрагента в банке могут НЕ совпадать с реальным плательщиком в ЭСФ.
 - Реальный клиент (ИНН или название) часто УКАЗАН В ТЕКСТЕ description банковского платежа.
 - Название может быть сокращено или транслитерировано (AXOFT → АХОФТ, MCHJ → МЧЖ и т.п.).
+- MARKETPLACE (CLICK, Payme, Uzum и др.): ЭСФ для маркетплейсов часто имеет ПУСТОЕ поле counterpartyName — сопоставляй только по ИНН. Сумма в банке будет меньше суммы ЭСФ на комиссию платформы (до 15% меньше — это нормально).
 
 АЛГОРИТМ СОПОСТАВЛЕНИЯ:
-1. Сравни суммы: amount в банке должно быть близко к amount в ЭСФ (±5% допустимо — НДС мог быть уже включён или нет).
+1. Сравни суммы: amount в банке должно быть близко к amount в ЭСФ (±15% допустимо для маркетплейсов, ±5% в остальных случаях).
 2. Ищи ИНН из ESF в поле description банка — это самый надёжный признак.
 3. Если ИНН не найден — ищи название контрагента ESF в description банка (частичное совпадение, транслитерация).
 4. Если и это не помогло — сравни названия counterpartyName банка и ESF на схожесть (сокращения, слова-синонимы).
@@ -107,6 +125,6 @@ ${JSON.stringify(soliqOnly, null, 2)}
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
     console.error("AI RECONCILE ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Ошибка ИИ-сверки" }, { status: 500 });
   }
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import Decimal from "decimal.js";
-import { DASHBOARD } from "@/lib/constants";
+import { DASHBOARD, ACCOUNTS } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
   try {
@@ -30,15 +30,17 @@ export async function GET(req: NextRequest) {
     }
 
     // Транзакции текущего месяца (по статусу)
-    const [totalImported, needsClarification, confirmed] = await Promise.all([
-      prisma.stagedTransaction.count({ where: { orgId, periodId: period?.id } }),
-      prisma.stagedTransaction.count({
-        where: { orgId, periodId: period?.id, status: "NEEDS_CLARIFICATION" },
-      }),
-      prisma.stagedTransaction.count({
-        where: { orgId, periodId: period?.id, status: { in: ["CONFIRMED", "POSTED"] } },
-      }),
-    ]);
+    const [totalImported, needsClarification, confirmed] = period
+      ? await Promise.all([
+          prisma.stagedTransaction.count({ where: { orgId, periodId: period.id } }),
+          prisma.stagedTransaction.count({
+            where: { orgId, periodId: period.id, status: "NEEDS_CLARIFICATION" },
+          }),
+          prisma.stagedTransaction.count({
+            where: { orgId, periodId: period.id, status: { in: ["CONFIRMED", "POSTED"] } },
+          }),
+        ])
+      : [0, 0, 0];
 
     // Остатки по банковским счетам
     const bankAccounts = await prisma.bankAccount.findMany({
@@ -131,7 +133,7 @@ export async function GET(req: NextRequest) {
       FROM "JournalEntry" je
       JOIN "Document" d ON d.id = je."documentId"
       JOIN "Account" a ON a.id = je."accountId"
-      WHERE d."orgId" = ${orgId} AND d.status = 'POSTED' AND a.code = '6710'
+      WHERE d."orgId" = ${orgId} AND d.status = 'POSTED' AND a.code = ${ACCOUNTS.PAYROLL}
     `;
     const salaryDebt = Math.max(0, Number(salaryDebtRows[0]?.total || 0));
 

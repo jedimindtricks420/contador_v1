@@ -15,7 +15,10 @@ export async function GET() {
     return NextResponse.json(accounts);
   } catch (err: any) {
     console.error("GET BANK ACCOUNTS ERROR:", err);
-    return NextResponse.json({ error: err.message || "Unauthorized" }, { status: 401 });
+    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
+      return NextResponse.json({ error: err.message || "Unauthorized" }, { status: 401 });
+    }
+    return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
   }
 }
 

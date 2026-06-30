@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
 
     const [acc9910, acc8710] = await Promise.all([
-      prisma.account.findUnique({ where: { code: "9910" } }),
+      prisma.account.findUnique({ where: { code: ACCOUNTS.FINAL_RESULT } }),
       prisma.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } })
     ]);
     if (!acc9910 || !acc8710) {
@@ -61,34 +61,42 @@ export async function POST(req: NextRequest) {
     }
 
     const docDate = new Date(year, 11, 31); // 31 декабря
-    const doc = await prisma.document.create({
-      data: {
-        orgId, periodId, typeId: yearEndType.id,
-        date: docDate, status: "POSTED",
-        payload: { type: "year_end_close", year, net9910: net9910.toNumber() } as any
-      }
-    });
-
-    // net9910 > 0 → дебетовый остаток у 9910 (убыток): Дт 8710 — Кт 9910
-    // net9910 < 0 → кредитовый остаток у 9910 (прибыль): Дт 9910 — Кт 8710
     const amt = net9910.abs();
-    if (net9910.gt(0)) {
-      // Убыток: Дт 8710 — Кт 9910
-      await prisma.journalEntry.createMany({
-        data: [
-          { documentId: doc.id, accountId: acc8710.id, debit: amt, credit: new Decimal(0), date: docDate },
-          { documentId: doc.id, accountId: acc9910.id, debit: new Decimal(0), credit: amt, date: docDate }
-        ]
+
+    await prisma.$transaction(async (tx) => {
+      const doc = await tx.document.create({
+        data: {
+          orgId, periodId, typeId: yearEndType!.id,
+          date: docDate, status: "POSTED",
+          payload: { type: "year_end_close", year, net9910: net9910.toNumber() } as any
+        }
       });
-    } else {
-      // Прибыль: Дт 9910 — Кт 8710
-      await prisma.journalEntry.createMany({
-        data: [
-          { documentId: doc.id, accountId: acc9910.id, debit: amt, credit: new Decimal(0), date: docDate },
-          { documentId: doc.id, accountId: acc8710.id, debit: new Decimal(0), credit: amt, date: docDate }
-        ]
+
+      // net9910 > 0 → дебетовый остаток у 9910 (убыток): Дт 8710 — Кт 9910
+      // net9910 < 0 → кредитовый остаток у 9910 (прибыль): Дт 9910 — Кт 8710
+      const entries = net9910.gt(0)
+        ? [
+            { documentId: doc.id, accountId: acc8710!.id, debit: amt, credit: new Decimal(0), date: docDate },
+            { documentId: doc.id, accountId: acc9910!.id, debit: new Decimal(0), credit: amt, date: docDate }
+          ]
+        : [
+            { documentId: doc.id, accountId: acc9910!.id, debit: amt, credit: new Decimal(0), date: docDate },
+            { documentId: doc.id, accountId: acc8710!.id, debit: new Decimal(0), credit: amt, date: docDate }
+          ];
+
+      await tx.journalEntry.createMany({ data: entries });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          userId: "system",
+          action: "YEAR_END_CLOSE",
+          entityType: "Document",
+          entityId: doc.id,
+          newValue: { year, net9910: net9910.toNumber() } as any
+        }
       });
-    }
+    });
 
     return NextResponse.json({
       message: net9910.lt(0) ? "Прибыль перенесена в нераспределённую прибыль (8710)" : "Убыток перенесён в нераспределённую прибыль (8710)",

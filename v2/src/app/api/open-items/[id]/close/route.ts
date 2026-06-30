@@ -40,7 +40,7 @@ export async function PATCH(
     }
 
     const updated = await prisma.openItem.update({
-      where: { id },
+      where: { id, orgId },
       data: {
         status: "CLOSED",
         closingDocumentId,
