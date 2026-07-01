@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/lib/classification/`, `src/app/api/classification/`, `src/app/api/clarification/`, `src/app/closing/ClarificationQueue.tsx`  
-**Последнее обновление:** 2026-06-30
+**Последнее обновление:** 2026-07-01
 
 ---
 
@@ -70,6 +70,47 @@ Body: { periodId }
 `Organization.aiConfidenceThreshold` — по умолчанию 70%.  
 Настраивается в PATCH `/api/settings/org`.
 
+### Фильтрация MANUAL_ONLY типов документов
+
+При построении `codeToId` (маппинг кода → ID типа документа для разбора ответа AI) используется только список `catalog`, а не `catalogRaw`. `catalogRaw` включает типы с `mode = "MANUAL_ONLY"` (PERIOD_CLOSING, YEAR_END_CLOSE) — они намеренно не передаются AI и не могут быть назначены на банковскую транзакцию.
+
+```typescript
+// Правильно — только те типы, что AI видел в промпте
+const codeToId = new Map(catalog.map(dt => [dt.code, dt.id]));
+// Неправильно — включало бы системные типы
+// const codeToId = new Map(catalogRaw.map(dt => [dt.code, dt.id]));
+```
+
+### Шкала confidence в системном промпте
+
+Промпт явно объясняет AI шкалу и порог:
+
+```
+confidence — целое число от 0 до 100 (процент уверенности в классификации).
+Порог авто-проводки: {confidenceThreshold}.
+```
+
+### Создание правил (fault isolation)
+
+После успешной проводки документа AI пытается создать `Rule` для будущей автоматической классификации. Создание правила — **best-effort**: сбой в нём не прерывает основной процесс.
+
+```typescript
+try {
+  const existing = await prisma.rule.findFirst({
+    where: { orgId, matchType: finalMatchType, matchValue: finalMatchValue }
+    // NO direction filter — Rule имеет @@unique([orgId, matchType, matchValue])
+  });
+  if (!existing) {
+    await prisma.rule.create({ ... });
+    clearRulesCache(orgId);
+  }
+} catch (ruleErr: any) {
+  console.warn(`AI: could not create rule for tx ${tx.id}:`, ruleErr.message);
+}
+```
+
+**Важно:** `Rule` имеет `@@unique([orgId, matchType, matchValue])` **без** direction — одно правило на сигнал распознавания независимо от направления. Поиск `findFirst` выполняется без фильтра по direction.
+
 ### API
 
 ```
@@ -82,6 +123,22 @@ GET /api/classification/status/[periodId]
 ```
 
 **Обработка ошибок:** при `UNAUTHORIZED` → 401; остальные ошибки → 500 с универсальным сообщением (без деталей `err.message`).
+
+---
+
+## B2.1 Фоновая очередь классификации (`queue.ts`)
+
+**Файл:** `src/lib/queue.ts`
+
+Запуск фонового процесса: `startClassificationJob(orgId, periodId)` → возвращает `jobId`.
+
+**Org-scoped job ID:** когда `periodId = "ALL"` (классификация всего периода), job ID формируется как `${orgId}_ALL`, а не просто `"ALL"`. Это предотвращает коллизию между организациями (несколько тенантов не перезаписывают одну строку `ClassificationJob`).
+
+```typescript
+const jobId = periodId === "ALL" ? `${orgId}_ALL` : periodId;
+```
+
+Статус-маршрут `/api/classification/status/[periodId]` проверяет `job.orgId !== orgId` → 403 (вторичная защита от межтенантного доступа).
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/app/transactions/TransactionsClient.tsx`, `src/app/api/transactions/route.ts`  
-**Последнее обновление:** 2026-06-30
+**Последнее обновление:** 2026-07-01
 
 ---
 
@@ -51,7 +51,7 @@ where.OR = [
 ```
 
 Каждая транзакция включает:
-- `bankAccount: { name, currency }`
+- `bankAccount: { name, currency, bankName, accountNumber }` — название счёта, валюта, название банка, номер счёта (20 цифр)
 - `period: { year, month }`
 - `document: { id, type: { id, name, code }, journalEntries: [{ account: { code, name } }] }`
 
@@ -83,6 +83,25 @@ where.OR = [
 - Polling (автообновление) хранится в `pollIntervalRef` (useRef), очищается при unmount компонента
 - Транзит-ИНН (`TRANSIT_INNS`) импортируется из `src/lib/constants.ts`
 - Ошибки API показываются в инлайн-баннере (не через `alert()`)
+
+### Колонка «Счет»
+
+Показывает пользовательское название счёта (`bankAccount.name`). Если `name` совпадает с `accountNumber` (20-значный номер), вместо него показывается `bankName` (название банка). Под основным названием отображается `bankName` мелким текстом.
+
+```
+Логика приоритета:
+  name !== accountNumber → показать name + bankName снизу
+  name === accountNumber → показать bankName вместо name
+```
+
+### Колонка «Категория» — компонент CategoryCombobox (compact)
+
+В compact-режиме (в строке таблицы) режим отображения vs. редактирования разделён:
+
+- **Отображение** (`!open`): `<div>` — текст переносится, показывается полное название категории
+- **Редактирование** (`open`): `<input>` с `autoFocus` — поле поиска по списку
+
+Это обеспечивает отображение длинных названий категорий (например, «Оплата поставщику за товары и услуги») без обрезания.
 
 ---
 
