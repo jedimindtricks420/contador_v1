@@ -165,7 +165,7 @@ export async function GET(req: NextRequest) {
 
     const closingChecklist = [
       { step: 1, done: totalImported > 0, label: `Выписка загружена (${totalImported} операций)` },
-      { step: 2, done: totalImported > 0 && needsClarification === 0, label: `Вопросы отвечены (${totalImported - needsClarification} из ${totalImported})` },
+      { step: 2, done: totalImported > 0 && confirmed === totalImported, label: `Вопросы отвечены (${confirmed} из ${totalImported})` },
       { step: 4, done: accrualsConfirmed, label: accrualsConfirmed ? "Начисления подтверждены" : "Начисления не подтверждены" },
       { step: 6, done: soliqConfirmed, label: soliqConfirmed ? "Сверка с Soliq выполнена" : "Сверка с Soliq не выполнена" },
       { step: 7, done: period?.status === "CLOSED", label: period?.status === "CLOSED" ? "Месяц закрыт" : "Месяц не закрыт" }

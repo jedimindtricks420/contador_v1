@@ -238,7 +238,8 @@ export async function classifyAllWithAI(
 
   const activityLabel = getActivityLabel(org.activityGroup, org.activityDescription, org.activityCustom);
   const confidenceThreshold = org.aiConfidenceThreshold ?? AI.CONFIDENCE_THRESHOLD;
-  const codeToId = new Map(catalogRaw.map(dt => [dt.code, dt.id]));
+  // Only codes that were actually offered to the AI are safe to auto-create
+  const codeToId = new Map(catalog.map(dt => [dt.code, dt.id]));
 
   // ── Enrich transactions: extract INN/name from description ──────────────────
   const enriched = transactions.map(tx => {
@@ -272,6 +273,7 @@ export async function classifyAllWithAI(
 
   // ── Build system prompt (built once, shared across all chunks) ──────────────
   const systemPrompt = `Ты — эксперт по бухгалтерскому учёту в Узбекистане (НСБУ №21). Классифицируй банковские транзакции.
+confidence — целое число от 0 до 100 (процент уверенности в классификации). Порог авто-проводки: ${confidenceThreshold}.
 
 ━━━ ОРГАНИЗАЦИЯ ━━━
 Название: ${org.name}
@@ -552,22 +554,29 @@ suggestedRuleValue:
         }
 
         if (finalMatchType && finalMatchValue) {
-          // Dedup: skip if any rule with same type+value already exists for this org
-          const existing = await prisma.rule.findFirst({
-            where: { orgId, matchType: finalMatchType, matchValue: finalMatchValue }
-          });
-          if (!existing) {
-            await prisma.rule.create({
-              data: {
-                orgId,
-                matchType: finalMatchType,
-                matchValue: finalMatchValue,
-                categoryId: resolvedTypeId,
-                createdFrom: "AI_SUGGESTED",
-                direction: tx.direction,
-              }
+          // Dedup: Rule has @@unique([orgId, matchType, matchValue]) — one rule per match signal.
+          // If a rule already exists for this signal (regardless of direction), skip creation.
+          // Rule creation is best-effort: a transient DB error must not fail the whole job.
+          try {
+            const existing = await prisma.rule.findFirst({
+              where: { orgId, matchType: finalMatchType, matchValue: finalMatchValue }
             });
-            clearRulesCache(orgId);
+            if (!existing) {
+              await prisma.rule.create({
+                data: {
+                  orgId,
+                  matchType: finalMatchType,
+                  matchValue: finalMatchValue,
+                  categoryId: resolvedTypeId,
+                  createdFrom: "AI_SUGGESTED",
+                  direction: tx.direction,
+                }
+              });
+              clearRulesCache(orgId);
+            }
+          } catch (ruleErr: any) {
+            // Rule creation is best-effort — log and continue; the document is already posted
+            console.warn(`AI: could not create rule for tx ${tx.id}:`, ruleErr.message);
           }
         }
 

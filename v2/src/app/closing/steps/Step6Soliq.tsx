@@ -85,6 +85,41 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
     }
   };
 
+  const handleManualMatch = (bankId: string, soliqId: string) => {
+    const newReconciliation = { ...reconciliation };
+
+    const bankItemIndex = newReconciliation.bankOnly.findIndex((b: any) => b.id === bankId);
+    const soliqItemIndex = newReconciliation.soliqOnly.findIndex((s: any) => s.id === soliqId);
+    if (bankItemIndex < 0 || soliqItemIndex < 0) return;
+
+    const bankItem = newReconciliation.bankOnly[bankItemIndex];
+    const soliqItem = newReconciliation.soliqOnly[soliqItemIndex];
+
+    if (newReconciliation.parsedPayload && newReconciliation.parsedPayload.esfItems) {
+      const esfPayloadItem = newReconciliation.parsedPayload.esfItems.find(
+        (e: any) => e.inn === soliqItem.inn && (e.amount + e.vatAmount) === soliqItem.amount && e.matchStatus === "UNMATCHED"
+      );
+      if (esfPayloadItem) {
+        esfPayloadItem.matchStatus = "MATCHED";
+        esfPayloadItem.matchedOpenItemId = bankId;
+        esfPayloadItem.matchedAmount = bankItem.amount;
+        esfPayloadItem.matchedAccountCode = bankItem.accountCode ?? "6310";
+      }
+    }
+
+    newReconciliation.matches.push({
+      counterpartyName: `${bankItem.counterpartyName} ⟷ ${soliqItem.counterpartyName}`,
+      amount: bankItem.amount
+    });
+
+    newReconciliation.bankOnly.splice(bankItemIndex, 1);
+    newReconciliation.soliqOnly.splice(soliqItemIndex, 1);
+    newReconciliation.matched++;
+    newReconciliation.unmatched = Math.max(0, newReconciliation.unmatched - 1);
+
+    setReconciliation(newReconciliation);
+  };
+
   const handleAiMatch = async () => {
     if (!reconciliation || reconciliation.bankOnly.length === 0 || reconciliation.soliqOnly.length === 0) return;
 
@@ -175,6 +210,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
         <h2 className="text-base font-bold text-gray-800">Шаг 6. Сверка с порталом my.soliq.uz</h2>
         <p className="text-xs text-gray-400 mt-1">
           Загрузите Excel-выгрузку реестра ЭСФ, чтобы сопоставить выставленные счета-фактуры с открытыми авансами в банке.
+          Файл может охватывать несколько месяцев — сверка выполняется по всем открытым авансам, включая прошлые периоды.
         </p>
       </div>
 
@@ -313,20 +349,63 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
 
                   {/* Bank Only */}
                   {reconciliation.bankOnly.map((b: any, idx: number) => (
-                    <tr key={`b-${idx}`} className="hover:bg-gray-50/50 bg-rose-50/5 text-rose-950/20">
+                    <tr key={`b-${idx}`} className="hover:bg-gray-50/50">
                       <td className="p-2.5 text-gray-700">
                         <div className="font-bold text-rose-700">{b.counterpartyName}</div>
-                        <div className="text-[10px] text-gray-400 font-mono">{formatSum(b.amount)}</div>
+                        <div className="text-[10px] text-gray-400 font-mono">
+                          {formatSum(b.amount)}
+                          {b.date && (
+                            <span className="ml-2 text-gray-400">
+                              {new Date(b.date).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" })}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-2.5 text-center text-rose-500 text-xs font-bold">◄─►</td>
-                      <td className="p-2.5 text-gray-400 italic font-semibold">(не найден в Soliq)</td>
+                      <td className="p-2.5">
+                        {reconciliation.soliqOnly.length > 0 ? (
+                          <select
+                            defaultValue=""
+                            onChange={(e) => { if (e.target.value) handleManualMatch(b.id, e.target.value); }}
+                            disabled={aiMatching}
+                            className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 text-gray-600 bg-white cursor-pointer hover:border-gray-400 focus:outline-none focus:border-black disabled:opacity-40"
+                          >
+                            <option value="">— выбрать ЭСФ вручную —</option>
+                            {reconciliation.soliqOnly.map((s: any) => (
+                              <option key={s.id} value={s.id}>
+                                {s.counterpartyName} ({formatSum(s.amount)})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-400 italic text-[10px]">(нет ЭСФ для сопоставления)</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
 
                   {/* Soliq Only */}
                   {reconciliation.soliqOnly.map((s: any, idx: number) => (
-                    <tr key={`s-${idx}`} className="hover:bg-gray-50/50 bg-rose-50/5 text-rose-950/20">
-                      <td className="p-2.5 text-gray-400 italic font-semibold">(не найден в банке)</td>
+                    <tr key={`s-${idx}`} className="hover:bg-gray-50/50">
+                      <td className="p-2.5">
+                        {reconciliation.bankOnly.length > 0 ? (
+                          <select
+                            defaultValue=""
+                            onChange={(e) => { if (e.target.value) handleManualMatch(e.target.value, s.id); }}
+                            disabled={aiMatching}
+                            className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 text-gray-600 bg-white cursor-pointer hover:border-gray-400 focus:outline-none focus:border-black disabled:opacity-40"
+                          >
+                            <option value="">— выбрать из банка вручную —</option>
+                            {reconciliation.bankOnly.map((b: any) => (
+                              <option key={b.id} value={b.id}>
+                                {b.counterpartyName} ({formatSum(b.amount)})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-400 italic text-[10px]">(нет авансов для сопоставления)</span>
+                        )}
+                      </td>
                       <td className="p-2.5 text-center text-rose-500 text-xs font-bold">◄─►</td>
                       <td className="p-2.5 text-gray-700">
                         <div className="font-bold text-rose-700">{s.counterpartyName}</div>

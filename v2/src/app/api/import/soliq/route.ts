@@ -215,8 +215,9 @@ export async function POST(req: NextRequest) {
     });
 
     if (stillUnmatchedExpenses.length > 0) {
+      // Search across ALL periods — ESF and bank payment may be in different months
       const outgoingTxs = await prisma.stagedTransaction.findMany({
-        where: { orgId, periodId, direction: "DEBIT" }
+        where: { orgId, direction: "DEBIT" }
       });
 
       const usedTxIds = new Set<string>();
@@ -273,7 +274,8 @@ export async function POST(req: NextRequest) {
       inn: item.counterparty?.inn || null,
       amount: new Decimal(item.amount.toString()).toNumber(),
       description: (item.openingDocument?.payload as any)?.description || "",
-      accountCode: item.account.code
+      accountCode: item.account.code,
+      date: (item.openingDocument as any)?.date ?? null
     }));
 
     return NextResponse.json({

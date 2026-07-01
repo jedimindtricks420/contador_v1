@@ -6,11 +6,13 @@ import { clearClosingState } from "@/lib/closing";
 
 const CLOSING_DOC_CODES = [
   "PERIOD_CLOSING",
+  "YEAR_END_CLOSE",
   "SALARY_ACCRUAL",
   "DEPRECIATION_ACCRUAL",
   "RENT_ACCRUAL",
   "FX_DIFFERENCE",
   "PROFIT_TAX_ACCRUAL",
+  "TURNOVER_TAX_ACCRUAL",
 ];
 
 export async function POST(
@@ -30,13 +32,11 @@ export async function POST(
     }
 
     // Проверка: нельзя переоткрыть если уже выполнен перенос остатков на следующий год
-    const hasYearEndFollower = await prisma.document.findFirst({
-      where: {
-        orgId,
-        type: { code: "YEAR_END_TRANSFER" },
-        period: { year: period.year + (period.month === 12 ? 1 : 0) },
-      },
-    });
+    const hasYearEndFollower = period.month === 12
+      ? await prisma.document.findFirst({
+          where: { orgId, periodId: id, type: { code: "YEAR_END_CLOSE" } },
+        })
+      : null;
     if (hasYearEndFollower) {
       return NextResponse.json(
         { error: "Нельзя переоткрыть: уже выполнен перенос остатков на следующий год." },

@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
       prisma.stagedTransaction.findMany({
         where,
         include: {
-          bankAccount: { select: { name: true, currency: true } },
+          bankAccount: { select: { name: true, currency: true, bankName: true, accountNumber: true } },
           period: { select: { year: true, month: true } },
           document: {
             select: {

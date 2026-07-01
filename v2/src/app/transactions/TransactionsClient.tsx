@@ -53,7 +53,7 @@ interface Transaction {
   counterpartyHint: string | null;
   counterpartyInn: string | null;
   status: "IMPORTED" | "AUTO_MATCHED" | "NEEDS_CLARIFICATION" | "CONFIRMED" | "POSTED" | "SKIPPED";
-  bankAccount: { name: string; currency: string };
+  bankAccount: { name: string; currency: string; bankName: string | null; accountNumber: string | null };
   document: Document | null;
 }
 
@@ -112,18 +112,27 @@ function CategoryCombobox({
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <input
-        type="text"
-        readOnly={!open}
-        className={compact
-          ? "w-full bg-transparent border-none py-1 px-1 font-semibold text-gray-800 text-xs cursor-pointer outline-none hover:bg-gray-100 transition-colors truncate"
-          : "w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
-        }
-        placeholder={compact ? "— Выберите —" : "Все категории"}
-        value={open ? query : selectedName}
-        onFocus={() => { setOpen(true); setQuery(""); }}
-        onChange={e => setQuery(e.target.value)}
-      />
+      {compact && !open ? (
+        <div
+          onClick={() => { setOpen(true); setQuery(""); }}
+          className="w-full bg-transparent py-1 px-1 font-semibold text-gray-800 text-xs cursor-pointer hover:bg-gray-100 transition-colors leading-tight min-h-[22px]"
+        >
+          {selectedName || <span className="text-gray-400 font-normal">— Выберите —</span>}
+        </div>
+      ) : (
+        <input
+          type="text"
+          autoFocus={compact && open}
+          className={compact
+            ? "w-full bg-white border border-gray-300 py-1 px-1 font-semibold text-gray-800 text-xs outline-none"
+            : "w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
+          }
+          placeholder={compact ? "Поиск..." : "Все категории"}
+          value={open ? query : selectedName}
+          onFocus={() => { setOpen(true); setQuery(""); }}
+          onChange={e => setQuery(e.target.value)}
+        />
+      )}
       {open && (
         <div className="absolute z-50 left-0 w-56 mt-0.5 bg-white border border-gray-200 shadow-lg max-h-60 overflow-y-auto">
           {filtered.length === 0 ? (
@@ -626,12 +635,12 @@ export default function TransactionsClient() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                <th className="py-3.5 px-5">Дата</th>
-                <th className="py-3.5 px-5">Счет</th>
-                <th className="py-3.5 px-5 w-[38%]">Контрагент / Назначение</th>
-                <th className="py-3.5 px-5">Сумма</th>
-                <th className="py-3.5 px-5">Категория</th>
-                <th className="py-3.5 px-5">Статус</th>
+                <th className="py-3.5 px-5 w-[90px]">Дата</th>
+                <th className="py-3.5 px-5 w-[120px]">Счет</th>
+                <th className="py-3.5 px-5 w-[28%]">Контрагент / Назначение</th>
+                <th className="py-3.5 px-5 w-[110px]">Сумма</th>
+                <th className="py-3.5 px-5 min-w-[190px]">Категория</th>
+                <th className="py-3.5 px-5 w-[100px]">Статус</th>
                 <th className="py-3.5 px-5 text-right">Действия</th>
               </tr>
             </thead>
@@ -670,8 +679,15 @@ export default function TransactionsClient() {
                       <td className="py-3.5 px-5 text-gray-500 font-medium whitespace-nowrap">
                         {formatDate(tx.date)}
                       </td>
-                      <td className="py-3.5 px-5 text-gray-500 whitespace-nowrap">
-                        {tx.bankAccount?.name}
+                      <td className="py-3.5 px-5 text-gray-500">
+                        <div className="text-xs font-medium leading-tight">
+                          {tx.bankAccount?.name && tx.bankAccount.name !== tx.bankAccount.accountNumber
+                            ? tx.bankAccount.name
+                            : (tx.bankAccount?.bankName || tx.bankAccount?.name || "—")}
+                        </div>
+                        {tx.bankAccount?.bankName && tx.bankAccount.name !== tx.bankAccount.accountNumber && (
+                          <div className="text-[10px] text-gray-400">{tx.bankAccount.bankName}</div>
+                        )}
                       </td>
                       <td className="py-3.5 px-5 max-w-[280px]">
                         <div className="flex items-center gap-1.5">

@@ -1,11 +1,10 @@
 "use client";
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Calendar, Lock, Archive, FileText, Trash2, X } from "lucide-react";
+import { Calendar, Lock, FileText, Trash2, X } from "lucide-react";
 import ClientLayout from "@/components/Layout/ClientLayout";
 import { periodLabel } from "@/lib/format";
 import ClosingWizard from "./ClosingWizard";
-import Step1Import from "./steps/Step1Import";
 
 interface Period {
   id: string;
@@ -27,11 +26,9 @@ function ClosingPageContent() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
   const [loading, setLoading] = useState(true);
   const [closureStats, setClosureStats] = useState<any | null>(null);
-  const [finalizingHistorical, setFinalizingHistorical] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createYear, setCreateYear] = useState(new Date().getFullYear());
   const [createMonth, setCreateMonth] = useState(new Date().getMonth() + 1);
-  const [createMode, setCreateMode] = useState<"ACTIVE" | "HISTORICAL">("ACTIVE");
   const [creating, setCreating] = useState(false);
   const [deletingPeriod, setDeletingPeriod] = useState<Period | null>(null);
   const [periodDeleteLoading, setPeriodDeleteLoading] = useState(false);
@@ -74,7 +71,7 @@ function ClosingPageContent() {
       const res = await fetch("/v2/api/periods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ year: createYear, month: createMonth, mode: createMode })
+        body: JSON.stringify({ year: createYear, month: createMonth, mode: "ACTIVE" })
       });
       if (res.ok) {
         const newPeriod = await res.json();
@@ -154,25 +151,6 @@ function ClosingPageContent() {
     }
   };
 
-  const handleFinalizeHistorical = async () => {
-    if (!selectedPeriod) return;
-    setFinalizingHistorical(true);
-    try {
-      const res = await fetch(`/v2/api/closing/${selectedPeriod.id}/finalize`, { method: "POST" });
-      if (res.ok) {
-        alert("Исторический период успешно закрыт и архивирован!");
-        loadPeriods();
-      } else {
-        const data = await res.json();
-        alert(`Ошибка закрытия: ${data.error}`);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setFinalizingHistorical(false);
-    }
-  };
-
   if (loading) {
     return (
       <ClientLayout>
@@ -209,7 +187,7 @@ function ClosingPageContent() {
               >
                 {periods.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {periodLabel(p.year, p.month)} ({p.status === "CLOSED" ? "Закрыт" : "Открыт"} · {p.mode === "HISTORICAL" ? "Архив" : "Активный"})
+                    {periodLabel(p.year, p.month)} ({p.status === "CLOSED" ? "Закрыт" : "Открыт"})
                   </option>
                 ))}
               </select>
@@ -283,17 +261,6 @@ function ClosingPageContent() {
                 </select>
               </div>
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Тип периода</label>
-              <select
-                value={createMode}
-                onChange={(e) => setCreateMode(e.target.value as "ACTIVE" | "HISTORICAL")}
-                className="w-full border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-black"
-              >
-                <option value="ACTIVE">Активный (полный wizard)</option>
-                <option value="HISTORICAL">Архивный (только импорт + закрытие)</option>
-              </select>
-            </div>
             <div className="flex gap-3 pt-1">
               <button
                 onClick={() => setShowCreateForm(false)}
@@ -343,29 +310,6 @@ function ClosingPageContent() {
                   >
                     Следующий месяц →
                   </a>
-                </div>
-              </div>
-            ) : selectedPeriod.mode === "HISTORICAL" ? (
-              <div className="bg-white border border-gray-200 p-6 shadow-sm space-y-6">
-                <div className="p-3 bg-gray-50 border border-gray-200 text-xs font-semibold text-gray-700 flex items-center gap-2">
-                  <Archive size={14} className="text-gray-500 shrink-0" />
-                  Этот период является архивным (HISTORICAL). Доступен только импорт выписок.
-                </div>
-                <Step1Import
-                  periodId={selectedPeriod.id}
-                  onNext={() => {}}
-                  stats={closureStats}
-                  onRefreshStats={loadStats}
-                />
-                <div className="flex justify-end pt-4 border-t border-gray-100">
-                  <button
-                    onClick={handleFinalizeHistorical}
-                    disabled={finalizingHistorical}
-                    className="flex items-center gap-1.5 bg-black text-white text-xs font-bold py-2 px-6 hover:opacity-80 transition-opacity disabled:opacity-50"
-                  >
-                    <Lock size={13} />
-                    {finalizingHistorical ? "Закрываем..." : "Зафиксировать и перевести в архив"}
-                  </button>
                 </div>
               </div>
             ) : (

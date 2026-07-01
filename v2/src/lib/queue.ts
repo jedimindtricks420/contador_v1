@@ -9,7 +9,8 @@ export async function getClassificationJob(periodId: string) {
 }
 
 export async function startClassificationJob(orgId: string, periodId: string): Promise<string> {
-  const jobId = periodId;
+  // "ALL" is not a real period ID — make it org-scoped to prevent cross-tenant collision
+  const jobId = periodId === "ALL" ? `${orgId}_ALL` : periodId;
 
   // Prevent double-run: if a job is already running return its ID so UI polls it
   const existingJob = await prisma.classificationJob.findUnique({ where: { id: jobId } });

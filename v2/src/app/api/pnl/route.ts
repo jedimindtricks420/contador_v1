@@ -77,7 +77,9 @@ export async function GET(req: NextRequest) {
     const line080 = td("9440");
     const line040 = line050.plus(line060).plus(line070).plus(line080);
 
-    const line090 = tcMany("9310","9320","9330","9340","9350","9360","9370","9380","9390");
+    // 9310/9330-9390 — доходы (кредитовые); 9320 — убыток от выбытия ОС (дебетовый, вычитается)
+    const line090 = tcMany("9310","9330","9340","9350","9360","9370","9380","9390")
+      .minus(tdMany("9320"));
     const line100 = line030.minus(line040).plus(line090);
 
     const line120 = tc("9520");
@@ -183,8 +185,9 @@ export async function GET(req: NextRequest) {
                   .minus(mtd(m,"9040")).minus(mtd(m,"9050"));
       const cogs = mtd(m,"9110").plus(mtd(m,"9120")).plus(mtd(m,"9130"));
       const exp  = mtd(m,"9410").plus(mtd(m,"9420")).plus(mtd(m,"9430")).plus(mtd(m,"9440"));
-      const oi   = ["9310","9320","9330","9340","9350","9360","9370","9380","9390"]
-                     .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0));
+      const oi   = ["9310","9330","9340","9350","9360","9370","9380","9390"]
+                     .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0))
+                     .minus(mtd(m,"9320"));
       const fin  = ["9510","9520","9530","9540","9550","9560","9590"]
                      .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0));
       const finExp = mtd(m,"9610").plus(mtd(m,"9620")).plus(mtd(m,"9630")).plus(mtd(m,"9690"));

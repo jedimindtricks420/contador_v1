@@ -90,11 +90,9 @@ export async function POST(req: NextRequest) {
       const month = tx.date.getMonth() + 1;
 
       // Find or create accounting period (upsert is race-safe: @@unique([orgId, year, month]))
-      const now = new Date();
-      const isPast = year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1);
       const period = await prisma.period.upsert({
         where: { orgId_year_month: { orgId, year, month } },
-        create: { orgId, year, month, mode: isPast ? "HISTORICAL" : "ACTIVE", status: "OPEN" },
+        create: { orgId, year, month, mode: "ACTIVE", status: "OPEN" },
         update: {}
       });
 
