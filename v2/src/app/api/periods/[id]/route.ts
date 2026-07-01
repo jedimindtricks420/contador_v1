@@ -30,7 +30,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     await prisma.document.deleteMany({ where: { periodId: id, orgId } });
     await prisma.stagedTransaction.deleteMany({ where: { periodId: id, orgId } });
     await prisma.taxCalendarEvent.deleteMany({ where: { periodId: id, orgId } });
-    await prisma.period.delete({ where: { id } });
+    await prisma.period.delete({ where: { id, orgId } });
 
     return NextResponse.json({ deleted: true });
   } catch (err: any) {

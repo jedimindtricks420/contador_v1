@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveClosingState, getClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
-import { ACCOUNTS } from "@/lib/constants";
+import { ACCOUNTS, IMPORT } from "@/lib/constants";
 
 export async function POST(
   req: NextRequest,
@@ -107,7 +107,7 @@ export async function POST(
               };
               
               if (esf.direction === "REVENUE") {
-                if (esf.matchedAccountCode === ACCOUNTS.ADVANCE_RECEIVED && (grossAmount - esf.matchedAmount > 0) && (grossAmount - esf.matchedAmount < grossAmount * 0.15)) {
+                if (esf.matchedAccountCode === ACCOUNTS.ADVANCE_RECEIVED && (grossAmount - esf.matchedAmount > 0) && (grossAmount - esf.matchedAmount < grossAmount * IMPORT.MARKETPLACE_COMMISSION_TOLERANCE)) {
                   docTypeCode = "MARKETPLACE_REVENUE";
                   payload = {
                     netAmount: esf.matchedAmount,

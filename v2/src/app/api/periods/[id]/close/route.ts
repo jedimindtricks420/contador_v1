@@ -66,7 +66,7 @@ export async function POST(
     if (updated.count === 0) {
       return NextResponse.json({ error: "Период не найден" }, { status: 404 });
     }
-    const closedPeriod = await prisma.period.findUnique({ where: { id } });
+    const closedPeriod = await prisma.period.findFirst({ where: { id, orgId } });
 
     return NextResponse.json(closedPeriod);
   } catch (err: any) {

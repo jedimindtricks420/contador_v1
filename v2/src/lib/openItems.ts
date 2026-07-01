@@ -5,7 +5,7 @@ import { ACCOUNTS, RISK_DAYS } from "./constants";
  * Calculates the deadline for a buffer account open position.
  * - 4220 (Accountable): 10 days
  * - 4310, 6310, 6990 (Advances / Unidentified): 30 days
- * - 5830, 6820 (Deposits / Founder loans): 365 days
+ * - 4890, 6820 (Deposits / Founder loans): 365 days
  */
 export function getRiskDeadline(accountCode: string, dateOpened: Date): Date {
   const date = new Date(dateOpened);

@@ -89,15 +89,14 @@ export async function POST(req: NextRequest) {
       const year = tx.date.getFullYear();
       const month = tx.date.getMonth() + 1;
 
-      // Find or create accounting period
-      let period = await prisma.period.findFirst({ where: { orgId, year, month } });
-      if (!period) {
-        const now = new Date();
-        const isPast = year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1);
-        period = await prisma.period.create({
-          data: { orgId, year, month, mode: isPast ? "HISTORICAL" : "ACTIVE", status: "OPEN" },
-        });
-      }
+      // Find or create accounting period (upsert is race-safe: @@unique([orgId, year, month]))
+      const now = new Date();
+      const isPast = year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1);
+      const period = await prisma.period.upsert({
+        where: { orgId_year_month: { orgId, year, month } },
+        create: { orgId, year, month, mode: isPast ? "HISTORICAL" : "ACTIVE", status: "OPEN" },
+        update: {}
+      });
 
       // Skip transactions whose period is already closed — they cannot be classified
       if (period.status === "CLOSED") {

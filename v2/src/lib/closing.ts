@@ -6,8 +6,8 @@ import {
   REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, EXPENSE_ACCOUNT_CODES, CLOSING
 } from "./constants";
 
-// Net salary multiplier: employee receives (1 - NDFL_total) of gross
-const NET_SALARY_RATE = 1 - TAX_RATES.NDFL; // 0.88
+// Net salary multiplier: employee receives gross minus NDFL (12%) minus INPS (0.1%)
+const NET_SALARY_RATE = 1 - TAX_RATES.NDFL - TAX_RATES.INPS; // 0.879
 
 const globalForClosing = globalThis as unknown as { closingStates: Map<string, any> };
 if (!globalForClosing.closingStates) {
@@ -81,46 +81,7 @@ export async function finalizePeriod(
       where: { orgId, periodId, type: { code: "SALARY_ACCRUAL" }, status: "POSTED" }
     });
     if (!existingSalary && Number(accruals.salaryAmount) > 0) {
-      // Always upsert so the template stays current if rates change
-      const salaryType = await tx.documentType.upsert({
-        where: { code: "SALARY_ACCRUAL" },
-        update: {
-          postingTemplate: {
-            lines: [
-              // Брутто ЗП: Дт 9420 — Кт 6710
-              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "salaryAmount" },
-              { accountCode: ACCOUNTS.PAYROLL, side: "credit", expression: "salaryAmount" },
-              // ИНПС 0.1% (из зарплаты работника): Дт 6710 — Кт 6530
-              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
-              { accountCode: ACCOUNTS.INPS_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
-              // НДФЛ в бюджет 11.9% (из зарплаты работника): Дт 6710 — Кт 6410
-              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
-              { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
-              // Соцналог 12% (расход работодателя): Дт 9420 — Кт 6520
-              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
-              { accountCode: ACCOUNTS.SOCIAL_TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` }
-            ],
-            opensItem: false
-          }
-        },
-        create: {
-          code: "SALARY_ACCRUAL",
-          name: "Начисление заработной платы и налогов ФОТ",
-          postingTemplate: {
-            lines: [
-              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "salaryAmount" },
-              { accountCode: ACCOUNTS.PAYROLL, side: "credit", expression: "salaryAmount" },
-              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
-              { accountCode: ACCOUNTS.INPS_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
-              { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
-              { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
-              { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
-              { accountCode: ACCOUNTS.SOCIAL_TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` }
-            ],
-            opensItem: false
-          }
-        }
-      });
+      const salaryType = await tx.documentType.findUniqueOrThrow({ where: { code: "SALARY_ACCRUAL" } });
       const salaryDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: salaryType.id, date: accrualDate, status: "POSTED",
@@ -164,22 +125,7 @@ export async function finalizePeriod(
       where: { orgId, periodId, type: { code: "DEPRECIATION_ACCRUAL" }, status: "POSTED" }
     });
     if (!existingDep && Number(accruals.depreciationAmount) > 0) {
-      let depType = await tx.documentType.findUnique({ where: { code: "DEPRECIATION_ACCRUAL" } });
-      if (!depType) {
-        depType = await tx.documentType.create({
-          data: {
-            code: "DEPRECIATION_ACCRUAL",
-            name: "Начисление амортизации основных средств",
-            postingTemplate: {
-              lines: [
-                { accountCode: ACCOUNTS.EXPENSE_OTHER, side: "debit", expression: "depreciationAmount" },
-                { accountCode: ACCOUNTS.DEPRECIATION_ACCUM, side: "credit", expression: "depreciationAmount" }
-              ],
-              opensItem: false
-            }
-          }
-        });
-      }
+      const depType = await tx.documentType.findUniqueOrThrow({ where: { code: "DEPRECIATION_ACCRUAL" } });
       const depDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: depType.id, date: accrualDate, status: "POSTED",
@@ -194,22 +140,7 @@ export async function finalizePeriod(
       where: { orgId, periodId, type: { code: "RENT_ACCRUAL" }, status: "POSTED" }
     });
     if (!existingRent && Number(accruals.rentAmount) > 0) {
-      const rentTemplate = {
-        lines: [
-          { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "rentAmount" },
-          { accountCode: ACCOUNTS.PAYABLES, side: "credit", expression: "rentAmount" }
-        ],
-        opensItem: false
-      };
-      const rentType = await tx.documentType.upsert({
-        where: { code: "RENT_ACCRUAL" },
-        update: { postingTemplate: rentTemplate },
-        create: {
-          code: "RENT_ACCRUAL",
-          name: "Начисление аренды (неденежное)",
-          postingTemplate: rentTemplate
-        }
-      });
+      const rentType = await tx.documentType.findUniqueOrThrow({ where: { code: "RENT_ACCRUAL" } });
       const rentDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: rentType.id, date: accrualDate, status: "POSTED",
@@ -225,26 +156,7 @@ export async function finalizePeriod(
       where: { orgId, periodId, type: { code: "FX_DIFFERENCE" }, status: "POSTED" }
     });
     if (!existingFx && Number(fxDiff.difference) !== 0) {
-      let fxType = await tx.documentType.findUnique({ where: { code: "FX_DIFFERENCE" } });
-      if (!fxType) {
-        fxType = await tx.documentType.create({
-          data: {
-            code: "FX_DIFFERENCE",
-            name: "Курсовая разница валютных счетов",
-            postingTemplate: {
-              lines: [
-                // Положительная разница: Дт 5210 — Кт 9540
-                { accountCode: ACCOUNTS.BANK_USD, side: "debit", expression: "fxDifference", condition: "fxDifference > 0" },
-                { accountCode: ACCOUNTS.FX_INCOME, side: "credit", expression: "fxDifference", condition: "fxDifference > 0" },
-                // Отрицательная разница: Дт 9620 — Кт 5210
-                { accountCode: ACCOUNTS.FX_EXPENSE, side: "debit", expression: "-fxDifference", condition: "fxDifference < 0" },
-                { accountCode: ACCOUNTS.BANK_USD, side: "credit", expression: "-fxDifference", condition: "fxDifference < 0" }
-              ],
-              opensItem: false
-            }
-          }
-        });
-      }
+      const fxType = await tx.documentType.findUniqueOrThrow({ where: { code: "FX_DIFFERENCE" } });
       const fxDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: fxType.id, date: accrualDate, status: "POSTED",
@@ -322,22 +234,7 @@ export async function finalizePeriod(
         const profitTaxAmt = netProfit.mul(TAX_RATES.PROFIT_TAX);
         taxes.push({ type: "PROFIT_TAX", amount: profitTaxAmt, dueDate: nextMonth20th });
 
-        let ptaxType = await tx.documentType.findUnique({ where: { code: "PROFIT_TAX_ACCRUAL" } });
-        if (!ptaxType) {
-          ptaxType = await tx.documentType.create({
-            data: {
-              code: "PROFIT_TAX_ACCRUAL",
-              name: "Начисление налога на прибыль",
-              postingTemplate: {
-                lines: [
-                  { accountCode: ACCOUNTS.PROFIT_TAX_EXPENSE, side: "debit", expression: "taxAmount" },
-                  { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: "taxAmount" }
-                ],
-                opensItem: false
-              }
-            }
-          });
-        }
+        const ptaxType = await tx.documentType.findUniqueOrThrow({ where: { code: "PROFIT_TAX_ACCRUAL" } });
         const ptaxDoc = await tx.document.create({
           data: {
             orgId, periodId, typeId: ptaxType.id, date: accrualDate, status: "POSTED",
@@ -347,7 +244,7 @@ export async function finalizePeriod(
         await postDocument(ptaxDoc.id, tx, userId);
       }
     } else {
-      // E3. Налог с оборота: проводка Дт 9810 — Кт 6410
+      // E3. Налог с оборота: проводка Дт 9820 — Кт 6410
       const rate = new Decimal((org as any).turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX);
       const turnoverTaxAmt = totalRevenue.mul(rate);
       taxes.push({ type: "TURNOVER_TAX", amount: turnoverTaxAmt, dueDate: nextMonth20th });
@@ -356,23 +253,7 @@ export async function finalizePeriod(
         where: { orgId, periodId, type: { code: "TURNOVER_TAX_ACCRUAL" }, status: "POSTED" }
       });
       if (!existingTtax && turnoverTaxAmt.gt(0)) {
-        // Create the document type if it was not seeded yet (mirrors PROFIT_TAX_ACCRUAL pattern)
-        let ttaxType = await tx.documentType.findFirst({ where: { code: "TURNOVER_TAX_ACCRUAL" } });
-        if (!ttaxType) {
-          ttaxType = await tx.documentType.create({
-            data: {
-              code: "TURNOVER_TAX_ACCRUAL",
-              name: "Начисление налога с оборота",
-              postingTemplate: {
-                lines: [
-                  { accountCode: ACCOUNTS.PROFIT_TAX_EXPENSE, side: "debit",  expression: "taxAmount" },
-                  { accountCode: ACCOUNTS.TAX_PAYABLE,        side: "credit", expression: "taxAmount" }
-                ],
-                opensItem: false
-              }
-            }
-          });
-        }
+        const ttaxType = await tx.documentType.findUniqueOrThrow({ where: { code: "TURNOVER_TAX_ACCRUAL" } });
         const ttaxDoc = await tx.document.create({
           data: {
             orgId, periodId, typeId: ttaxType.id, date: accrualDate, status: "POSTED",

@@ -22,7 +22,7 @@ export async function PUT(
     }
 
     const updated = await prisma.rule.update({
-      where: { id },
+      where: { id, orgId },
       data: {
         matchType: matchType || undefined,
         matchValue: matchValue || undefined,
@@ -56,7 +56,7 @@ export async function DELETE(
     }
 
     await prisma.rule.delete({
-      where: { id }
+      where: { id, orgId }
     });
 
     clearRulesCache(orgId);

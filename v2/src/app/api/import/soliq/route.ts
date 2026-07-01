@@ -6,18 +6,12 @@ import prisma from "@/lib/prisma";
 import { parseSoliqExcel } from "@/lib/parsers/parserSoliq";
 import { postDocument } from "@/lib/posting/postingEngine";
 import Decimal from "decimal.js";
-import { MARKETPLACE_INNS, ACCOUNTS } from "@/lib/constants";
+import { MARKETPLACE_INNS, ACCOUNTS, IMPORT } from "@/lib/constants";
 
 function isMarketplace(inn?: string, name?: string): boolean {
   if (inn && MARKETPLACE_INNS.includes(inn)) return true;
   const n = (name || "").toLowerCase();
-  return (
-    n.includes("click") ||
-    n.includes("payme") ||
-    n.includes("uzum") ||
-    n.includes("paynet") ||
-    n.includes("inspired")
-  );
+  return IMPORT.MARKETPLACE_NAME_KEYWORDS.some(kw => n.includes(kw));
 }
 
 // Normalise an organisation name for fuzzy comparison.
@@ -56,7 +50,7 @@ function nameSimilarity(a: string, b: string): number {
   return (2 * intersection) / (Object.keys(ba).length + Object.keys(bb).length - 1 || 1);
 }
 
-const FUZZY_THRESHOLD = 0.5; // ≥ 50% bigram similarity → treat as same counterparty
+const FUZZY_THRESHOLD = IMPORT.FUZZY_NAME_THRESHOLD;
 
 export async function POST(req: NextRequest) {
   try {
@@ -124,7 +118,7 @@ export async function POST(req: NextRequest) {
 
         // Marketplace: amount tolerance up to 15% (platform commission deducted before remittance)
         if (esf.direction === "REVENUE" && effectiveIsMarket && item.account.code === ACCOUNTS.ADVANCE_RECEIVED) {
-          return itemAmt <= grossAmount && (grossAmount - itemAmt) < grossAmount * 0.15;
+          return itemAmt <= grossAmount && (grossAmount - itemAmt) < grossAmount * IMPORT.MARKETPLACE_COMMISSION_TOLERANCE;
         }
 
         return Math.abs(itemAmt - grossAmount) < 1.01 || Math.abs(itemAmt - esf.amount) < 1.01;

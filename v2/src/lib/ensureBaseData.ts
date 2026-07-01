@@ -8,7 +8,7 @@ const baseDocumentTypes = [
   {
     code: "REVENUE_VAT",
     name: "Поступление от покупателя (с НДС)",
-    mode: "HYBRID",
+    mode: "MANUAL_ONLY",
     template: {
       lines: [
         { accountCode: "5110", side: "debit", expression: "amount" },
@@ -22,7 +22,7 @@ const baseDocumentTypes = [
   {
     code: "REVENUE_NO_VAT",
     name: "Поступление от покупателя (без НДС)",
-    mode: "HYBRID",
+    mode: "MANUAL_ONLY",
     template: {
       lines: [
         { accountCode: "5110", side: "debit", expression: "amount" },
@@ -56,6 +56,7 @@ const baseDocumentTypes = [
         { accountCode: "4010", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "4010",
       requiresCounterparty: true
     }
   },
@@ -69,6 +70,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6010",
       requiresCounterparty: true
     }
   },
@@ -82,6 +84,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6010",
       requiresCounterparty: true
     }
   },
@@ -95,6 +98,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6010",
       requiresCounterparty: true
     }
   },
@@ -108,6 +112,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6010",
       requiresCounterparty: true
     }
   },
@@ -121,6 +126,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6010",
       requiresCounterparty: true
     }
   },
@@ -263,11 +269,11 @@ const baseDocumentTypes = [
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "5830", side: "debit", expression: "amount" },
+        { accountCode: "4890", side: "debit", expression: "amount" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: true,
-      itemAccountCode: "5830",
+      itemAccountCode: "4890",
       requiresCounterparty: true
     }
   },
@@ -283,7 +289,7 @@ const baseDocumentTypes = [
         // ИНПС 0.1% (из зарплаты работника): Дт 6710 — Кт 6530
         { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
         { accountCode: ACCOUNTS.INPS_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
-        // НДФЛ в бюджет 11.9% (из зарплаты работника): Дт 6710 — Кт 6410
+        // НДФЛ в бюджет 12% (из зарплаты работника): Дт 6710 — Кт 6410
         { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
         { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
         // Соцналог 12% (расход работодателя): Дт 9420 — Кт 6520
@@ -300,7 +306,7 @@ const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: ACCOUNTS.EXPENSE_OTHER, side: "debit", expression: "depreciationAmount" },
+        { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "depreciationAmount" },
         { accountCode: ACCOUNTS.DEPRECIATION_ACCUM, side: "credit", expression: "depreciationAmount" }
       ],
       opensItem: false,
@@ -384,6 +390,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6820",
       requiresCounterparty: true
     }
   },
@@ -416,7 +423,7 @@ const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9810", side: "debit", expression: "taxAmount" },
+        { accountCode: "9820", side: "debit", expression: "taxAmount" },
         { accountCode: "6410", side: "credit", expression: "taxAmount" }
       ],
       opensItem: false,
@@ -433,7 +440,7 @@ const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9120", side: "debit", expression: "amount - vatAmount" },
+        { accountCode: "2910", side: "debit", expression: "amount - vatAmount" },
         { accountCode: "4410", side: "debit", expression: "vatAmount", condition: "vatAmount > 0" },
         { accountCode: "6010", side: "credit", expression: "amount" }
       ],
@@ -448,11 +455,12 @@ const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9120", side: "debit", expression: "amount - vatAmount" },
+        { accountCode: "2910", side: "debit", expression: "amount - vatAmount" },
         { accountCode: "4410", side: "debit", expression: "vatAmount", condition: "vatAmount > 0" },
         { accountCode: "4310", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "4310",
       requiresCounterparty: true
     }
   },
@@ -482,6 +490,7 @@ const baseDocumentTypes = [
         { accountCode: "4310", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "4310",
       requiresCounterparty: true
     }
   },
@@ -598,6 +607,7 @@ const baseDocumentTypes = [
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6810",
       requiresCounterparty: true
     }
   },
@@ -647,15 +657,15 @@ const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "MARKETPLACE_INCOME",
-    name: "Поступление от маркетплейса (аванс до подтверждения ЭСФ)",
+    name: "Поступление от маркетплейса (расчёты с агрегатором)",
     mode: "BANK_AUTO",
     template: {
       lines: [
         { accountCode: "5110", side: "debit", expression: "amount" },
-        { accountCode: "6310", side: "credit", expression: "amount" }
+        { accountCode: "4890", side: "credit", expression: "amount" }
       ],
       opensItem: true,
-      itemAccountCode: "6310",
+      itemAccountCode: "4890",
       requiresCounterparty: true
     }
   },
@@ -745,11 +755,11 @@ const baseDocumentTypes = [
   },
   {
     code: "INSURANCE_PAYMENT",
-    name: "Страховой взнос",
+    name: "Страховой взнос (предоплата)",
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "3120", side: "debit", expression: "amount" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
@@ -797,12 +807,129 @@ const baseDocumentTypes = [
   },
 
   {
-    code: "MARKETPLACE_REVENUE",
-    name: "Выручка маркетплейса (зачет аванса и комиссия)",
+    code: "RENT_PAYMENT",
+    name: "Оплата аренды (после начисления)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "6010", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "ACCOUNTABLE_GENERAL",
+    name: "Подотчётные суммы (общехозяйственные расходы)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "4230", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "4230",
+      requiresCounterparty: false
+    }
+  },
+  // ────────────────────────────────────────────────────────────────
+  // СКЛАДСКОЙ УЧЁТ ТОВАРОВ
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "GOODS_SOLD",
+    name: "Списание себестоимости реализованных товаров",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "6310", side: "debit", expression: "netAmount" },
+        { accountCode: "9120", side: "debit", expression: "amount" },
+        { accountCode: "2910", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ВВОД ОС В ЭКСПЛУАТАЦИЮ
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "FIXED_ASSET_COMMISSIONING",
+    name: "Ввод основного средства в эксплуатацию",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // assetAccountCode из payload: 0130/0140/0150/0160/0190 и т.д.
+        { accountCode: "$assetAccountCode", side: "debit", expression: "acquisitionCost" },
+        { accountCode: "0820", side: "credit", expression: "acquisitionCost" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ПРИЗНАНИЕ РЕЗУЛЬТАТА ОТ ВЫБЫТИЯ ОС
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "FIXED_ASSET_DISPOSAL_RESULT",
+    name: "Признание прибыли/убытка от выбытия ОС (закрытие 9210)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Прибыль: выручка > остаточная стоимость → Дт 9210 — Кт 9310
+        { accountCode: "9210", side: "debit",  expression: "profit", condition: "profit > 0" },
+        { accountCode: "9310", side: "credit", expression: "profit", condition: "profit > 0" },
+        // Убыток: остаточная стоимость > выручка → Дт 9320 — Кт 9210
+        { accountCode: "9320", side: "debit",  expression: "loss",   condition: "loss > 0" },
+        { accountCode: "9210", side: "credit", expression: "loss",   condition: "loss > 0" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ЗАЧЁТ НДС
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "VAT_OFFSET",
+    name: "Зачёт входящего НДС в счёт исходящего (4410 → 6410)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6410", side: "debit",  expression: "vatAmount" },
+        { accountCode: "4410", side: "credit", expression: "vatAmount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ЕЖЕМЕСЯЧНОЕ СПИСАНИЕ СТРАХОВКИ
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "INSURANCE_WRITEOFF",
+    name: "Списание предоплаченной страховки по периодам",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit",  expression: "amount" },
+        { accountCode: "3120", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  {
+    code: "MARKETPLACE_REVENUE",
+    name: "Выручка маркетплейса (зачет расчётов с агрегатором и комиссия)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "4890", side: "debit", expression: "netAmount" },
         { accountCode: "9430", side: "debit", expression: "commissionAmount" },
         { accountCode: "9030", side: "credit", expression: "amount - vatAmount" },
         { accountCode: "6410", side: "credit", expression: "vatAmount", condition: "vatAmount > 0" }

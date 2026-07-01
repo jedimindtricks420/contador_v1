@@ -200,7 +200,7 @@ export async function postDocument(
       if (toClose) {
         await tx.openItem.update({
           where: { id: toClose.id },
-          data: { status: "CLOSED", dateClosed: doc.date }
+          data: { status: "CLOSED", dateClosed: doc.date, closingDocumentId: doc.id }
         });
       }
     }
@@ -307,13 +307,20 @@ export async function voidDocument(
     where: { documentId }
   });
 
-  // 5. Close related OpenItems
+  // 5. Close related OpenItems opened by this document
   await tx.openItem.updateMany({
     where: { openingDocumentId: documentId, status: "OPEN" },
     data: {
       status: "CLOSED",
       dateClosed: new Date()
     }
+  });
+
+  // 5b-revert. Re-open any items that were auto-closed by this document (closesOpenItemByAccount).
+  // After void, those items are no longer settled and must go back to OPEN status.
+  await tx.openItem.updateMany({
+    where: { closingDocumentId: documentId },
+    data: { status: "OPEN", dateClosed: null, closingDocumentId: null }
   });
 
   // 5b. Return the bank transaction to the clarification queue if this document

@@ -1,7 +1,7 @@
 // Uzbekistan tax rates (NSBU / Tax Code)
 export const TAX_RATES = {
   NDFL: 0.12,          // Personal income tax total (НДФЛ = НДФЛ_BUDGET + INPS)
-  NDFL_BUDGET: 0.119,  // НДФЛ to state budget (11.9%)
+  NDFL_BUDGET: 0.12,   // НДФЛ to state budget (12%)
   INPS: 0.001,         // Individual pension savings (ИНПС 0.1% → Народный банк)
   SOCIAL_TAX: 0.12,    // Social tax paid by employer (соцналог)
   VAT: 0.12,           // Value-added tax (НДС)
@@ -14,7 +14,7 @@ export const ACCOUNTS = {
   BANK_UZS: "5110",
   BANK_USD: "5210",
   TRANSIT: "5710",
-  DEPOSIT: "5830",
+  DEPOSIT: "4890",
   RECEIVABLES: "4010",
   ADVANCE_PAID_GOODS: "4310",
   ADVANCE_PAID_TRAVEL: "4220",
@@ -80,7 +80,7 @@ export const EXPENSE_ACCOUNT_CODES = [
 export const RISK_DAYS = {
   ACCOUNTABLE: 10,        // 4220 — travel advances
   DEFAULT: 30,            // 4310, 6310, 6990 — trade advances / unidentified
-  LONG_TERM: 365,         // 5830, 6820 — deposits, founder loans
+  LONG_TERM: 365,         // 4890, 6820 — deposits, founder loans
 } as const;
 
 // Month-closing defaults
@@ -106,6 +106,13 @@ export const AI = {
   CONFIDENCE_THRESHOLD: 70,
   BATCH_SIZE: 100,
   get MODEL() { return process.env.OPENAI_MODEL || "gpt-4o-mini"; },
+} as const;
+
+// Import / reconciliation thresholds
+export const IMPORT = {
+  MARKETPLACE_COMMISSION_TOLERANCE: 0.15, // max gap between ESF gross and bank amount (marketplace platform commission)
+  FUZZY_NAME_THRESHOLD: 0.5,              // min bigram similarity to treat two names as same counterparty
+  MARKETPLACE_NAME_KEYWORDS: ["click", "payme", "uzum", "paynet", "inspired"] as string[],
 } as const;
 
 // Dashboard
