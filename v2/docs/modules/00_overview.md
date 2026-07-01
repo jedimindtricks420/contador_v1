@@ -30,6 +30,7 @@
 | G. Бухгалтерские отчёты | [module_G_reports.md](module_G_reports.md) | ✅ Реализован |
 | K. Профиль и биллинг | [module_K_billing.md](module_K_billing.md) | ✅ Реализован |
 | H. Движок проводок | [module_H_posting_engine.md](module_H_posting_engine.md) | ✅ Реализован |
+| L. Справочник категорий (DocumentType) | [module_DOCUMENT_TYPES.md](module_DOCUMENT_TYPES.md) | ✅ Реализован |
 | I. Авторизация и организации | [module_I_auth.md](module_I_auth.md) | ✅ Реализован |
 | J. Настройки и справочники | [module_J_settings.md](module_J_settings.md) | ✅ Реализован |
 
