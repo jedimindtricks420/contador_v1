@@ -435,7 +435,7 @@ export const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9820", side: "debit", expression: "taxAmount" },
+        { accountCode: "9810", side: "debit", expression: "taxAmount" },
         { accountCode: "6410", side: "credit", expression: "taxAmount" }
       ],
       opensItem: false,
@@ -987,11 +987,11 @@ export const baseDocumentTypes = [
   },
 
   {
-    // Payload использует три отдельных явных поля вместо перегруженного "amount":
-    //   grossSaleAmount — полная сумма продажи клиенту (с НДС, до удержания комиссии)
-    //   netAmount       — сумма, фактически поступившая от агрегатора (после комиссии)
-    //   commissionAmount — удержанная комиссия агрегатора
-    // Инвариант баланса проводки: netAmount + commissionAmount == grossSaleAmount
+    // Payload:
+    //   amount            — полная сумма продажи клиенту (с НДС, до удержания комиссии)
+    //   netAmount         — сумма, фактически поступившая от агрегатора (после комиссии)
+    //   commissionAmount  — удержанная комиссия агрегатора
+    // Инвариант баланса проводки: netAmount + commissionAmount == amount
     // (иначе postDocument выбросит ошибку "Несбалансированная проводка").
     code: "MARKETPLACE_REVENUE",
     name: "Выручка маркетплейса (зачет расчётов с агрегатором и комиссия)",
@@ -1000,7 +1000,7 @@ export const baseDocumentTypes = [
       lines: [
         { accountCode: "4890", side: "debit", expression: "netAmount" },
         { accountCode: "9430", side: "debit", expression: "commissionAmount" },
-        { accountCode: "9030", side: "credit", expression: "grossSaleAmount - vatAmount" },
+        { accountCode: "9030", side: "credit", expression: "amount - vatAmount" },
         { accountCode: "6410", side: "credit", expression: "vatAmount", condition: "vatAmount > 0" }
       ],
       opensItem: false,

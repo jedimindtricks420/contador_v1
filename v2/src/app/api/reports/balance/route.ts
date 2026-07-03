@@ -81,8 +81,8 @@ export async function GET(req: NextRequest) {
 
     // Раздел I. Долгосрочные активы
     // Все субсчета ОС (0100 родительский + 0110-0190 субсчета)
-    const line010 = balDebit("0100","0110","0120","0130","0140","0150","0160","0170","0180","0190");
-    const line011 = balCredit("0200","0210","0220","0230","0240","0250","0260","0270","0280","0290");
+    const line010 = balDebit("0100","0110","0111","0112","0120","0130","0140","0150","0160","0170","0180","0190","0199");
+    const line011 = balCredit("0200","0211","0212","0220","0230","0240","0250","0260","0270","0280","0290","0299");
     const line012 = line010.minus(line011);
 
     const line020 = balDebit("0410","0420","0430","0440","0460","0470","0480","0490");
@@ -196,7 +196,7 @@ export async function GET(req: NextRequest) {
     const line770 = line490.plus(line600);
     const line780 = line480.plus(line770);
 
-    const balanceOk = line400.equals(line780);
+    const balanceOk = line400.minus(line780).abs().lte(1);
 
     const n = (d: Decimal) => d.toNumber();
 

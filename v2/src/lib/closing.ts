@@ -319,7 +319,7 @@ export async function finalizePeriod(
         await postDocument(ptaxDoc.id, tx, userId);
       }
     } else {
-      // E3. Налог с оборота: проводка Дт 9820 — Кт 6410
+      // E3. Налог с оборота: проводка Дт 9810 — Кт 6410
       const rate = new Decimal((org as any).turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX);
       const turnoverTaxAmt = totalRevenue.mul(rate);
       taxes.push({ type: "TURNOVER_TAX", amount: turnoverTaxAmt, dueDate: nextMonth20th });
