@@ -205,7 +205,7 @@ export async function POST(
     const nextStep = stepNum + 1;
     await saveClosingState(periodId, { currentStep: nextStep }, orgId);
 
-    const updated = await getClosingState(periodId);
+    const updated = await getClosingState(periodId, orgId);
     return NextResponse.json({ nextStep, summary: updated });
   } catch (err: any) {
     console.error("COMPLETE STEP ERROR:", err);

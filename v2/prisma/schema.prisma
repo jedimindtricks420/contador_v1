@@ -36,6 +36,7 @@ model Organization {
   auditLogs                 AuditLog[]
   bankAccounts              BankAccount[]
   classificationJobs        ClassificationJob[]
+  closingJobs               ClosingJob[]
   counterparties            Counterparty[]
   documents                 Document[]
   openItems                 OpenItem[]
@@ -88,6 +89,7 @@ model Period {
   org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   stagedTransactions StagedTransaction[]
   taxEvents          TaxCalendarEvent[]
+  closingJobs        ClosingJob[]
 
   @@unique([orgId, year, month])
   @@index([orgId])
@@ -176,6 +178,8 @@ model Document {
   payload               Json
   sourceTransactionId   String?
   correctionForPeriodId String?
+  taxCalendarSyncStatus String?             /// PENDING | OK | FAILED — статус синхронизации налогового календаря
+  taxCalendarSyncError  String?             /// Сообщение об ошибке синхронизации (если FAILED)
   org                   Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   period                Period              @relation(fields: [periodId], references: [id])
   type                  DocumentType        @relation(fields: [typeId], references: [id])
@@ -454,4 +458,24 @@ model ClassificationJob {
   org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+}
+
+model ClosingJob {
+  id        String   @id @default(uuid())
+  periodId  String
+  orgId     String
+  status    String   @default("DRAFT") // DRAFT | RUNNING | FAILED | COMPLETED | CANCELLED
+  step      Int      @default(1)
+  data      Json     @default("{}")
+  error     String?
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  period    Period       @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, orgId])
+  @@index([orgId])
+  @@index([status])
 }

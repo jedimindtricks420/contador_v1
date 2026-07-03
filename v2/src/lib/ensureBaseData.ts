@@ -244,14 +244,15 @@ export const baseDocumentTypes = [
   },
   {
     code: "INTERNAL_TRANSFER",
-    name: "Внутренний перевод",
+    name: "Внутренний перевод (исходящий)",
     mode: "BANK_AUTO",
     template: {
       lines: [
         { accountCode: "5710", side: "debit", expression: "amount" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
-      opensItem: false,
+      opensItem: true,
+      itemAccountCode: "5710",
       requiresCounterparty: false
     }
   },
@@ -294,7 +295,7 @@ export const baseDocumentTypes = [
         // ИНПС 0.1% (из зарплаты работника): Дт 6710 — Кт 6530
         { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
         { accountCode: ACCOUNTS.INPS_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
-        // НДФЛ в бюджет 12% (из зарплаты работника): Дт 6710 — Кт 6410
+        // НДФЛ в бюджет 11.9% (из зарплаты работника): Дт 6710 — Кт 6410
         { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
         { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
         // Соцналог 12% (расход работодателя): Дт 9420 — Кт 6520
@@ -712,8 +713,13 @@ export const baseDocumentTypes = [
     mode: "BANK_AUTO",
     template: {
       lines: [
+        // Дебет 5110 всегда на полную сумму поступления
         { accountCode: "5110", side: "debit", expression: "amount" },
-        { accountCode: "9210", side: "credit", expression: "amount" }
+        // Если НДС: 9210 Кт = amount / 1.12, иначе 9210 Кт = amount
+        { accountCode: "9210", side: "credit", expression: `amount / ${vatDivisor}`, condition: "isVatPayer" },
+        { accountCode: "9210", side: "credit", expression: "amount", condition: "isVatPayer == 0" },
+        // Если НДС: 6410 Кт = amount - amount / 1.12
+        { accountCode: "6410", side: "credit", expression: `amount - (amount / ${vatDivisor})`, condition: "isVatPayer" }
       ],
       opensItem: false,
       requiresCounterparty: true
@@ -740,13 +746,18 @@ export const baseDocumentTypes = [
     // Двухшаговая операция по НСБУ: сначала начисление (DIVIDEND_ACCRUAL, 8710→6610),
     // затем оплата отсюда (6610→5110). Прямая проводка 8710→5110 пропускала
     // промежуточное обязательство перед учредителем на счёте 6610.
+    // При выплате удерживается налог 5% (DIVIDEND_TAX) в бюджет.
     code: "DIVIDEND_PAYMENT",
     name: "Выплата дивидендов учредителям",
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "6610", side: "debit", expression: "amount" },
-        { accountCode: "5110", side: "credit", expression: "amount" }
+        // Налог у источника 5%: Дт 6610 — Кт 6410
+        { accountCode: "6610", side: "debit", expression: `amount * ${TAX_RATES.DIVIDEND_TAX}` },
+        { accountCode: "6410", side: "credit", expression: `amount * ${TAX_RATES.DIVIDEND_TAX}` },
+        // Чистая выплата учредителю 95%: Дт 6610 — Кт 5110
+        { accountCode: "6610", side: "debit", expression: `amount * (1 - ${TAX_RATES.DIVIDEND_TAX})` },
+        { accountCode: "5110", side: "credit", expression: `amount * (1 - ${TAX_RATES.DIVIDEND_TAX})` }
       ],
       opensItem: false,
       closesOpenItemByAccount: "6610",
@@ -816,11 +827,27 @@ export const baseDocumentTypes = [
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "9420", side: "debit", expression: "amount" },
+        // monthly: прямое списание в расходы (9420)
+        { accountCode: "9420", side: "debit", expression: "amount", condition: "subscriptionPeriod == 'monthly'" },
+        // annual / multi-month: расходы будущих периодов (3120)
+        { accountCode: "3120", side: "debit", expression: "amount", condition: "subscriptionPeriod != 'monthly'" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
       requiresCounterparty: true
+    }
+  },
+  {
+    code: "SUBSCRIPTION_WRITEOFF",
+    name: "Списание расходов будущих периодов (подписка)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "3120", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
     }
   },
   {
@@ -829,7 +856,12 @@ export const baseDocumentTypes = [
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "9430", side: "debit", expression: "amount" },
+        // import_goods: пошлина включается в стоимость ТМЗ (2910)
+        { accountCode: "2910", side: "debit", expression: "amount", condition: "customsType == 'import_goods'" },
+        // import_asset: пошлина включается в стоимость ОС (0820)
+        { accountCode: "0820", side: "debit", expression: "amount", condition: "customsType == 'import_asset'" },
+        // other / default: пошлина в прочие расходы (9430)
+        { accountCode: "9430", side: "debit", expression: "amount", condition: "customsType != 'import_goods' && customsType != 'import_asset'" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
@@ -1059,17 +1091,18 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     // Закрывает (нетто по дебету/кредиту) транзитный счёт 5710, открытый исходящей
-    // стороной перевода (см. INTERNAL_TRANSFER: Дт 5710 — Кт 5110). Обычная приёмная
-    // сторона межбанковских переводов данной организации — валютный счёт 5210.
+    // стороной перевода (см. INTERNAL_TRANSFER: Дт 5710 — Кт 5110). Счёт назначения
+    // параметризуется через payload.destinationAccountCode (по умолчанию 5210).
     code: "INTERNAL_TRANSFER_RECEIVED",
-    name: "Внутренний перевод (поступление на валютный счёт)",
+    name: "Внутренний перевод (поступление)",
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "5210", side: "debit", expression: "amount" },
+        { accountCode: "$destinationAccountCode", side: "debit", expression: "amount" },
         { accountCode: "5710", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "5710",
       requiresCounterparty: false
     }
   },
@@ -1100,6 +1133,398 @@ export const baseDocumentTypes = [
       lines: [
         { accountCode: "$assetAccountCode", side: "debit", expression: "acquisitionCost" },
         { accountCode: "0830", side: "credit", expression: "acquisitionCost" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ─── STAGE 2: NEW-01..NEW-16 ─────────────────────────────────────────────
+
+  // NEW-01: Начисление амортизации НМА
+  {
+    code: "NMA_AMORTIZATION",
+    name: "Начисление амортизации НМА",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$expenseAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "$amortizationAccountCode", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-02: Снятие наличных с расчётного счёта
+  {
+    code: "CASH_WITHDRAWAL",
+    name: "Снятие наличных с расчётного счёта",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5010", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-03: Взнос наличных на расчётный счёт
+  {
+    code: "CASH_DEPOSIT",
+    name: "Взнос наличных на расчётный счёт",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "5010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-04: Уплата импортного НДС
+  {
+    code: "IMPORT_VAT_PAYMENT",
+    name: "Уплата импортного НДС",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "4410", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-05: Предоплата аренды
+  {
+    code: "PREPAID_RENT_PAYMENT",
+    name: "Предоплата аренды",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "3110", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-06: Признание предоплаченной аренды (ежемесячное списание)
+  {
+    code: "PREPAID_RENT_RECOGNITION",
+    name: "Признание предоплаченной аренды",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "3110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-07: Возврат товара от покупателя
+  {
+    code: "GOODS_RETURNED_FROM_CUSTOMER",
+    name: "Возврат товара от покупателя",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Сторно выручки: Дт 9040 — Кт settlementAccountCode
+        { accountCode: "9040", side: "debit", expression: "amount" },
+        { accountCode: "$settlementAccountCode", side: "credit", expression: "amount" },
+        // Корректировка НДС: Дт 6410 — Кт settlementAccountCode (сторно НДС с выручки)
+        { accountCode: "6410", side: "debit", expression: "vatAmount" },
+        { accountCode: "$settlementAccountCode", side: "credit", expression: "vatAmount" },
+        // Восстановление себестоимости: Дт 2910 — Кт 9120
+        { accountCode: "2910", side: "debit", expression: "costAmount" },
+        { accountCode: "9120", side: "credit", expression: "costAmount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-08: Взаимозачёт с контрагентом
+  {
+    code: "COUNTERPARTY_SETOFF",
+    name: "Взаимозачёт с контрагентом",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6010", side: "debit", expression: "amount" },
+        { accountCode: "4010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-09: Возврат НДС из бюджета
+  {
+    code: "VAT_REFUND_FROM_BUDGET",
+    name: "Возврат НДС из бюджета",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4410", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-10: Оприходование годных остатков после выбытия ОС
+  {
+    code: "FIXED_ASSET_SALVAGE",
+    name: "Оприходование годных остатков после выбытия ОС",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "1090", side: "debit", expression: "amount" },
+        { accountCode: "9210", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-11: Списание кредиторской задолженности
+  {
+    code: "WRITE_OFF_CREDITORS",
+    name: "Списание кредиторской задолженности",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6010", side: "debit", expression: "amount" },
+        { accountCode: "9360", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-12: Корректировочный счёт-фактура выданный (уменьшение)
+  {
+    code: "CORRECTIVE_INVOICE_ISSUED",
+    name: "Корректировочный счёт-фактура выданный",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Сторно выручки
+        { accountCode: "9030", side: "debit", expression: "correctionAmount" },
+        // Сторно НДС
+        { accountCode: "6410", side: "debit", expression: "vatCorrection" },
+        // Уменьшение дебиторки
+        { accountCode: "$settlementAccountCode", side: "credit", expression: "correctionAmount + vatCorrection" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-13: Корректировочный счёт-фактура полученный (уменьшение)
+  {
+    code: "CORRECTIVE_INVOICE_RECEIVED",
+    name: "Корректировочный счёт-фактура полученный",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Уменьшение кредиторки
+        { accountCode: "6010", side: "debit", expression: "correctionAmount + vatCorrection" },
+        // Сторно расхода/актива
+        { accountCode: "$expenseOrAssetAccountCode", side: "credit", expression: "correctionAmount" },
+        // Сторно входящего НДС
+        { accountCode: "4410", side: "credit", expression: "vatCorrection" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-14: Доход от аренды
+  {
+    code: "RENTAL_INCOME_RECEIVED",
+    name: "Доход от аренды",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "9350", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-15: Процентный доход полученный
+  {
+    code: "INTEREST_INCOME_RECEIVED",
+    name: "Процентный доход полученный",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "9530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-16: Аванс по зарплате
+  {
+    code: "SALARY_ADVANCE",
+    name: "Аванс по заработной плате",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "4210", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ─── STAGE 3: NEW-17..NEW-24 ─────────────────────────────────────────────
+
+  // NEW-17: Резерв по сомнительным долгам
+  {
+    code: "PROVISION_FOR_DOUBTFUL_DEBTS",
+    name: "Резерв по сомнительным долгам",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "4910", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-18: Списание безнадёжной дебиторской задолженности
+  {
+    code: "BAD_DEBT_WRITEOFF",
+    name: "Списание безнадёжной дебиторской задолженности",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // При наличии резерва: 4910 Дт — 4010 Кт
+        { accountCode: "4910", side: "debit", expression: "amount", condition: "useReserve" },
+        // Без резерва: 9430 Дт — 4010 Кт
+        { accountCode: "9430", side: "debit", expression: "amount", condition: "!useReserve" },
+        { accountCode: "4010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-19: Товары в пути
+  {
+    code: "GOODS_IN_TRANSIT",
+    name: "Товары в пути",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "2970", side: "debit", expression: "amount" },
+        { accountCode: "$creditAccountCode", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "2970",
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-20: Списание ТМЗ
+  {
+    code: "INVENTORY_WRITEOFF",
+    name: "Списание товарно-материальных запасов",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$expenseAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "$inventoryAccountCode", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-21: Переоценка основных средств
+  {
+    code: "FIXED_ASSET_REVALUATION",
+    name: "Переоценка основных средств",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Дооценка: Дт 01xx — Кт 8510
+        { accountCode: "$assetAccountCode", side: "debit", expression: "increaseAmount", condition: "increaseAmount > 0" },
+        { accountCode: "8510", side: "credit", expression: "increaseAmount", condition: "increaseAmount > 0" },
+        // Корректировка амортизации при дооценке: Дт 8510 — Кт 0200
+        { accountCode: "8510", side: "debit", expression: "deprAdjustment", condition: "deprAdjustment > 0" },
+        { accountCode: "0200", side: "credit", expression: "deprAdjustment", condition: "deprAdjustment > 0" },
+        // Уценка: Дт 9430 — Кт 01xx
+        { accountCode: "9430", side: "debit", expression: "decreaseAmount", condition: "decreaseAmount > 0" },
+        { accountCode: "$assetAccountCode", side: "credit", expression: "decreaseAmount", condition: "decreaseAmount > 0" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-22: Получение долгосрочного займа
+  {
+    code: "LONG_TERM_LOAN_RECEIVED",
+    name: "Получение долгосрочного займа",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "$loanAccountCode", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "$loanAccountCode",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-23: Погашение долгосрочного займа
+  {
+    code: "LONG_TERM_LOAN_REPAYMENT",
+    name: "Погашение долгосрочного займа",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "$loanAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "$loanAccountCode",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-24: Дивидендный доход полученный
+  {
+    code: "DIVIDEND_INCOME_RECEIVED",
+    name: "Дивидендный доход полученный",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "9520", side: "credit", expression: "amount" }
       ],
       opensItem: false,
       requiresCounterparty: false

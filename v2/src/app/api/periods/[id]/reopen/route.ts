@@ -88,8 +88,8 @@ export async function POST(
       });
     });
 
-    // 5. Сбросить in-memory кэш мастера закрытия
-    clearClosingState(id);
+    // 5. Сбросить ClosingJob из БД
+    clearClosingState(id, orgId);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

@@ -47,7 +47,7 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
 
     const turnoverTaxRate = body.turnoverTaxRate !== undefined
-      ? Math.max(0.01, Math.min(0.25, Number(body.turnoverTaxRate)))
+      ? Math.max(0.01, Math.min(0.04, Number(body.turnoverTaxRate)))
       : undefined;
 
     const updatedOrg = await prismaWithOrg(orgId).organization.update({

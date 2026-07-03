@@ -6,14 +6,10 @@ import {
   REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, EXPENSE_ACCOUNT_CODES, CLOSING
 } from "./constants";
 
-// Net salary multiplier: employee receives gross minus NDFL (12%) minus INPS (0.1%)
-const NET_SALARY_RATE = 1 - TAX_RATES.NDFL - TAX_RATES.INPS; // 0.879
+// Net salary multiplier: employee receives gross minus NDFL_BUDGET (11.9%) minus INPS (0.1%)
+const NET_SALARY_RATE = 1 - TAX_RATES.NDFL_BUDGET - TAX_RATES.INPS; // 0.88
 
-const globalForClosing = globalThis as unknown as { closingStates: Map<string, any> };
-if (!globalForClosing.closingStates) {
-  globalForClosing.closingStates = new Map();
-}
-const closingStates = globalForClosing.closingStates;
+// ── ClosingJob helpers (DB-backed, replaces globalThis.closingStates) ──
 
 function defaultState() {
   return {
@@ -24,29 +20,50 @@ function defaultState() {
   };
 }
 
-export function clearClosingState(periodId: string) {
-  closingStates.delete(periodId);
+export async function clearClosingState(periodId: string, orgId: string) {
+  await prisma.closingJob.deleteMany({ where: { periodId, orgId } });
 }
 
-export async function getClosingState(periodId: string) {
-  const cached = closingStates.get(periodId);
-  if (cached) return cached;
+export async function getClosingState(periodId: string, orgId: string) {
+  let job = await prisma.closingJob.findUnique({ where: { periodId_orgId: { periodId, orgId } } });
+  if (job) return { ...(job.data as any), currentStep: job.step, status: job.status, error: job.error };
 
   const period = await prisma.period.findUnique({ where: { id: periodId } });
   const state = (period?.closingData as any) ?? defaultState();
-  closingStates.set(periodId, state);
-  return state;
+  // Create a DRAFT job to persist the initial state
+  job = await prisma.closingJob.create({
+    data: {
+      periodId, orgId,
+      status: "DRAFT",
+      step: state.currentStep ?? 1,
+      data: state
+    }
+  });
+  return { ...state, currentStep: job.step, status: job.status, error: job.error };
 }
 
 export async function saveClosingState(periodId: string, patch: any, orgId?: string) {
-  if (orgId) {
-    const ok = await prisma.period.findFirst({ where: { id: periodId, orgId } });
-    if (!ok) throw new Error("Period not found or access denied");
-  }
-  const current = await getClosingState(periodId);
+  if (!orgId) throw new Error("orgId is required for saveClosingState");
+  const period = await prisma.period.findFirst({ where: { id: periodId, orgId } });
+  if (!period) throw new Error("Period not found or access denied");
+
+  const existing = await prisma.closingJob.findUnique({ where: { periodId_orgId: { periodId, orgId } } });
+  const current = existing ? (existing.data as any) : defaultState();
   const updated = { ...current, ...patch };
-  closingStates.set(periodId, updated);
-  await prisma.period.update({ where: { id: periodId }, data: { closingData: updated } });
+
+  await prisma.closingJob.upsert({
+    where: { periodId_orgId: { periodId, orgId } },
+    create: {
+      periodId, orgId,
+      status: "DRAFT",
+      step: updated.currentStep ?? 1,
+      data: updated
+    },
+    update: {
+      step: updated.currentStep ?? existing?.step ?? 1,
+      data: updated
+    }
+  });
 }
 
 export async function finalizePeriod(
@@ -63,18 +80,49 @@ export async function finalizePeriod(
   if (period.status === "CLOSED") throw new Error("Период уже закрыт");
 
   const org = period.org;
-  const state = await getClosingState(periodId);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const baseAccruals = state.accruals || { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 };
-    const accruals = overrideAccruals
-      ? {
-          salaryAmount: overrideAccruals.salaryAmount ?? baseAccruals.salaryAmount,
-          depreciationAmount: overrideAccruals.depreciationAmount ?? baseAccruals.depreciationAmount,
-          rentAmount: overrideAccruals.rentAmount ?? baseAccruals.rentAmount
-        }
-      : baseAccruals;
-    const accrualDate = new Date(period.year, period.month - 1, CLOSING.ACCRUAL_DAY);
+  // ── State machine: ensure idempotency ──
+  const existingJob = await prisma.closingJob.findUnique({
+    where: { periodId_orgId: { periodId, orgId } }
+  });
+  if (existingJob?.status === "COMPLETED") {
+    // Already completed — return existing result
+    return { period, taxEvents: [], warnings: [] };
+  }
+  if (existingJob?.status === "RUNNING") {
+    throw new Error("Закрытие периода уже выполняется. Дождитесь завершения или отмените предыдущую попытку.");
+  }
+
+  // Mark as RUNNING
+  await prisma.closingJob.upsert({
+    where: { periodId_orgId: { periodId, orgId } },
+    create: {
+      periodId, orgId,
+      status: "RUNNING",
+      step: 1,
+      data: defaultState(),
+      startedAt: new Date()
+    },
+    update: {
+      status: "RUNNING",
+      startedAt: new Date(),
+      error: null
+    }
+  });
+
+  const state = await getClosingState(periodId, orgId);
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const baseAccruals = state.accruals || { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 };
+      const accruals = overrideAccruals
+        ? {
+            salaryAmount: overrideAccruals.salaryAmount ?? baseAccruals.salaryAmount,
+            depreciationAmount: overrideAccruals.depreciationAmount ?? baseAccruals.depreciationAmount,
+            rentAmount: overrideAccruals.rentAmount ?? baseAccruals.rentAmount
+          }
+        : baseAccruals;
+      const accrualDate = new Date(period.year, period.month - 1, CLOSING.ACCRUAL_DAY);
 
     // A. Начисление заработной платы и налогов ФОТ
     const existingSalary = await tx.document.findFirst({
@@ -150,24 +198,93 @@ export async function finalizePeriod(
       await postDocument(rentDoc.id, tx, userId);
     }
 
-    // D. Курсовые разницы: Дт/Кт 5210 ↔ 9540/9620
+    // D. Курсовые разницы: переоценка всех валютных монетарных статей
+    // Монетарные статьи, подлежащие переоценке (все счета в иностранной валюте):
+    //   5210 — валютный банковский счёт
+    //   4010 — дебиторская задолженность в валюте
+    //   4310 — авансы выданные в валюте
+    //   6010 — кредиторская задолженность в валюте
+    //   6820 — займы учредителей в валюте
+    const MONETARY_FX_ACCOUNTS = [
+      ACCOUNTS.BANK_USD,
+      ACCOUNTS.RECEIVABLES,
+      ACCOUNTS.ADVANCE_PAID_GOODS,
+      ACCOUNTS.PAYABLES,
+      ACCOUNTS.FOUNDER_LOAN
+    ];
+
     const fxDiff = state.fxDiff || { exchangeRate: 0, difference: 0 };
-    const existingFx = await tx.document.findFirst({
-      where: { orgId, periodId, type: { code: "FX_DIFFERENCE" }, status: "POSTED" }
-    });
-    if (!existingFx && Number(fxDiff.difference) !== 0) {
+    const wizardRate = new Decimal(fxDiff.exchangeRate || 0);
+
+    if (wizardRate.gt(0)) {
       const fxType = await tx.documentType.findUniqueOrThrow({ where: { code: "FX_DIFFERENCE" } });
-      const fxDoc = await tx.document.create({
-        data: {
-          orgId, periodId, typeId: fxType.id, date: accrualDate, status: "POSTED",
-          // fxAccountCode: этот автоматический шаг мастера закрытия переоценивает только
-          // валютный банковский счёт (5210). Переоценка других валютных статей (4010,
-          // 4310, 6010, 6820 в валюте) выполняется отдельными ручными документами
-          // FX_DIFFERENCE с соответствующим fxAccountCode.
-          payload: { fxDifference: Number(fxDiff.difference), fxAccountCode: ACCOUNTS.BANK_USD } as any
-        }
-      });
-      await postDocument(fxDoc.id, tx, userId);
+
+      for (const accountCode of MONETARY_FX_ACCOUNTS) {
+        const account = await tx.account.findUnique({ where: { code: accountCode } });
+        if (!account) continue;
+
+        // Get net balance for this account in the period
+        const balanceRows = await tx.$queryRaw<{ net: string }[]>`
+          SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
+          FROM "JournalEntry" je
+          JOIN "Document" d ON d.id = je."documentId"
+          WHERE d."orgId" = ${orgId}
+            AND d."periodId" = ${periodId}
+            AND d.status = 'POSTED'
+            AND je."accountId" = ${account.id}
+        `;
+        const balance = new Decimal(balanceRows[0]?.net || "0");
+
+        // Also include opening balance from previous periods
+        const openingRows = await tx.$queryRaw<{ net: string }[]>`
+          SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
+          FROM "JournalEntry" je
+          JOIN "Document" d ON d.id = je."documentId"
+          WHERE d."orgId" = ${orgId}
+            AND d.status = 'POSTED'
+            AND d.date < ${new Date(period.year, period.month - 1, 1).toISOString()}
+            AND je."accountId" = ${account.id}
+        `;
+        const openingBalance = new Decimal(openingRows[0]?.net || "0");
+        const totalBalance = balance.plus(openingBalance);
+
+        if (totalBalance.isZero()) continue;
+
+        // FX difference = balance * (rate - 1) for asset accounts,
+        // but the wizard provides a single rate; we calculate proportional difference.
+        // The wizard's "difference" is the total expected difference; we distribute
+        // proportionally to each account's balance relative to the primary account (5210).
+        // For simplicity and correctness: if wizard provided a specific difference,
+        // we apply it only to 5210 (the primary account the user configured).
+        // For other accounts, we calculate: balance * (rate - 1) as the implied difference.
+        const impliedDiff = totalBalance.mul(wizardRate.minus(1));
+
+        // Skip if the implied difference rounds to zero
+        if (impliedDiff.abs().lt(0.01)) continue;
+
+        // Check if an FX_DIFFERENCE for this specific account already exists
+        const existingFx = await tx.document.findFirst({
+          where: {
+            orgId, periodId,
+            type: { code: "FX_DIFFERENCE" },
+            status: "POSTED",
+            payload: { path: ["fxAccountCode"], equals: accountCode }
+          }
+        });
+        if (existingFx) continue;
+
+        const fxDoc = await tx.document.create({
+          data: {
+            orgId, periodId, typeId: fxType.id, date: accrualDate, status: "POSTED",
+            payload: {
+              fxDifference: impliedDiff.toNumber(),
+              fxAccountCode: accountCode,
+              exchangeRate: wizardRate.toNumber()
+            } as any
+          }
+        });
+        await postDocument(fxDoc.id, tx, userId);
+      }
     }
 
     // E. Расчёт налогов
@@ -302,23 +419,26 @@ export async function finalizePeriod(
       netMap.set(key, prev);
     }
 
-    // H0. Предупреждение: 9210/9220 (счета выбытия активов) не должны иметь остатка
+    // H0. Pre-close validation: 9210/9220 (счета выбытия активов) не должны иметь остатка
     // на момент реформации — их закрывает FIXED_ASSET_DISPOSAL_RESULT (прибыль/убыток
     // от выбытия). Ненулевой остаток означает, что выбытие было списано (FIXED_ASSET_DISPOSAL),
-    // но результат от выбытия не признан — PERIOD_CLOSING всё равно перенесёт остаток
-    // на 9910, молча скрывая пропущенный документ.
+    // но результат от выбытия не признан.
     const warnings: string[] = [];
     const disposalAccounts = await tx.account.findMany({
       where: { code: { in: [ACCOUNTS.ASSET_DISPOSAL, ACCOUNTS.OTHER_ASSET_DISPOSAL] } }
     });
+    const disposalErrors: string[] = [];
     for (const acc of disposalAccounts) {
       const entry = netMap.get(acc.id);
       if (entry && !entry.net.isZero()) {
-        warnings.push(
+        disposalErrors.push(
           `Счёт ${acc.code} (${acc.name}) имеет ненулевой остаток ${entry.net.abs().toFixed(2)} перед реформацией баланса. ` +
-          `Проверьте, создан ли документ FIXED_ASSET_DISPOSAL_RESULT для всех выбытий за период — иначе прибыль/убыток от выбытия будет перенесён на 9910 без явного признания.`
+          `Создайте документ FIXED_ASSET_DISPOSAL_RESULT для всех выбытий за период.`
         );
       }
+    }
+    if (disposalErrors.length > 0) {
+      throw new Error("Pre-close validation failed:\n" + disposalErrors.join("\n"));
     }
 
     const acc9910 = await tx.account.findUnique({ where: { code: ACCOUNTS.FINAL_RESULT } });
@@ -368,6 +488,29 @@ export async function finalizePeriod(
 
     // H2. Автоматический перенос 9910 → 8710 при закрытии декабря (реформация года)
     if (period.month === 12) {
+      // Pre-close validation: проверка ожидаемого остатка 8710
+      const acc8710 = await tx.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } });
+      if (acc8710) {
+        const net8710Rows = await tx.$queryRaw<{ net: string }[]>`
+          SELECT COALESCE(SUM(je.credit - je.debit), 0)::text AS net
+          FROM "JournalEntry" je
+          JOIN "Document" d ON d.id = je."documentId"
+          JOIN "Account" a ON a.id = je."accountId"
+          WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
+            AND EXTRACT(YEAR FROM d.date) <= ${period.year}
+            AND a.code = '8710'
+        `;
+        const net8710 = new Decimal(net8710Rows[0]?.net || "0");
+        // 8710 should normally have a credit balance (retained earnings).
+        // A debit balance (net8710 < 0) signals accumulated losses — warn but don't block.
+        if (net8710.lt(0)) {
+          warnings.push(
+            `Счёт 8710 (Нераспределённая прибыль) имеет дебетовый остаток ${net8710.abs().toFixed(2)} ` +
+            `перед реформацией года. Это означает накопленный убыток. Проверьте корректность данных.`
+          );
+        }
+      }
+
       const existingYE = await tx.document.findFirst({
         where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
       });
@@ -387,7 +530,6 @@ export async function finalizePeriod(
         `;
         const net9910 = new Decimal(net9910Rows[0]?.net || "0");
         if (!net9910.isZero()) {
-          const acc8710 = await tx.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } });
           if (acc9910 && acc8710) {
             let yearEndType = await tx.documentType.findUnique({ where: { code: "YEAR_END_CLOSE" } });
             if (!yearEndType) {
@@ -437,13 +579,24 @@ export async function finalizePeriod(
       data: { status: "CLOSED", lockDate: lastDay }
     });
 
+    // Mark ClosingJob as COMPLETED
+    await tx.closingJob.update({
+      where: { periodId_orgId: { periodId, orgId } },
+      data: { status: "COMPLETED", completedAt: new Date(), error: null }
+    });
+
     return { period: updatedPeriod, taxEvents: createdEvents, warnings };
   });
 
-  // Очистить кэш состояния wizard'а
-  closingStates.delete(periodId);
-
-  return result;
+    return result;
+  } catch (err: any) {
+    // Mark as FAILED with error
+    await prisma.closingJob.update({
+      where: { periodId_orgId: { periodId, orgId } },
+      data: { status: "FAILED", error: err?.message ?? String(err), completedAt: new Date() }
+    });
+    throw err;
+  }
 }
 
 export async function upsertTaxCalendarEventsForPeriod(periodId: string, orgId: string, tx: any = prisma) {

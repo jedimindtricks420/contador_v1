@@ -227,8 +227,16 @@ export async function postDocument(
   try {
     const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
     await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
+    await tx.document.update({
+      where: { id: doc.id },
+      data: { taxCalendarSyncStatus: "OK", taxCalendarSyncError: null }
+    });
   } catch (err: any) {
     console.error("Failed to dynamically update tax calendar events in postDocument:", err.message);
+    await tx.document.update({
+      where: { id: doc.id },
+      data: { taxCalendarSyncStatus: "FAILED", taxCalendarSyncError: err.message?.slice(0, 500) || "Unknown error" }
+    });
   }
 
   // Auto-close TaxCalendarEvents when a tax payment document is posted.
@@ -347,8 +355,16 @@ export async function voidDocument(
   try {
     const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
     await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
+    await tx.document.update({
+      where: { id: doc.id },
+      data: { taxCalendarSyncStatus: "OK", taxCalendarSyncError: null }
+    });
   } catch (err: any) {
     console.error("Failed to dynamically update tax calendar events in voidDocument:", err.message);
+    await tx.document.update({
+      where: { id: doc.id },
+      data: { taxCalendarSyncStatus: "FAILED", taxCalendarSyncError: err.message?.slice(0, 500) || "Unknown error" }
+    });
   }
 }
 

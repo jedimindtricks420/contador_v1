@@ -1,12 +1,13 @@
 // Uzbekistan tax rates (NSBU / Tax Code)
 export const TAX_RATES = {
   NDFL: 0.12,          // Personal income tax total (НДФЛ = НДФЛ_BUDGET + INPS)
-  NDFL_BUDGET: 0.12,   // НДФЛ to state budget (12%)
+  NDFL_BUDGET: 0.119,  // НДФЛ to state budget (11.9%)
   INPS: 0.001,         // Individual pension savings (ИНПС 0.1% → Народный банк)
   SOCIAL_TAX: 0.12,    // Social tax paid by employer (соцналог)
   VAT: 0.12,           // Value-added tax (НДС)
   PROFIT_TAX: 0.15,    // Corporate profit tax
   TURNOVER_TAX: 0.04,  // Turnover tax (налог с оборота)
+  DIVIDEND_TAX: 0.05,  // Dividend withholding tax (налог у источника при выплате дивидендов)
 } as const;
 
 // Uzbekistan NSBU chart-of-accounts codes used in business logic

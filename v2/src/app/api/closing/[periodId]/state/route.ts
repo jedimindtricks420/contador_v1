@@ -16,7 +16,7 @@ export async function GET(
       return NextResponse.json({ error: "Период не найден" }, { status: 404 });
     }
 
-    const state = await getClosingState(periodId);
+    const state = await getClosingState(periodId, orgId);
 
     // Prefill Step 4 из предыдущего закрытого периода если суммы 0
     if (

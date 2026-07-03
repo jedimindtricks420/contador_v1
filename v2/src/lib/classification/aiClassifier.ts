@@ -19,7 +19,14 @@ const CREDIT_ONLY_CODES = new Set([
   "DEPOSIT_RETURN",             // 5110 Дт — 4890 Кт, депозит возвращён арендодателем
   "ACCOUNTABLE_RETURN",         // 5110 Дт — 4220 Кт, остаток подотчётных сумм возвращён
   "ACCOUNTABLE_GENERAL_RETURN", // 5110 Дт — 4230 Кт, остаток подотчётных сумм возвращён
-  "INTERNAL_TRANSFER_RECEIVED", // 5210 Дт — 5710 Кт, приёмная сторона внутреннего перевода
+  "INTERNAL_TRANSFER_RECEIVED", // $destinationAccountCode Дт — 5710 Кт, приёмная сторона (счёт параметризуемый)
+  // NEW types — CREDIT only (входящие операции)
+  "CASH_DEPOSIT",               // 5110 Дт — 5010 Кт, взнос наличных
+  "VAT_REFUND_FROM_BUDGET",     // 5110 Дт — 4410 Кт, возврат НДС
+  "RENTAL_INCOME_RECEIVED",     // 5110 Дт — 9350 Кт, доход от аренды
+  "INTEREST_INCOME_RECEIVED",   // 5110 Дт — 9530 Кт, процентный доход
+  "LONG_TERM_LOAN_RECEIVED",    // 5110 Дт — 7810/7820 Кт, получение займа
+  "DIVIDEND_INCOME_RECEIVED",   // 5110 Дт — 9520 Кт, дивидендный доход
 ]);
 
 const DEBIT_ONLY_CODES = new Set([
@@ -38,6 +45,13 @@ const DEBIT_ONLY_CODES = new Set([
   "ACCOUNTABLE_GENERAL", // 4230 Дт — 5110 Кт, подотчётные (общехозяйственные)
   "INTANGIBLE_ASSET_PURCHASE", // 0830 Дт — 5110 Кт, покупка НМА (лицензии, ПО, товарный знак)
   // SUPPLIER_PAYMENT — устаревший тип, mode=MANUAL_ONLY, AI больше его не предлагает.
+  // NEW types — DEBIT only (исходящие операции)
+  "CASH_WITHDRAWAL",          // 5010 Дт — 5110 Кт, снятие наличных
+  "IMPORT_VAT_PAYMENT",       // 4410 Дт — 5110 Кт, уплата импортного НДС
+  "PREPAID_RENT_PAYMENT",     // 3110 Дт — 5110 Кт, предоплата аренды
+  "SALARY_ADVANCE",           // 4210 Дт — 5110 Кт, аванс по зарплате
+  "GOODS_IN_TRANSIT",         // 2970 Дт — 5110/4310 Кт, товары в пути
+  "LONG_TERM_LOAN_REPAYMENT", // 7810/7820 Дт — 5110 Кт, погашение займа
 ]);
 
 

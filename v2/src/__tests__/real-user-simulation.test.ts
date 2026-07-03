@@ -604,7 +604,7 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
 
       await saveClosingState(periodJanId, {
         accruals: { salaryAmount: SALARY_GROSS, ndflAmount: ndfl, socialTaxAmount: socTax, depreciationAmount: 0, rentAmount: 0 },
-      });
+      }, orgId);
 
       const state = await prisma.period.findUnique({ where: { id: periodJanId }, select: { closingData: true } });
       const data = state?.closingData as any;
@@ -723,7 +723,7 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
 
       await saveClosingState(periodFebId, {
         accruals: { salaryAmount: SALARY_GROSS, ndflAmount: ndfl, socialTaxAmount: socTax, depreciationAmount: 0, rentAmount: 0 },
-      });
+      }, orgId);
 
       await expect(
         finalizePeriod(periodFebId, orgId, "sim-user")
