@@ -30,6 +30,7 @@ const mockPrisma = {
   document: {
     create: vi.fn(),
     findUnique: vi.fn(),
+    update: vi.fn(),
   },
   account: {
     findUnique: vi.fn(),

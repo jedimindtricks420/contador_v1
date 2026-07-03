@@ -89,7 +89,7 @@ export async function POST(
     });
 
     // 5. Сбросить ClosingJob из БД
-    clearClosingState(id, orgId);
+    await clearClosingState(id, orgId);
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

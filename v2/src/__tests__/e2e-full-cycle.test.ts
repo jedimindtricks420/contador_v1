@@ -29,11 +29,15 @@ const GOODS_VAT   = Math.round(GOODS_AMT - GOODS_AMT / 1.12);         // 60,000
 const GOODS_NET   = GOODS_AMT - GOODS_VAT;                            // 500,000
 
 const SALARY_AMT  = 5_000_000;
-const NDFL        = Math.round(SALARY_AMT * 0.12);                    // 600,000
+// PERSONAL_INCOME_TAX calendar event tracks only the budget-owed portion
+// (NDFL_BUDGET = 11.9%); the remaining 0.1% is INPS, paid to a pension fund
+// separately and not part of this tax obligation. See lib/constants.ts.
+const NDFL        = Math.round(SALARY_AMT * 0.119);                   // 595,000
 const SOC_TAX_AMT = Math.round(SALARY_AMT * 0.12);                    // 600,000
 
 // ─── Shared state (populated in beforeAll) ───────────────────────────────────
 let orgId: string;
+let userId: string;
 let periodMarchId: string;
 let periodAprilId: string;
 let periodFinalizeId: string;
@@ -50,6 +54,7 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
         passwordHash: "x",
       },
     });
+    userId = user.id;
 
     const org = await prisma.organization.create({
       data: {
@@ -98,6 +103,7 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
 
   afterAll(async () => {
     if (orgId) await prisma.organization.delete({ where: { id: orgId } }).catch(() => {});
+    if (userId) await prisma.user.delete({ where: { id: userId } }).catch(() => {});
     await prisma.$disconnect();
   });
 
@@ -400,7 +406,7 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
       expect(acc6520.length).toBeGreaterThan(0);
     });
 
-    it("D4: TaxCalendarEvent PERSONAL_INCOME_TAX = 600,000", async () => {
+    it("D4: TaxCalendarEvent PERSONAL_INCOME_TAX = 595,000 (NDFL_BUDGET portion only)", async () => {
       const ev = await prisma.taxCalendarEvent.findFirst({
         where: { orgId, periodId: periodFinalizeId, type: "PERSONAL_INCOME_TAX" },
       });
@@ -512,6 +518,29 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
         totDr.equals(totCr),
         `Global imbalance: Дт=${totDr.toFixed(2)} Кт=${totCr.toFixed(2)}`
       ).toBe(true);
+    });
+  });
+
+  describe("Scenario G: taxCalendarSyncStatus is set on every posted document", () => {
+    it("G1: postDocument() successfully syncs the tax calendar for every POSTED document", async () => {
+      // Regression test: Document.taxCalendarSyncStatus/taxCalendarSyncError were
+      // added to schema.prisma but the migration was never applied to the DB,
+      // so every postDocument() call threw when writing these columns.
+      // PERIOD_CLOSING/YEAR_END_CLOSE are system reformation documents built
+      // directly with manual JournalEntry rows — they never go through
+      // postDocument(), so they never get a taxCalendarSyncStatus by design.
+      const docs = await prisma.document.findMany({
+        where: { orgId, status: "POSTED", type: { code: { notIn: ["PERIOD_CLOSING", "YEAR_END_CLOSE"] } } },
+        select: { id: true, taxCalendarSyncStatus: true, taxCalendarSyncError: true, type: { select: { code: true } } },
+      });
+
+      expect(docs.length).toBeGreaterThan(0);
+
+      const failed = docs.filter(d => d.taxCalendarSyncStatus !== "OK");
+      expect(
+        failed,
+        `Documents with failed tax calendar sync:\n${failed.map(d => `[${d.type.code}] ${d.id}: ${d.taxCalendarSyncError}`).join("\n")}`
+      ).toHaveLength(0);
     });
   });
 });

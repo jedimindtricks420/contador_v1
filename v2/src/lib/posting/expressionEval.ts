@@ -1,13 +1,17 @@
 import Decimal from "decimal.js";
 
+type Value = Decimal | string;
+
 /**
- * Safely evaluates a math expression string using variables from a payload.
- * Supports basic arithmetic (+, -, *, /), parentheses, and comparison operators (>, <, >=, <=, ==, !=).
- * Returns a Decimal instance.
+ * Safely evaluates a math/logic expression string using variables from a payload.
+ * Supports basic arithmetic (+, -, *, /), parentheses, comparison operators
+ * (>, <, >=, <=, ==, !=), logical operators (&&, ||), and single/double-quoted
+ * string literals (for comparisons against payload fields like `type == 'monthly'`).
+ * Returns a Decimal instance (1/0 for boolean results).
  */
 export function evaluate(expression: string, payload: Record<string, unknown>): Decimal {
-  // Normalize payload: convert numeric and boolean values to Decimal
-  const scope: Record<string, Decimal> = {};
+  // Normalize payload: convert numeric/boolean values to Decimal, keep strings as strings.
+  const scope: Record<string, Value> = {};
   for (const [key, value] of Object.entries(payload)) {
     if (value instanceof Decimal) {
       scope[key] = value;
@@ -17,6 +21,8 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
       scope[key] = new Decimal(value);
     } else if (typeof value === "boolean") {
       scope[key] = new Decimal(value ? 1 : 0);
+    } else if (typeof value === "string") {
+      scope[key] = value;
     }
   }
 
@@ -31,24 +37,60 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
     return tokens[index++];
   }
 
-  function parseExpr(): Decimal {
-    return parseComp();
+  function asDecimal(val: Value, context: string): Decimal {
+    if (typeof val === "string") {
+      throw new Error(`Expected a number in ${context}, got string "${val}"`);
+    }
+    return val;
   }
 
-  function parseComp(): Decimal {
+  function parseExpr(): Value {
+    return parseLogicalOr();
+  }
+
+  function parseLogicalOr(): Value {
+    let val = parseLogicalAnd();
+    while (peek() === "||") {
+      consume();
+      const right = parseLogicalAnd();
+      const truthy = !asDecimal(val, "'||'").isZero() || !asDecimal(right, "'||'").isZero();
+      val = new Decimal(truthy ? 1 : 0);
+    }
+    return val;
+  }
+
+  function parseLogicalAnd(): Value {
+    let val = parseComp();
+    while (peek() === "&&") {
+      consume();
+      const right = parseComp();
+      const truthy = !asDecimal(val, "'&&'").isZero() && !asDecimal(right, "'&&'").isZero();
+      val = new Decimal(truthy ? 1 : 0);
+    }
+    return val;
+  }
+
+  function parseComp(): Value {
     let val = parseTerm();
     while (index < tokens.length) {
       const op = peek();
       if (op === ">" || op === "<" || op === ">=" || op === "<=" || op === "==" || op === "!=") {
         consume();
         const right = parseTerm();
-        let condition = false;
-        if (op === ">") condition = val.gt(right);
-        else if (op === "<") condition = val.lt(right);
-        else if (op === ">=") condition = val.gte(right);
-        else if (op === "<=") condition = val.lte(right);
-        else if (op === "==") condition = val.equals(right);
-        else if (op === "!=") condition = !val.equals(right);
+        let condition: boolean;
+        if (op === "==" || op === "!=") {
+          const equal = typeof val === "string" || typeof right === "string"
+            ? String(val instanceof Decimal ? val.toString() : val) === String(right instanceof Decimal ? right.toString() : right)
+            : val.equals(right);
+          condition = op === "==" ? equal : !equal;
+        } else {
+          const l = asDecimal(val, `'${op}'`);
+          const r = asDecimal(right, `'${op}'`);
+          if (op === ">") condition = l.gt(r);
+          else if (op === "<") condition = l.lt(r);
+          else if (op === ">=") condition = l.gte(r);
+          else condition = l.lte(r);
+        }
         val = new Decimal(condition ? 1 : 0);
       } else {
         break;
@@ -57,15 +99,16 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
     return val;
   }
 
-  function parseTerm(): Decimal {
+  function parseTerm(): Value {
     let val = parseFactor();
     while (index < tokens.length) {
       const op = peek();
       if (op === "+" || op === "-") {
         consume();
         const right = parseFactor();
-        if (op === "+") val = val.plus(right);
-        else val = val.minus(right);
+        const l = asDecimal(val, `'${op}'`);
+        const r = asDecimal(right, `'${op}'`);
+        val = op === "+" ? l.plus(r) : l.minus(r);
       } else {
         break;
       }
@@ -73,17 +116,19 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
     return val;
   }
 
-  function parseFactor(): Decimal {
-    let val = parsePrimary();
+  function parseFactor(): Value {
+    let val = parseUnary();
     while (index < tokens.length) {
       const op = peek();
       if (op === "*" || op === "/") {
         consume();
-        const right = parsePrimary();
-        if (op === "*") val = val.mul(right);
+        const right = parseUnary();
+        const l = asDecimal(val, `'${op}'`);
+        const r = asDecimal(right, `'${op}'`);
+        if (op === "*") val = l.mul(r);
         else {
-          if (right.isZero()) throw new Error("Division by zero in expression evaluation");
-          val = val.div(right);
+          if (r.isZero()) throw new Error("Division by zero in expression evaluation");
+          val = l.div(r);
         }
       } else {
         break;
@@ -92,9 +137,22 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
     return val;
   }
 
-  function parsePrimary(): Decimal {
+  function parseUnary(): Value {
+    if (peek() === "-") {
+      consume();
+      return asDecimal(parseUnary(), "unary '-'").negated();
+    }
+    if (peek() === "!") {
+      consume();
+      const val = asDecimal(parseUnary(), "unary '!'");
+      return new Decimal(val.isZero() ? 1 : 0);
+    }
+    return parsePrimary();
+  }
+
+  function parsePrimary(): Value {
     const token = consume();
-    if (!token) throw new Error("Unexpected end of expression");
+    if (token === undefined) throw new Error("Unexpected end of expression");
 
     if (token === "(") {
       const val = parseExpr();
@@ -103,8 +161,9 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
       return val;
     }
 
-    if (token === "-") {
-      return parsePrimary().negated();
+    // String literal (quotes preserved by the tokenizer to disambiguate from identifiers)
+    if (token.length >= 2 && (token[0] === "'" || token[0] === '"') && token[token.length - 1] === token[0]) {
+      return token.slice(1, -1);
     }
 
     // Number literal
@@ -126,7 +185,7 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
   if (index < tokens.length) {
     throw new Error(`Unexpected token at position ${index}: ${tokens[index]}`);
   }
-  return result;
+  return asDecimal(result, "expression result");
 }
 
 function tokenize(expression: string): string[] {
@@ -146,6 +205,18 @@ function tokenize(expression: string): string[] {
       continue;
     }
 
+    // Logical operators: &&, ||
+    if (char === "&" && expression[i + 1] === "&") {
+      result.push("&&");
+      i += 2;
+      continue;
+    }
+    if (char === "|" && expression[i + 1] === "|") {
+      result.push("||");
+      i += 2;
+      continue;
+    }
+
     // Multi-char operators: >=, <=, ==, !=
     if (
       (char === ">" && expression[i + 1] === "=") ||
@@ -158,10 +229,28 @@ function tokenize(expression: string): string[] {
       continue;
     }
 
-    // Single-char comparisons: >, <
-    if (char === ">" || char === "<") {
+    // Single-char comparisons/unary: >, <, !
+    if (char === ">" || char === "<" || char === "!") {
       result.push(char);
       i++;
+      continue;
+    }
+
+    // String literals: 'value' or "value"
+    if (char === "'" || char === '"') {
+      const quote = char;
+      let str = quote;
+      i++;
+      while (i < expression.length && expression[i] !== quote) {
+        str += expression[i];
+        i++;
+      }
+      if (expression[i] !== quote) {
+        throw new Error(`Unterminated string literal in expression: ${expression}`);
+      }
+      str += quote;
+      i++;
+      result.push(str);
       continue;
     }
 

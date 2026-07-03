@@ -14,6 +14,10 @@ const mockPrisma = {
   taxCalendarEvent: {
     findMany: vi.fn(),
   },
+  period: {
+    findMany: vi.fn(),
+  },
+  $queryRaw: vi.fn(),
 };
 vi.mock("@/lib/prisma", () => ({ default: mockPrisma }));
 
@@ -22,6 +26,8 @@ describe("GET /api/pnl — taxRegime field", () => {
     vi.clearAllMocks();
     mockPrisma.journalEntry.findMany.mockResolvedValue([]);
     mockPrisma.taxCalendarEvent.findMany.mockResolvedValue([]);
+    mockPrisma.period.findMany.mockResolvedValue([]);
+    mockPrisma.$queryRaw.mockResolvedValue([]);
   });
 
   it("includes taxRegime=VAT in response for VAT org", async () => {
@@ -68,7 +74,9 @@ describe("GET /api/pnl — taxRegime field", () => {
     expect(body.taxRegime).toBe("TURNOVER_TAX");
   });
 
-  it("response contains months, revenue, expenses, profitBeforeTax arrays", async () => {
+  it("response contains months, monthlyRevenue, monthlyNetProfit arrays and NSBU line items", async () => {
+    // Note: the API contract is `lines.lineXXX` (NSBU report line items) plus
+    // monthly arrays — there is no top-level revenue/expenses/profitBeforeTax.
     mockPrisma.organization.findUnique.mockResolvedValue({ taxRegime: "VAT" });
 
     const { GET } = await import("@/app/api/pnl/route");
@@ -81,8 +89,8 @@ describe("GET /api/pnl — taxRegime field", () => {
     const body = await res.json();
     expect(Array.isArray(body.months)).toBe(true);
     expect(body.months).toHaveLength(3); // Jan, Feb, Mar
-    expect(Array.isArray(body.revenue)).toBe(true);
-    expect(Array.isArray(body.expenses)).toBe(true);
-    expect(Array.isArray(body.profitBeforeTax)).toBe(true);
+    expect(Array.isArray(body.monthlyRevenue)).toBe(true);
+    expect(Array.isArray(body.monthlyNetProfit)).toBe(true);
+    expect(typeof body.lines).toBe("object");
   });
 });

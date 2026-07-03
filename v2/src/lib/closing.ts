@@ -93,14 +93,16 @@ export async function finalizePeriod(
     throw new Error("Закрытие периода уже выполняется. Дождитесь завершения или отмените предыдущую попытку.");
   }
 
-  // Mark as RUNNING
+  // Mark as RUNNING. On first run (no ClosingJob yet), seed data from any
+  // legacy Period.closingData rather than defaultState() — otherwise accruals
+  // saved before the ClosingJob table existed would be silently discarded.
   await prisma.closingJob.upsert({
     where: { periodId_orgId: { periodId, orgId } },
     create: {
       periodId, orgId,
       status: "RUNNING",
       step: 1,
-      data: defaultState(),
+      data: (period.closingData as any) ?? defaultState(),
       startedAt: new Date()
     },
     update: {
@@ -198,92 +200,44 @@ export async function finalizePeriod(
       await postDocument(rentDoc.id, tx, userId);
     }
 
-    // D. Курсовые разницы: переоценка всех валютных монетарных статей
-    // Монетарные статьи, подлежащие переоценке (все счета в иностранной валюте):
-    //   5210 — валютный банковский счёт
-    //   4010 — дебиторская задолженность в валюте
-    //   4310 — авансы выданные в валюте
-    //   6010 — кредиторская задолженность в валюте
-    //   6820 — займы учредителей в валюте
-    const MONETARY_FX_ACCOUNTS = [
-      ACCOUNTS.BANK_USD,
-      ACCOUNTS.RECEIVABLES,
-      ACCOUNTS.ADVANCE_PAID_GOODS,
-      ACCOUNTS.PAYABLES,
-      ACCOUNTS.FOUNDER_LOAN
-    ];
-
+    // D. Курсовые разницы: пользователь вводит курс ЦБ и сумму разницы вручную
+    // на шаге 5 wizard'а (Step5FxDiff.tsx), сверяясь с банковской выпиской.
+    // Backend больше не пересчитывает свою implied-разницу по остаткам счетов —
+    // раньше это игнорировало введённое пользователем число и могло давать
+    // неверный знак для пассивных валютных статей (6010/6820). Теперь backend
+    // доверяет пользователю и просто проводит то, что он ввёл, по счёту 5210
+    // (валютный банковский счёт — единственный, по которому UI считает оценку).
     const fxDiff = state.fxDiff || { exchangeRate: 0, difference: 0 };
     const wizardRate = new Decimal(fxDiff.exchangeRate || 0);
+    const userDifference = new Decimal(fxDiff.difference || 0);
 
-    if (wizardRate.gt(0)) {
+    if (wizardRate.gt(0) && !userDifference.isZero()) {
       const fxType = await tx.documentType.findUniqueOrThrow({ where: { code: "FX_DIFFERENCE" } });
+      const account = await tx.account.findUnique({ where: { code: ACCOUNTS.BANK_USD } });
 
-      for (const accountCode of MONETARY_FX_ACCOUNTS) {
-        const account = await tx.account.findUnique({ where: { code: accountCode } });
-        if (!account) continue;
-
-        // Get net balance for this account in the period
-        const balanceRows = await tx.$queryRaw<{ net: string }[]>`
-          SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
-          FROM "JournalEntry" je
-          JOIN "Document" d ON d.id = je."documentId"
-          WHERE d."orgId" = ${orgId}
-            AND d."periodId" = ${periodId}
-            AND d.status = 'POSTED'
-            AND je."accountId" = ${account.id}
-        `;
-        const balance = new Decimal(balanceRows[0]?.net || "0");
-
-        // Also include opening balance from previous periods
-        const openingRows = await tx.$queryRaw<{ net: string }[]>`
-          SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
-          FROM "JournalEntry" je
-          JOIN "Document" d ON d.id = je."documentId"
-          WHERE d."orgId" = ${orgId}
-            AND d.status = 'POSTED'
-            AND d.date < ${new Date(period.year, period.month - 1, 1).toISOString()}
-            AND je."accountId" = ${account.id}
-        `;
-        const openingBalance = new Decimal(openingRows[0]?.net || "0");
-        const totalBalance = balance.plus(openingBalance);
-
-        if (totalBalance.isZero()) continue;
-
-        // FX difference = balance * (rate - 1) for asset accounts,
-        // but the wizard provides a single rate; we calculate proportional difference.
-        // The wizard's "difference" is the total expected difference; we distribute
-        // proportionally to each account's balance relative to the primary account (5210).
-        // For simplicity and correctness: if wizard provided a specific difference,
-        // we apply it only to 5210 (the primary account the user configured).
-        // For other accounts, we calculate: balance * (rate - 1) as the implied difference.
-        const impliedDiff = totalBalance.mul(wizardRate.minus(1));
-
-        // Skip if the implied difference rounds to zero
-        if (impliedDiff.abs().lt(0.01)) continue;
-
-        // Check if an FX_DIFFERENCE for this specific account already exists
+      if (account) {
         const existingFx = await tx.document.findFirst({
           where: {
             orgId, periodId,
             type: { code: "FX_DIFFERENCE" },
             status: "POSTED",
-            payload: { path: ["fxAccountCode"], equals: accountCode }
+            payload: { path: ["fxAccountCode"], equals: ACCOUNTS.BANK_USD }
           }
         });
-        if (existingFx) continue;
 
-        const fxDoc = await tx.document.create({
-          data: {
-            orgId, periodId, typeId: fxType.id, date: accrualDate, status: "POSTED",
-            payload: {
-              fxDifference: impliedDiff.toNumber(),
-              fxAccountCode: accountCode,
-              exchangeRate: wizardRate.toNumber()
-            } as any
-          }
-        });
-        await postDocument(fxDoc.id, tx, userId);
+        if (!existingFx) {
+          const fxDoc = await tx.document.create({
+            data: {
+              orgId, periodId, typeId: fxType.id, date: accrualDate, status: "POSTED",
+              payload: {
+                fxDifference: userDifference.toNumber(),
+                fxAccountCode: ACCOUNTS.BANK_USD,
+                exchangeRate: wizardRate.toNumber()
+              } as any
+            }
+          });
+          await postDocument(fxDoc.id, tx, userId);
+        }
       }
     }
 

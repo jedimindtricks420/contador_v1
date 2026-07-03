@@ -27,10 +27,16 @@ const prisma = new PrismaClient();
 // ─── V2 DATABASE CLIENT ──────────────────────────────────────────────────────
 // Uses the v2 Prisma client generated from the v2 schema (contador_v2 DB)
 const { PrismaClient: PrismaClientV2 } = require("../v2/node_modules/.prisma/client");
-const V2_DATABASE_URL = process.env.V2_DATABASE_URL || "postgresql://user:password@172.26.0.2:5432/contador_v2";
+if (!process.env.V2_DATABASE_URL) {
+  throw new Error("V2_DATABASE_URL is not set");
+}
+const V2_DATABASE_URL = process.env.V2_DATABASE_URL;
 const prismaV2 = new PrismaClientV2({ datasources: { db: { url: V2_DATABASE_URL } } });
 const PORT = process.env.ADMIN_PORT || 3031;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supersecretadmin";
+if (!process.env.ADMIN_PASSWORD) {
+  throw new Error("ADMIN_PASSWORD is not set");
+}
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -486,7 +492,7 @@ publicRouter.post("/v2/payments/payme", publicLimiter, async (req: Request, res:
           orderBy: { createdAt: "asc" }
         });
 
-        const transactions = attempts.map(attempt => {
+        const transactions = attempts.map((attempt: any) => {
           let state = 1;
           if (attempt.status === "SUCCESS") state = 2;
           else if (attempt.status === "FAILED") state = attempt.completedAt ? -2 : -1;
@@ -621,9 +627,8 @@ router.use(adminLimiter);
 // ─────────────────────────────────────────────
 function adminAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers["x-admin-password"];
-  const queryPassword = req.query.admin_password as string;
 
-  if (authHeader === ADMIN_PASSWORD || queryPassword === ADMIN_PASSWORD) {
+  if (authHeader === ADMIN_PASSWORD) {
     return next();
   }
   res.status(401).json({ error: "Unauthorized. Provide correct credentials." });
@@ -671,7 +676,7 @@ router.get("/users", async (req: Request, res: Response) => {
 });
 
 router.post("/users/:orgId/upgrade", async (req: Request, res: Response) => {
-  const { orgId } = req.params;
+  const { orgId } = req.params as { orgId: string };
   const { days } = req.body;
   const daysToAdd = parseInt(days) || 30;
   const sub = await prisma.subscription.findUnique({ where: { organization_id: orgId } });
@@ -683,7 +688,7 @@ router.post("/users/:orgId/upgrade", async (req: Request, res: Response) => {
 });
 
 router.post("/users/:orgId/reset-ai", async (req: Request, res: Response) => {
-  const { orgId } = req.params;
+  const { orgId } = req.params as { orgId: string };
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
@@ -692,7 +697,7 @@ router.post("/users/:orgId/reset-ai", async (req: Request, res: Response) => {
 });
 
 router.patch("/users/:orgId/plan", async (req: Request, res: Response) => {
-  const { orgId } = req.params;
+  const { orgId } = req.params as { orgId: string };
   const { plan } = req.body;
   if (!["FREE", "PRO", "MYAPI"].includes(plan)) return res.status(400).json({ error: "Invalid plan type" });
   const updated = await prisma.subscription.upsert({ where: { organization_id: orgId }, update: { plan }, create: { organization_id: orgId, plan } });
@@ -700,7 +705,7 @@ router.patch("/users/:orgId/plan", async (req: Request, res: Response) => {
 });
 
 router.patch("/users/:orgId/api-key", async (req: Request, res: Response) => {
-  const { orgId } = req.params;
+  const { orgId } = req.params as { orgId: string };
   const { apiKey } = req.body;
   const updated = await prisma.subscription.upsert({ where: { organization_id: orgId }, update: { custom_api_key: apiKey || null }, create: { organization_id: orgId, plan: "FREE", custom_api_key: apiKey || null } });
   res.json({ success: true, subscription: updated });
@@ -743,12 +748,12 @@ router.post("/vouchers/generate", async (req: Request, res: Response) => {
 });
 
 router.delete("/users/:userId", async (req: Request, res: Response) => {
-  const { userId } = req.params;
+  const { userId } = req.params as { userId: string };
   try { await prisma.user.delete({ where: { id: userId } }); res.json({ success: true }); } catch (error) { res.status(500).json({ error: "Failed to delete user" }); }
 });
 
 router.delete("/organizations/:orgId", async (req: Request, res: Response) => {
-  const { orgId } = req.params;
+  const { orgId } = req.params as { orgId: string };
   try { await prisma.organization.delete({ where: { id: orgId } }); res.json({ success: true }); } catch (error) { res.status(500).json({ error: "Failed to delete organization" }); }
 });
 
@@ -780,7 +785,7 @@ router.post("/users", async (req: Request, res: Response) => {
 
 // Update User Credentials
 router.patch("/users/:userId/credentials", async (req: Request, res: Response) => {
-  const { userId } = req.params;
+  const { userId } = req.params as { userId: string };
   const { email, password } = req.body;
   
   const updateData: any = {};

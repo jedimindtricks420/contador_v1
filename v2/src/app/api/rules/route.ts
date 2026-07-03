@@ -34,6 +34,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Недопустимый тип правила. Допустимые: ${VALID_MATCH_TYPES.join(", ")}` }, { status: 400 });
     }
 
+    const existing = await prisma.rule.findFirst({
+      where: { orgId, matchType, matchValue },
+    });
+    if (existing) {
+      return NextResponse.json(
+        { error: "Правило для этого значения уже существует. Удалите старое или измените его." },
+        { status: 409 }
+      );
+    }
+
     const rule = await prisma.rule.create({
       data: {
         orgId, matchType, matchValue, categoryId, createdFrom: "MANUAL",
@@ -42,6 +52,12 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(rule, { status: 201 });
   } catch (err: any) {
+    if (err.code === "P2002") {
+      return NextResponse.json(
+        { error: "Правило для этого значения уже существует. Удалите старое или измените его." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
   }
 }

@@ -1529,6 +1529,625 @@ export const baseDocumentTypes = [
       opensItem: false,
       requiresCounterparty: false
     }
+  },
+
+  // ─── STAGE 4: NEW-25..NEW-44 — операции, предписанные НСБУ-21 через корреспонденцию
+  // счетов, для которых план счетов (seed-coa.ts) уже содержит нужные счета, но
+  // не было шаблонов проводки. Ссылки на пункты НСБУ-21 — в комментариях по операциям.
+  // ────────────────────────────────────────────────────────────────
+
+  // NEW-25: Безвозмездное получение основных средств (НСБУ-21, п. 9, 358)
+  {
+    code: "GRATUITOUS_RECEIPT_FA",
+    name: "Безвозмездное получение основных средств",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$assetAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "8530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-26: Безвозмездное получение нематериальных активов (НСБУ-21, п. 44, 419)
+  {
+    code: "GRATUITOUS_RECEIPT_IA",
+    name: "Безвозмездное получение нематериальных активов",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$assetAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "8530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-27: Безвозмездное получение материалов (НСБУ-21, п. 731)
+  {
+    code: "GRATUITOUS_RECEIPT_MATERIALS",
+    name: "Безвозмездное получение материалов",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "1010", side: "debit", expression: "amount" },
+        { accountCode: "8530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-28: Безвозмездное получение товаров (НСБУ-21, п. 1029)
+  {
+    code: "GRATUITOUS_RECEIPT_GOODS",
+    name: "Безвозмездное получение товаров",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "2910", side: "debit", expression: "amount" },
+        { accountCode: "8530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-29: Безвозмездное получение ценных бумаг (НСБУ-21, п. 485)
+  {
+    code: "GRATUITOUS_RECEIPT_SECURITIES",
+    name: "Безвозмездное получение ценных бумаг",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "0610", side: "debit", expression: "amount" },
+        { accountCode: "8530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-30: Оприходование излишков при инвентаризации (НСБУ-21, п. 241, 419, 509, 731, 813, 827, 867, 1029)
+  {
+    code: "INVENTORY_SURPLUS",
+    name: "Оприходование излишков, выявленных при инвентаризации",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$assetAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "9390", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-31: Выявление недостачи при инвентаризации (НСБУ-21, п. 246-247, 1549)
+  {
+    code: "INVENTORY_SHORTAGE",
+    name: "Недостачи, выявленные при инвентаризации",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "5910", side: "debit", expression: "amount" },
+        { accountCode: "$assetAccountCode", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-32: Отнесение недостачи — на виновного или в убыток (НСБУ-21, п. 247, 1549)
+  {
+    code: "INVENTORY_SHORTAGE_RESOLUTION",
+    name: "Отнесение недостачи (на виновного / в убыток)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Виновный установлен: Дт 4730 — Кт 5910
+        { accountCode: "4730", side: "debit", expression: "amount", condition: "hasCulprit" },
+        // Виновный не найден / суд отказал: Дт 9430 — Кт 5910
+        { accountCode: "9430", side: "debit", expression: "amount", condition: "!hasCulprit" },
+        { accountCode: "5910", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-33: Формирование резервного капитала из прибыли (НСБУ-21, п. 356, 358)
+  {
+    code: "RESERVE_CAPITAL_FORMATION",
+    name: "Формирование резервного капитала",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "8710", side: "debit", expression: "amount" },
+        { accountCode: "8520", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-34: Создание резерва предстоящих расходов и платежей (НСБУ-21, п. 375-376, 2229)
+  {
+    code: "PROVISION_FUTURE_EXPENSES",
+    name: "Создание резерва предстоящих расходов и платежей",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$expenseAccountCode", side: "debit", expression: "amount" },
+        { accountCode: "8910", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-35: Использование резерва предстоящих расходов (НСБУ-21, п. 376, 2229)
+  {
+    code: "PROVISION_FUTURE_EXPENSES_USE",
+    name: "Использование резерва предстоящих расходов",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "8910", side: "debit", expression: "amount" },
+        { accountCode: "$targetAccountCode", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-36: Восстановление неиспользованного резерва в доход (НСБУ-21, п. 376, 2229)
+  {
+    code: "PROVISION_UNUSED_TO_INCOME",
+    name: "Восстановление неиспользованного резерва в доход",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "8910", side: "debit", expression: "amount" },
+        { accountCode: "9390", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-37: Признание гранта — уведомление получено (НСБУ-21, п. 369, 2213)
+  {
+    code: "GRANT_RECEIVABLE",
+    name: "Признание гранта (получено уведомление)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "4890", side: "debit", expression: "amount" },
+        { accountCode: "8810", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "4890",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-38: Получение гранта (деньги / имущество) (НСБУ-21, п. 369, 2213)
+  {
+    code: "GRANT_RECEIVED",
+    name: "Получение гранта",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4890", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4890",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-39: Признание субсидии — уведомление получено (НСБУ-21, п. 370, 2213)
+  {
+    code: "SUBSIDY_RECEIVABLE",
+    name: "Признание субсидии (получено уведомление)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "4890", side: "debit", expression: "amount" },
+        { accountCode: "8820", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "4890",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-40: Получение субсидии (НСБУ-21, п. 370, 2213)
+  {
+    code: "SUBSIDY_RECEIVED",
+    name: "Получение субсидии",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4890", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4890",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-41: Целевые поступления — членские взносы / прочие (НСБУ-21, п. 373, 2213)
+  {
+    code: "TARGET_RECEIPTS",
+    name: "Целевые поступления (членские взносы / прочие)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "8830", side: "credit", expression: "amount", condition: "receiptType == 'membership'" },
+        { accountCode: "8890", side: "credit", expression: "amount", condition: "receiptType != 'membership'" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-42: Признание целевых налоговых льгот (НСБУ-21, п. 372, 2213)
+  {
+    code: "TAX_EXEMPTION_RECOGNITION",
+    name: "Признание целевых налоговых льгот",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6410", side: "debit", expression: "amount" },
+        { accountCode: "8840", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-43: Переоценка товаров — дооценка/уценка (НСБУ-21, п. 1029)
+  {
+    code: "GOODS_REVALUATION",
+    name: "Переоценка товаров",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Дооценка: Дт 2910 — Кт 6230
+        { accountCode: "2910", side: "debit", expression: "increaseAmount", condition: "increaseAmount > 0" },
+        { accountCode: "6230", side: "credit", expression: "increaseAmount", condition: "increaseAmount > 0" },
+        // Уценка: Дт 3190 — Кт 2910
+        { accountCode: "3190", side: "debit", expression: "decreaseAmount", condition: "decreaseAmount > 0" },
+        { accountCode: "2910", side: "credit", expression: "decreaseAmount", condition: "decreaseAmount > 0" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-44: Оприходование товаров в пути на склад (НСБУ-21, п. 1001; закрывает NEW-19 GOODS_IN_TRANSIT)
+  {
+    code: "GOODS_IN_TRANSIT_RECEIVED",
+    name: "Оприходование товаров в пути на склад",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "2910", side: "debit", expression: "amount" },
+        { accountCode: "2970", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "2970",
+      requiresCounterparty: false
+    }
+  },
+
+  // ─── STAGE 5: NEW-45..NEW-62 — производство, лизинг и прочие операции, счета
+  // для которых уже присутствуют в плане счетов, но проводки не были реализованы.
+  // ────────────────────────────────────────────────────────────────
+
+  // NEW-45: Поступление материалов от поставщика
+  {
+    code: "MATERIALS_RECEIVED",
+    name: "Поступление материалов от поставщика",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "1010", side: "debit", expression: "amount" },
+        { accountCode: "4410", side: "debit", expression: "vatAmount", condition: "vatAmount > 0" },
+        { accountCode: "6010", side: "credit", expression: "amount + vatAmount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "6010",
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-46: Передача материалов в производство
+  {
+    code: "MATERIALS_TO_PRODUCTION",
+    name: "Передача материалов в производство",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "2010", side: "debit", expression: "amount" },
+        { accountCode: "1010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-47: Выпуск готовой продукции
+  {
+    code: "FINISHED_GOODS_OUTPUT",
+    name: "Выпуск готовой продукции",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "2810", side: "debit", expression: "amount" },
+        { accountCode: "2010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-48: Списание себестоимости реализованной готовой продукции
+  {
+    code: "FINISHED_GOODS_SOLD",
+    name: "Списание себестоимости реализованной готовой продукции",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9110", side: "debit", expression: "amount" },
+        { accountCode: "2810", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-49: Возврат материалов поставщику
+  {
+    code: "MATERIALS_RETURNED_TO_SUPPLIER",
+    name: "Возврат материалов поставщику",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6010", side: "debit", expression: "amount" },
+        { accountCode: "1010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-50: Получение ОС по финансовой аренде (лизинг) (НСБУ-6)
+  {
+    code: "FINANCE_LEASE_ASSET_RECEIVED",
+    name: "Получение основных средств по финансовой аренде",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "0310", side: "debit", expression: "amount" },
+        { accountCode: "7910", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "7910",
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-51: Начисление амортизации по лизинговому имуществу
+  {
+    code: "FINANCE_LEASE_DEPRECIATION",
+    name: "Амортизация имущества по финансовой аренде",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "0299", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-52: Лизинговый платёж (погашение основной суммы)
+  {
+    code: "FINANCE_LEASE_PAYMENT",
+    name: "Платёж по финансовой аренде (основная сумма)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "7910", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "7910",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-53: Проценты по финансовой аренде
+  {
+    code: "FINANCE_LEASE_INTEREST",
+    name: "Проценты по финансовой аренде",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9610", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-54: Доход от роялти получен
+  {
+    code: "ROYALTY_INCOME",
+    name: "Доход от роялти получен",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "9510", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-55: Выплата роялти
+  {
+    code: "ROYALTY_PAYMENT",
+    name: "Выплата роялти",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-56: Открытие аккредитива
+  {
+    code: "LETTER_OF_CREDIT_OPEN",
+    name: "Открытие аккредитива",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5510", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "5510",
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-57: Исполнение (закрытие) аккредитива
+  {
+    code: "LETTER_OF_CREDIT_EXECUTION",
+    name: "Исполнение аккредитива",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6010", side: "debit", expression: "amount" },
+        { accountCode: "5510", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "5510",
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-58: Депонирование невыплаченной заработной платы
+  {
+    code: "SALARY_DEPOSIT",
+    name: "Депонирование заработной платы",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6710", side: "debit", expression: "amount" },
+        { accountCode: "6720", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "6720",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-59: Выплата депонированной заработной платы
+  {
+    code: "SALARY_DEPOSIT_PAYMENT",
+    name: "Выплата депонированной заработной платы",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "6720", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "6720",
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-60: Начисление процентов по депозиту
+  {
+    code: "DEPOSIT_INTEREST_ACCRUAL",
+    name: "Начисление процентов по депозиту",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "4830", side: "debit", expression: "amount" },
+        { accountCode: "9530", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-61: Возврат товаров поставщику (ранее оплаченных, сторно поступления)
+  {
+    code: "GOODS_RETURNED_TO_SUPPLIER",
+    name: "Возврат товаров поставщику",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6010", side: "debit", expression: "amount" },
+        { accountCode: "2910", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // NEW-62: Перевод долгосрочной задолженности в краткосрочную часть
+  {
+    code: "LONG_TERM_TO_CURRENT_RECLASS",
+    name: "Перевод долгосрочной задолженности в краткосрочную часть",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "7810", side: "debit", expression: "amount" },
+        { accountCode: "6950", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // NEW-63: Чрезвычайные доходы/расходы (форс-мажор)
+  {
+    code: "EXTRAORDINARY_GAIN_LOSS",
+    name: "Чрезвычайные доходы/расходы",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        // Чрезвычайный доход: Дт $accountCode — Кт 9710
+        { accountCode: "$accountCode", side: "debit", expression: "gainAmount", condition: "gainAmount > 0" },
+        { accountCode: "9710", side: "credit", expression: "gainAmount", condition: "gainAmount > 0" },
+        // Чрезвычайный убыток: Дт 9720 — Кт $accountCode
+        { accountCode: "9720", side: "debit", expression: "lossAmount", condition: "lossAmount > 0" },
+        { accountCode: "$accountCode", side: "credit", expression: "lossAmount", condition: "lossAmount > 0" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
   }
 ];
 

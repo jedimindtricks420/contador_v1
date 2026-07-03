@@ -49,6 +49,7 @@ const FA_SALE_AMT     = 2_520_000;   // продажа старого ноутб
 const TRAVEL_AMT      = 196_000;     // командировочные
 
 let orgId: string;
+let userId: string;
 let bankAccountId: string;
 let periodJanId: string;
 let periodFebId: string;
@@ -65,6 +66,7 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
     const user = await prisma.user.create({
       data: { email: `sim_${Date.now()}@alga.uz`, name: "Бухгалтер Алга", passwordHash: "x" },
     });
+    userId = user.id;
 
     const org = await prisma.organization.create({
       data: {
@@ -96,6 +98,16 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
   });
 
   afterAll(async () => {
+    if (orgId) {
+      // StagedTransaction has no cascade from BankAccount/Organization —
+      // must be cleared first or organization.delete() throws (silently
+      // swallowed by a bare .catch(), which is how this leaked test orgs before).
+      await prisma.stagedTransaction.deleteMany({
+        where: { bankAccount: { orgId } },
+      });
+      await prisma.organization.delete({ where: { id: orgId } });
+    }
+    if (userId) await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
   });
 
@@ -464,6 +476,23 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
       const sum = jes.reduce((s, j) => ({ d: s.d.plus(j.debit), c: s.c.plus(j.credit) }), { d: new Decimal(0), c: new Decimal(0) });
       expect(sum.d.equals(sum.c)).toBe(true);
     });
+
+    it("FIXED_ASSET_DISPOSAL_RESULT: closes out 9210 (asset had zero residual value → full proceeds recognized as profit)", async () => {
+      const resultType = await prisma.documentType.findUnique({ where: { code: "FIXED_ASSET_DISPOSAL_RESULT" } });
+      // FA_SALE_AMT / 1.12 = the net (excl. VAT) amount FIXED_ASSET_SALE credited to 9210.
+      const doc = await prisma.document.create({
+        data: {
+          orgId, periodId: periodJanId, typeId: resultType!.id,
+          date: new Date("2025-01-21"), status: "POSTED",
+          payload: { profit: Math.round(FA_SALE_AMT / 1.12) } as any,
+        },
+      });
+      await postDocument(doc.id, prisma, "sim-user");
+
+      const jes = await prisma.journalEntry.findMany({ where: { documentId: doc.id } });
+      const sum = jes.reduce((s, j) => ({ d: s.d.plus(j.debit), c: s.c.plus(j.credit) }), { d: new Decimal(0), c: new Decimal(0) });
+      expect(sum.d.equals(sum.c)).toBe(true);
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -606,8 +635,9 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
         accruals: { salaryAmount: SALARY_GROSS, ndflAmount: ndfl, socialTaxAmount: socTax, depreciationAmount: 0, rentAmount: 0 },
       }, orgId);
 
-      const state = await prisma.period.findUnique({ where: { id: periodJanId }, select: { closingData: true } });
-      const data = state?.closingData as any;
+      // saveClosingState persists to the DB-backed ClosingJob table, not Period.closingData.
+      const job = await prisma.closingJob.findUnique({ where: { periodId_orgId: { periodId: periodJanId, orgId } } });
+      const data = job?.data as any;
       expect(data?.accruals?.salaryAmount).toBe(SALARY_GROSS);
     });
 
@@ -663,8 +693,8 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
       const events = await prisma.taxCalendarEvent.findMany({ where: { orgId, periodId: periodJanId } });
       expect(events.length).toBeGreaterThan(0);
 
-      const vatEvent = events.find(e => e.taxType === "VAT");
-      const pitEvent = events.find(e => e.taxType === "PERSONAL_INCOME_TAX");
+      const vatEvent = events.find(e => e.type === "VAT");
+      const pitEvent = events.find(e => e.type === "PERSONAL_INCOME_TAX");
       expect(vatEvent).not.toBeNull();
       expect(pitEvent).not.toBeNull();
     });
@@ -884,11 +914,16 @@ describe("Contador — Real User Simulation (ООО Алга Технологи�
       }
     });
 
-    it("HYBRID types present in bank dropdown (REVENUE_VAT, REVENUE_NO_VAT)", async () => {
-      const bankTypes = await prisma.documentType.findMany({ where: { mode: { in: ["BANK_AUTO", "HYBRID"] } } });
-      const codes = bankTypes.map(d => d.code);
-      expect(codes).toContain("REVENUE_VAT");
-      expect(codes).toContain("REVENUE_NO_VAT");
+    it("REVENUE_VAT and REVENUE_NO_VAT require manual entry (not auto-posted from bank)", async () => {
+      // Revenue recognition needs a manually selected counterparty/document,
+      // so these stay MANUAL_ONLY rather than BANK_AUTO/HYBRID — see ensureBaseData.ts.
+      const revenueTypes = await prisma.documentType.findMany({
+        where: { code: { in: ["REVENUE_VAT", "REVENUE_NO_VAT"] } },
+      });
+      for (const t of revenueTypes) {
+        expect(t.mode).toBe("MANUAL_ONLY");
+      }
+      expect(revenueTypes.map(t => t.code).sort()).toEqual(["REVENUE_NO_VAT", "REVENUE_VAT"]);
     });
 
     it("BANK_AUTO types include ADVANCE_RECEIVED, SALARY, BANK_COMMISSION", async () => {
