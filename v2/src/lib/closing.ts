@@ -160,7 +160,11 @@ export async function finalizePeriod(
       const fxDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: fxType.id, date: accrualDate, status: "POSTED",
-          payload: { fxDifference: Number(fxDiff.difference) } as any
+          // fxAccountCode: этот автоматический шаг мастера закрытия переоценивает только
+          // валютный банковский счёт (5210). Переоценка других валютных статей (4010,
+          // 4310, 6010, 6820 в валюте) выполняется отдельными ручными документами
+          // FX_DIFFERENCE с соответствующим fxAccountCode.
+          payload: { fxDifference: Number(fxDiff.difference), fxAccountCode: ACCOUNTS.BANK_USD } as any
         }
       });
       await postDocument(fxDoc.id, tx, userId);
@@ -298,6 +302,25 @@ export async function finalizePeriod(
       netMap.set(key, prev);
     }
 
+    // H0. Предупреждение: 9210/9220 (счета выбытия активов) не должны иметь остатка
+    // на момент реформации — их закрывает FIXED_ASSET_DISPOSAL_RESULT (прибыль/убыток
+    // от выбытия). Ненулевой остаток означает, что выбытие было списано (FIXED_ASSET_DISPOSAL),
+    // но результат от выбытия не признан — PERIOD_CLOSING всё равно перенесёт остаток
+    // на 9910, молча скрывая пропущенный документ.
+    const warnings: string[] = [];
+    const disposalAccounts = await tx.account.findMany({
+      where: { code: { in: [ACCOUNTS.ASSET_DISPOSAL, ACCOUNTS.OTHER_ASSET_DISPOSAL] } }
+    });
+    for (const acc of disposalAccounts) {
+      const entry = netMap.get(acc.id);
+      if (entry && !entry.net.isZero()) {
+        warnings.push(
+          `Счёт ${acc.code} (${acc.name}) имеет ненулевой остаток ${entry.net.abs().toFixed(2)} перед реформацией баланса. ` +
+          `Проверьте, создан ли документ FIXED_ASSET_DISPOSAL_RESULT для всех выбытий за период — иначе прибыль/убыток от выбытия будет перенесён на 9910 без явного признания.`
+        );
+      }
+    }
+
     const acc9910 = await tx.account.findUnique({ where: { code: ACCOUNTS.FINAL_RESULT } });
     if (!acc9910) throw new Error("Счёт 9910 не найден — выполните seed счетов");
 
@@ -349,8 +372,12 @@ export async function finalizePeriod(
         where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
       });
       if (!existingYE) {
+        // Знак: net9910 = Σ(credit − debit) → ПРИБЫЛЬ при net9910 > 0 (интуитивная конвенция).
+        // Счёт 9910 копит доходы по кредиту и расходы по дебету, поэтому кредитовый остаток
+        // (net9910 > 0) — это прибыль. Раньше здесь использовался обратный знак
+        // (debit − credit, прибыль при < 0), что уже приводило к ошибке в реализации.
         const net9910Rows = await tx.$queryRaw<{ net: string }[]>`
-          SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
+          SELECT COALESCE(SUM(je.credit - je.debit), 0)::text AS net
           FROM "JournalEntry" je
           JOIN "Document" d ON d.id = je."documentId"
           JOIN "Account" a ON a.id = je."accountId"
@@ -381,8 +408,8 @@ export async function finalizePeriod(
               }
             });
             const amt = net9910.abs();
-            if (net9910.gt(0)) {
-              // Дебетовый остаток 9910 = убыток: Дт 8710 — Кт 9910
+            if (net9910.lt(0)) {
+              // Дебетовый остаток 9910 (net9910 < 0) = убыток: Дт 8710 — Кт 9910
               await tx.journalEntry.createMany({
                 data: [
                   { documentId: yeDoc.id, accountId: acc8710.id, debit: amt, credit: new Decimal(0), date: yeDate },
@@ -390,7 +417,7 @@ export async function finalizePeriod(
                 ]
               });
             } else {
-              // Кредитовый остаток 9910 = прибыль: Дт 9910 — Кт 8710
+              // Кредитовый остаток 9910 (net9910 > 0) = прибыль: Дт 9910 — Кт 8710
               await tx.journalEntry.createMany({
                 data: [
                   { documentId: yeDoc.id, accountId: acc9910.id, debit: amt, credit: new Decimal(0), date: yeDate },
@@ -410,7 +437,7 @@ export async function finalizePeriod(
       data: { status: "CLOSED", lockDate: lastDay }
     });
 
-    return { period: updatedPeriod, taxEvents: createdEvents };
+    return { period: updatedPeriod, taxEvents: createdEvents, warnings };
   });
 
   // Очистить кэш состояния wizard'а

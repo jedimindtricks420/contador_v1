@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/app/open-positions/OpenPositionsClient.tsx`, `src/app/api/open-items/route.ts`, `src/app/api/open-items/[id]/close/`, `src/app/api/open-items/[id]/reopen/`  
-**Последнее обновление:** 2026-06-30
+**Последнее обновление:** 2026-07-02
 
 ---
 
@@ -45,11 +45,21 @@ interface OpenItem {
 
 ## Автоматические дедлайны риска (из `constants.ts`)
 
-| Счёт | Описание | Дедлайн (RISK_DAYS) |
+`getRiskDeadline(accountCode, dateOpened, orgSettings)` в `src/lib/openItems.ts` считает дедлайн по приоритету:
+1. `orgSettings.openItemDeadlines[accountCode]` — переопределение конкретной организации (см. «Настройка дедлайнов» ниже) — **реально применяется** при создании OpenItem в `postDocument()`, а не только хранится.
+2. `RISK_DAYS_BY_ACCOUNT[accountCode]` — встроенное значение по умолчанию для конкретного счёта.
+3. `RISK_DAYS_DEFAULT` (30 дней) — общий fallback для любого другого буферного счёта.
+
+| Счёт | Описание | Дедлайн по умолчанию |
 |------|---------|---------------------|
-| 4220 | Подотчётные суммы (командировки) | 10 дней (`ACCOUNTABLE`) |
-| 4310, 6310, 6990 | Авансы выданные/полученные, невыясненные | 30 дней (`DEFAULT`) |
-| 5830, 6820 | Краткосрочные депозиты, займы учредителей | 365 дней (`LONG_TERM`) |
+| 4220 | Подотчётные суммы (командировки) | 10 дней |
+| 4230 | Подотчётные суммы (общехозяйственные) | 10 дней |
+| 4890 | Депозиты, расчёты с агрегаторами | 365 дней |
+| 6820 | Займы от учредителей | 365 дней |
+| 6610 | Дивиденды к оплате | 365 дней |
+| 4310, 6310, 6810, 6010, 4010, 4720 и любой другой буферный счёт | Авансы, кредиторка/дебиторка, займы сотрудникам и т.д. | 30 дней (`RISK_DAYS_DEFAULT`) |
+
+Список буферных счетов не хардкодится отдельно — `getOpenItemBufferAccountCodes()` в `ensureBaseData.ts` вычисляет его из `baseDocumentTypes` (все типы с `opensItem: true`), поэтому появление нового типа документа с открытием OpenItem автоматически подхватывается настройками дедлайнов без правки этого списка вручную.
 
 При `openItem.riskDeadline < now()` — функция `markRiskyItems(orgId)` обновляет статус на `RISK`. Вызывается автоматически при каждом GET /api/open-items.
 
@@ -139,9 +149,23 @@ POST /api/open-items/[id]/reopen
 }
 ```
 
-**Автозакрытие** происходит при проведении документов с полем шаблона `closesOpenItemByAccount`:
-- `SUPPLIER_REFUND` — закрывает позицию на счёте 4310
-- `ADVANCE_RETURN_SENT` — закрывает позицию на счёте 6310
+**Автозакрытие** происходит при проведении документов с полем шаблона `closesOpenItemByAccount`.
+Требует `counterpartyId` на закрывающем документе — без него шаг закрытия молча пропускается
+(см. Модуль H). Полный список на сегодня:
+
+| Тип документа | Закрывает счёт |
+|----------------|---------------|
+| `REVENUE_COLLECTION` | 4010 |
+| `SUPPLIER_PAYMENT` / `_GOODS` / `_SERVICES` / `_OTHER` / `_VAT` | 6010 |
+| `GOODS_RECEIVED_PREPAID`, `SERVICE_RECEIVED_PREPAID` | 4310 |
+| `SUPPLIER_REFUND` | 4310 |
+| `ADVANCE_RETURN_SENT` | 6310 |
+| `BANK_LOAN_REPAYMENT` | 6810 |
+| `FOUNDER_LOAN_REPAYMENT` | 6820 |
+| `DIVIDEND_PAYMENT` | 6610 |
+| `ACCOUNTABLE_WRITEOFF`, `ACCOUNTABLE_RETURN` | 4220 |
+| `ACCOUNTABLE_GENERAL_WRITEOFF`, `ACCOUNTABLE_GENERAL_RETURN` | 4230 |
+| `DEPOSIT_RETURN` | 4890 |
 
 Подробнее — в Модуле H.
 
@@ -159,8 +183,18 @@ POST /api/open-items/[id]/reopen
 
 ## Настройка дедлайнов
 
-`GET/PATCH /api/settings/open-item-deadlines` — переопределение дедлайнов риска на уровне организации (хранится в `Organization.settings`).
+`GET/PATCH /api/settings/open-item-deadlines` — переопределение дедлайнов риска на уровне
+организации (хранится в `Organization.settings.openItemDeadlines`), реально учитывается
+в `getRiskDeadline()` при создании OpenItem.
+
+- **GET** возвращает `{ accounts: [{ code, name, days }] }` — счета и их `name` берутся из
+  `getOpenItemBufferAccountCodes()` + join с таблицей `Account` (не хардкодятся в UI); `days` —
+  override организации, иначе встроенный дефолт (`RISK_DAYS_BY_ACCOUNT`/`RISK_DAYS_DEFAULT`).
+- **PATCH** принимает `{ [код_счёта]: дни }`, валидирует, что код входит в
+  `getOpenItemBufferAccountCodes()` и что `дни` — положительное число, иначе 400.
+- UI (`settings/open-items-deadlines/page.tsx`) рендерит список полностью по ответу GET —
+  никаких захардкоженных счетов в компоненте.
 
 ---
 
-*Последнее обновление: 2026-06-30*
+*Последнее обновление: 2026-07-02*

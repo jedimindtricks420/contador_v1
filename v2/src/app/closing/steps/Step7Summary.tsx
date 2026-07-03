@@ -138,6 +138,7 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
   if (finalResult) {
     const periodObj = finalResult.period;
     const taxEvents = finalResult.taxEvents || [];
+    const closingWarnings: string[] = finalResult.warnings || [];
     const isDecember = periodObj.month === 12;
     const dateLabel = new Date(periodObj.year, periodObj.month - 1, 1).toLocaleDateString("ru-RU", {
       month: "long",
@@ -159,6 +160,19 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
             Все проводки периода заблокированы. Изменение документов с датой ранее {new Date(periodObj.lockDate).toLocaleDateString("ru-RU")} запрещено.
           </p>
         </div>
+
+        {closingWarnings.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded p-4 space-y-2">
+            <div className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+              <AlertTriangle size={14} />Предупреждения при закрытии периода
+            </div>
+            <ul className="space-y-1.5">
+              {closingWarnings.map((w, i) => (
+                <li key={i} className="text-xs text-amber-700 leading-relaxed">{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Taxes schedule */}
         <div className="bg-white border border-gray-200 rounded p-5 space-y-4">

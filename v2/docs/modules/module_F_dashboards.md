@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/app/dashboard/`, `src/app/pnl/`, `src/app/cashflow/`, `src/app/accounts/`  
-**Последнее обновление:** 2026-06-30
+**Последнее обновление:** 2026-07-02
 
 ---
 
@@ -72,6 +72,9 @@ const [totalImported, needsClarification, confirmed] = period
 ```
 Выручка (стр.010) = Кт(9010 + 9020 + 9030) − Дт(9040 + 9050)
 COGS (стр.020)    = Дт(9110 + 9120 + 9130)
+  # 9130 — себестоимость услуг, ПРОДАВАЕМЫХ клиентам. Покупка услуг у поставщика
+  # (SERVICE_RECEIVED/_PREPAID) больше не пишет на 9130 — она идёт на 9420 (стр.060),
+  # т.к. это административный расход, а не себестоимость.
 Расходы по реализации (стр.050) = Дт(9410)
 Административные расходы (стр.060) = Дт(9420)
 Прочие операционные расходы (стр.070) = Дт(9430)
@@ -118,22 +121,31 @@ const hasMixedCurrencies = accountId === "ALL"
 
 ### Категории оттоков
 
-| Код | Название |
-|-----|---------|
-| `SUPPLIER_PAYMENT` | Закупка товаров/услуг |
-| `ADVANCE_PAID` | Авансы выданные |
-| `SALARY` | Выплата зарплаты (нетто) |
-| `TAXES` | Налоги в бюджет (TAX_PAYMENT) |
-| `INPS` | ИНПС (INPS_PAYMENT) |
-| `SOCIAL_TAX` | Соцналог (SOCIAL_TAX_PAYMENT) |
-| `RENT` | Аренда |
-| `ADVERTISING` | Реклама |
-| `ACCOUNTABLE` | Подотчётные суммы |
-| `DEPOSIT` | Гарантийный депозит |
-| `CAPEX` | Капитальные расходы (ОС) |
-| `LOAN_REPAYMENT` | Погашение кредитов/займов |
-| `FX_LOSS` | Отрицательные курсовые разницы |
-| `OTHER_OUTFLOW` | Прочие расходы |
+| Код | Название | Типы документов |
+|-----|---------|-----------------|
+| `SUPPLIER_PAYMENT` | Закупка товаров/услуг | `SUPPLIER_PAYMENT`, `_GOODS`, `_SERVICES`, `_OTHER`, `_VAT` |
+| `ADVANCE_PAID` | Авансы выданные | `ADVANCE_PAID` |
+| `SALARY` | Выплата зарплаты (нетто) | `SALARY` |
+| `TAXES` | Налоги в бюджет (TAX_PAYMENT) | `TAX_PAYMENT` |
+| `INPS` | ИНПС (INPS_PAYMENT) | `INPS_PAYMENT` |
+| `SOCIAL_TAX` | Соцналог (SOCIAL_TAX_PAYMENT) | `SOCIAL_TAX_PAYMENT` |
+| `RENT` | Аренда | `RENT` |
+| `ADVERTISING` | Реклама | `ADVERTISING` |
+| `ACCOUNTABLE` | Подотчётные суммы | `ACCOUNTABLE` |
+| `DEPOSIT` | Гарантийный депозит | `DEPOSIT` |
+| `CAPEX` | Капитальные расходы (ОС/НМА) | `FIXED_ASSET_PURCHASE`, `INTANGIBLE_ASSET_PURCHASE` |
+| `LOAN_REPAYMENT` | Погашение кредитов/займов | `FOUNDER_LOAN_REPAYMENT`, `BANK_LOAN_REPAYMENT` |
+| `FX_LOSS` | Отрицательные курсовые разницы | `FX_DIFFERENCE` (кредитовая сторона) |
+| `OTHER_OUTFLOW` | Прочие расходы | всё остальное (в т.ч. `EMPLOYEE_LOAN` — балансовая операция) |
+
+Возвраты ранее выплаченных сумм — `ACCOUNTABLE_RETURN`, `ACCOUNTABLE_GENERAL_RETURN`,
+`DEPOSIT_RETURN`, `SUPPLIER_REFUND`, `EMPLOYEE_LOAN_REPAYMENT` — попадают в `OTHER_INFLOW`
+(балансовые операции, не выделены в отдельную категорию притока).
+
+`INTERNAL_TRANSFER` и `INTERNAL_TRANSFER_RECEIVED` полностью исключены из отчёта (`continue`
+до попадания в категории) — обе стороны внутреннего перевода лежат в отслеживаемом пуле
+счетов (5110/5210/5710), поэтому включение исказило бы суммы категорий нулевым по факту
+движением денег.
 
 ### Ответ API
 
@@ -169,4 +181,4 @@ CRUD банковских счетов организации.
 
 ---
 
-*Последнее обновление: 2026-06-30*
+*Последнее обновление: 2026-07-02*

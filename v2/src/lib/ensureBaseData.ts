@@ -4,7 +4,7 @@ import { upsertAllAccounts } from "./seed-coa";
 
 const vatDivisor = 1 + TAX_RATES.VAT; // 1.12
 
-const baseDocumentTypes = [
+export const baseDocumentTypes = [
   {
     code: "REVENUE_VAT",
     name: "Поступление от покупателя (с НДС)",
@@ -61,9 +61,14 @@ const baseDocumentTypes = [
     }
   },
   {
+    // Устаревший код — оставлен только для проведения/миграции исторических документов
+    // и старых Rule-записей (см. миграцию ниже в ensureBaseData()). Не предлагается
+    // ни AI-классификатору, ни в списке ручного создания документов для банковских
+    // операций (mode !== BANK_AUTO). Новые операции используйте SUPPLIER_PAYMENT_SERVICES/
+    // _GOODS/_OTHER/_VAT.
     code: "SUPPLIER_PAYMENT",
-    name: "Оплата поставщику (погашение долга)",
-    mode: "BANK_AUTO",
+    name: "Оплата поставщику (погашение долга, устаревший тип)",
+    mode: "MANUAL_ONLY",
     template: {
       lines: [
         { accountCode: "6010", side: "debit", expression: "amount" },
@@ -327,15 +332,21 @@ const baseDocumentTypes = [
     }
   },
   {
+    // $fxAccountCode — код переоцениваемого валютного счёта из payload: 5210 (валютный банк.
+    // счёт), но также применимо к 4010/4310/6010/6820 и т.д., если по ним ведётся учёт в
+    // иностранной валюте. Знак fxDifference — это эффект переоценки на капитал (+ прибыль,
+    // − убыток), а не просто "курс вырос/упал": для дебетовых (активных) статей рост курса
+    // обычно даёт +, для кредитовых (пассивных, напр. 6010/6820) рост курса даёт − (мы
+    // должны больше) — расчёт знака выполняется вручную при подготовке проводки.
     code: "FX_DIFFERENCE",
     name: "Курсовая разница валютных счетов",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: ACCOUNTS.BANK_USD, side: "debit", expression: "fxDifference", condition: "fxDifference > 0" },
+        { accountCode: "$fxAccountCode", side: "debit", expression: "fxDifference", condition: "fxDifference > 0" },
         { accountCode: ACCOUNTS.FX_INCOME, side: "credit", expression: "fxDifference", condition: "fxDifference > 0" },
         { accountCode: ACCOUNTS.FX_EXPENSE, side: "debit", expression: "-fxDifference", condition: "fxDifference < 0" },
-        { accountCode: ACCOUNTS.BANK_USD, side: "credit", expression: "-fxDifference", condition: "fxDifference < 0" }
+        { accountCode: "$fxAccountCode", side: "credit", expression: "-fxDifference", condition: "fxDifference < 0" }
       ],
       opensItem: false,
       requiresCounterparty: false
@@ -469,8 +480,10 @@ const baseDocumentTypes = [
     name: "Получение услуги (начисление постоплаты)",
     mode: "MANUAL_ONLY",
     template: {
+      // 9130 — себестоимость услуг, ПРОДАВАЕМЫХ клиентам, а не купленных у поставщика.
+      // Покупка услуги (юр./IT/консалтинг) — административный/прочий операционный расход.
       lines: [
-        { accountCode: "9130", side: "debit", expression: "amount - vatAmount" },
+        { accountCode: "9420", side: "debit", expression: "amount - vatAmount" },
         { accountCode: "4410", side: "debit", expression: "vatAmount", condition: "vatAmount > 0" },
         { accountCode: "6010", side: "credit", expression: "amount" }
       ],
@@ -485,7 +498,7 @@ const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9130", side: "debit", expression: "amount - vatAmount" },
+        { accountCode: "9420", side: "debit", expression: "amount - vatAmount" },
         { accountCode: "4410", side: "debit", expression: "vatAmount", condition: "vatAmount > 0" },
         { accountCode: "4310", side: "credit", expression: "amount" }
       ],
@@ -724,15 +737,33 @@ const baseDocumentTypes = [
     }
   },
   {
+    // Двухшаговая операция по НСБУ: сначала начисление (DIVIDEND_ACCRUAL, 8710→6610),
+    // затем оплата отсюда (6610→5110). Прямая проводка 8710→5110 пропускала
+    // промежуточное обязательство перед учредителем на счёте 6610.
     code: "DIVIDEND_PAYMENT",
     name: "Выплата дивидендов учредителям",
     mode: "BANK_AUTO",
     template: {
       lines: [
-        { accountCode: "8710", side: "debit", expression: "amount" },
+        { accountCode: "6610", side: "debit", expression: "amount" },
         { accountCode: "5110", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6610",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "DIVIDEND_ACCRUAL",
+    name: "Начисление дивидендов учредителям",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "8710", side: "debit", expression: "amount" },
+        { accountCode: "6610", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "6610",
       requiresCounterparty: true
     }
   },
@@ -924,6 +955,12 @@ const baseDocumentTypes = [
   },
 
   {
+    // Payload использует три отдельных явных поля вместо перегруженного "amount":
+    //   grossSaleAmount — полная сумма продажи клиенту (с НДС, до удержания комиссии)
+    //   netAmount       — сумма, фактически поступившая от агрегатора (после комиссии)
+    //   commissionAmount — удержанная комиссия агрегатора
+    // Инвариант баланса проводки: netAmount + commissionAmount == grossSaleAmount
+    // (иначе postDocument выбросит ошибку "Несбалансированная проводка").
     code: "MARKETPLACE_REVENUE",
     name: "Выручка маркетплейса (зачет расчётов с агрегатором и комиссия)",
     mode: "MANUAL_ONLY",
@@ -931,11 +968,141 @@ const baseDocumentTypes = [
       lines: [
         { accountCode: "4890", side: "debit", expression: "netAmount" },
         { accountCode: "9430", side: "debit", expression: "commissionAmount" },
-        { accountCode: "9030", side: "credit", expression: "amount - vatAmount" },
+        { accountCode: "9030", side: "credit", expression: "grossSaleAmount - vatAmount" },
         { accountCode: "6410", side: "credit", expression: "vatAmount", condition: "vatAmount > 0" }
       ],
       opensItem: false,
       requiresCounterparty: true
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ЗАКРЫТИЕ ПОДОТЧЁТНЫХ СУММ (авансовый отчёт сотрудника)
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "ACCOUNTABLE_WRITEOFF",
+    name: "Списание подотчётных сумм (командировочные, авансовый отчёт)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "4220", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4220",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "ACCOUNTABLE_RETURN",
+    name: "Возврат неизрасходованного остатка подотчётных сумм (командировочные)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4220", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4220",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "ACCOUNTABLE_GENERAL_WRITEOFF",
+    name: "Списание подотчётных сумм (общехозяйственные расходы)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "4230", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4230",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "ACCOUNTABLE_GENERAL_RETURN",
+    name: "Возврат неизрасходованного остатка подотчётных сумм (общехозяйственные)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4230", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4230",
+      requiresCounterparty: true
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ВОЗВРАТ ГАРАНТИЙНОГО ДЕПОЗИТА
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "DEPOSIT_RETURN",
+    name: "Возврат гарантийного депозита",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4890", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4890",
+      requiresCounterparty: true
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // ВНУТРЕННИЙ ПЕРЕВОД — ВХОДЯЩАЯ СТОРОНА
+  // ────────────────────────────────────────────────────────────────
+  {
+    // Закрывает (нетто по дебету/кредиту) транзитный счёт 5710, открытый исходящей
+    // стороной перевода (см. INTERNAL_TRANSFER: Дт 5710 — Кт 5110). Обычная приёмная
+    // сторона межбанковских переводов данной организации — валютный счёт 5210.
+    code: "INTERNAL_TRANSFER_RECEIVED",
+    name: "Внутренний перевод (поступление на валютный счёт)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5210", side: "debit", expression: "amount" },
+        { accountCode: "5710", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ────────────────────────────────────────────────────────────────
+  // НЕМАТЕРИАЛЬНЫЕ АКТИВЫ (лицензии, товарные знаки, патенты, SaaS на срок > 1 года)
+  // ────────────────────────────────────────────────────────────────
+  {
+    code: "INTANGIBLE_ASSET_PURCHASE",
+    name: "Приобретение нематериального актива",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "0830", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    // $assetAccountCode из payload: 0410 (патенты/лицензии/ноу-хау), 0420 (товарные знаки),
+    // 0430 (программное обеспечение) и т.д.
+    code: "INTANGIBLE_ASSET_COMMISSIONING",
+    name: "Ввод нематериального актива в эксплуатацию",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "$assetAccountCode", side: "debit", expression: "acquisitionCost" },
+        { accountCode: "0830", side: "credit", expression: "acquisitionCost" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
     }
   }
 ];
@@ -970,4 +1137,21 @@ export async function ensureBaseData() {
     }
   }
 
+}
+
+/**
+ * Single source of truth for "which GL accounts act as OpenItem buffers" — derived directly
+ * from baseDocumentTypes instead of being maintained as a separate hardcoded list. Consumed
+ * by the risk-deadline settings API/UI and can be reused anywhere else that needs to enumerate
+ * buffer accounts without duplicating the list.
+ */
+export function getOpenItemBufferAccountCodes(): string[] {
+  const codes = new Set<string>();
+  for (const doc of baseDocumentTypes) {
+    const template = doc.template as { opensItem?: boolean; itemAccountCode?: string };
+    if (template.opensItem && template.itemAccountCode) {
+      codes.add(template.itemAccountCode);
+    }
+  }
+  return Array.from(codes).sort();
 }

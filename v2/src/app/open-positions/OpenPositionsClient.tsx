@@ -61,8 +61,10 @@ function AccountIcon({ code }: { code: string }) {
     "6310": <TrendingUp size={18} className="text-gray-500" />,
     "4310": <TrendingDown size={18} className="text-gray-500" />,
     "4220": <Briefcase size={18} className="text-gray-500" />,
+    "4230": <Briefcase size={18} className="text-gray-500" />,
     "6820": <Handshake size={18} className="text-gray-500" />,
-    "5830": <Lock size={18} className="text-gray-500" />,
+    "6610": <Banknote size={18} className="text-gray-500" />,
+    "4890": <Lock size={18} className="text-gray-500" />,
     "6990": <HelpCircle size={18} className="text-gray-500" />,
   };
   return <>{icons[code] || <Folder size={18} className="text-gray-500" />}</>;
@@ -334,12 +336,14 @@ export default function OpenPositionsClient() {
               className="bg-white border border-gray-200 rounded px-2.5 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
             >
               <option value="ALL">Все буферные счета</option>
-              <option value="6310">6310 (Авансы полученные)</option>
-              <option value="4310">4310 (Авансы выданные)</option>
-              <option value="4220">4220 (Подотчетные средства)</option>
-              <option value="6820">6820 (Займы учредителя)</option>
-              <option value="5830">5830 (Гарантийные депозиты)</option>
-              <option value="6990">6990 (Невыясненные платежи)</option>
+              {(summary?.byAccount ?? [])
+                .slice()
+                .sort((a, b) => a.accountCode.localeCompare(b.accountCode))
+                .map((acc) => (
+                  <option key={acc.accountCode} value={acc.accountCode}>
+                    {acc.accountCode} ({acc.name})
+                  </option>
+                ))}
             </select>
           </div>
 

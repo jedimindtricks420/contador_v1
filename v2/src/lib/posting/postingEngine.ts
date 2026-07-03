@@ -157,7 +157,7 @@ export async function postDocument(
     if (itemAmount.isZero()) {
       throw new Error(`OpenItem не создан: поле "amount" равно нулю или отсутствует в payload документа ${doc.id}`);
     }
-    const riskDeadline = getRiskDeadline(template.itemAccountCode, doc.date);
+    const riskDeadline = getRiskDeadline(template.itemAccountCode, doc.date, org.settings);
 
     openItem = await tx.openItem.create({
       data: {

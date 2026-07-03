@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
       { code: "ADVERTISING", name: "Реклама" },
       { code: "ACCOUNTABLE", name: "Подотчётные суммы" },
       { code: "DEPOSIT", name: "Гарантийный депозит" },
-      { code: "CAPEX", name: "Капитальные расходы (ОС)" },
+      { code: "CAPEX", name: "Капитальные расходы (ОС/НМА)" },
       { code: "LOAN_REPAYMENT", name: "Погашение кредитов / займов" },
       { code: "FX_LOSS", name: "Отрицательные курсовые разницы" },
       { code: "OTHER_OUTFLOW", name: "Прочие расходы" }
@@ -114,7 +114,10 @@ export async function GET(req: NextRequest) {
     // Process entries
     for (const entry of entries) {
       const doc = entry.document;
-      if (doc.type.code === "INTERNAL_TRANSFER") continue;
+      // Both legs of an internal transfer touch tracked cash accounts (5110/5210/5710) —
+      // excluded entirely so they don't inflate OTHER_INFLOW/OTHER_OUTFLOW totals (net
+      // effect on cash is zero, it's money moving between own accounts, not real flow).
+      if (doc.type.code === "INTERNAL_TRANSFER" || doc.type.code === "INTERNAL_TRANSFER_RECEIVED") continue;
 
       // FX_DIFFERENCE entries affect the bank balance (5210) — include as separate category
       // so that openingBalance + netFlow = closingBalance.
@@ -157,8 +160,13 @@ export async function GET(req: NextRequest) {
           catCode = "CAPITAL_CONTRIBUTION";
         } else if (doc.type.code === "BANK_LOAN_RECEIVED") {
           catCode = "BANK_LOAN";
-        } else if (["SUPPLIER_REFUND", "EMPLOYEE_LOAN_REPAYMENT"].includes(doc.type.code)) {
-          // Supplier refund — money returned, treat as Other Inflow (balance op)
+        } else if ([
+          "SUPPLIER_REFUND", "EMPLOYEE_LOAN_REPAYMENT",
+          "ACCOUNTABLE_RETURN", "ACCOUNTABLE_GENERAL_RETURN", "DEPOSIT_RETURN",
+        ].includes(doc.type.code)) {
+          // Refunds/returns of money previously paid out — treat as Other Inflow (balance op),
+          // same as the outgoing legs (ACCOUNTABLE/ACCOUNTABLE_GENERAL/DEPOSIT) aren't broken
+          // out from OTHER_OUTFLOW's counterparts below.
           catCode = "OTHER_INFLOW";
         }
 
@@ -199,7 +207,7 @@ export async function GET(req: NextRequest) {
           catCode = "ACCOUNTABLE";
         } else if (doc.type.code === "DEPOSIT") {
           catCode = "DEPOSIT";
-        } else if (doc.type.code === "FIXED_ASSET_PURCHASE") {
+        } else if (["FIXED_ASSET_PURCHASE", "INTANGIBLE_ASSET_PURCHASE"].includes(doc.type.code)) {
           catCode = "CAPEX";
         } else if (doc.type.code === "BANK_LOAN_REPAYMENT") {
           catCode = "LOAN_REPAYMENT";

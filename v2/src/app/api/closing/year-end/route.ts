@@ -25,9 +25,12 @@ export async function POST(req: NextRequest) {
 
     const year = period.year;
 
-    // Суммарное сальдо 9910 за весь год
+    // Суммарное сальдо 9910 за весь год.
+    // Знак: net9910 = Σ(credit − debit) → ПРИБЫЛЬ при net9910 > 0 (интуитивная конвенция,
+    // согласована с src/lib/closing.ts — там же исторически был обратный знак, что уже
+    // приводило к ошибке в реализации).
     const result = await prisma.$queryRaw<{ net: string }[]>`
-      SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS net
+      SELECT COALESCE(SUM(je.credit - je.debit), 0)::text AS net
       FROM "JournalEntry" je
       JOIN "Document" d ON d.id = je."documentId"
       JOIN "Account" a ON a.id = je."accountId"
@@ -72,9 +75,9 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      // net9910 > 0 → дебетовый остаток у 9910 (убыток): Дт 8710 — Кт 9910
-      // net9910 < 0 → кредитовый остаток у 9910 (прибыль): Дт 9910 — Кт 8710
-      const entries = net9910.gt(0)
+      // net9910 < 0 → дебетовый остаток у 9910 (убыток): Дт 8710 — Кт 9910
+      // net9910 > 0 → кредитовый остаток у 9910 (прибыль): Дт 9910 — Кт 8710
+      const entries = net9910.lt(0)
         ? [
             { documentId: doc.id, accountId: acc8710!.id, debit: amt, credit: new Decimal(0), date: docDate },
             { documentId: doc.id, accountId: acc9910!.id, debit: new Decimal(0), credit: amt, date: docDate }
@@ -99,9 +102,9 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({
-      message: net9910.lt(0) ? "Прибыль перенесена в нераспределённую прибыль (8710)" : "Убыток перенесён в нераспределённую прибыль (8710)",
+      message: net9910.gt(0) ? "Прибыль перенесена в нераспределённую прибыль (8710)" : "Убыток перенесён в нераспределённую прибыль (8710)",
       transferred: amt.toNumber(),
-      isProfit: net9910.lt(0)
+      isProfit: net9910.gt(0)
     });
   } catch (err: any) {
     console.error("YEAR END CLOSE ERROR:", err);

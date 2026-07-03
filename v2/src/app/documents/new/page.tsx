@@ -61,7 +61,8 @@ export default function NewDocumentPage() {
       const vars = line.expression.match(/\b[a-zA-Z][a-zA-Z0-9_]*\b/g) || [];
       for (const v of vars) {
         if (!["salaryAmount","depreciationAmount","rentAmount","taxAmount","fxDifference","amount",
-              "acquisitionCost","residualValue","salePrice","vatRate","isVatPayer"].includes(v)) continue;
+              "acquisitionCost","residualValue","salePrice","vatRate","isVatPayer",
+              "netAmount","commissionAmount","grossSaleAmount","vatAmount"].includes(v)) continue;
         if (!seen.has(v)) { seen.add(v); payloadFields.push(v); }
       }
       // Dynamic account codes

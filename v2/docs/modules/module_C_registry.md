@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/app/transactions/TransactionsClient.tsx`, `src/app/api/transactions/route.ts`  
-**Последнее обновление:** 2026-07-01
+**Последнее обновление:** 2026-07-02
 
 ---
 
@@ -140,7 +140,7 @@ interface Document {
 |------|---------|
 | `REVENUE_VAT` | Поступление с НДС |
 | `REVENUE_NO_VAT` | Поступление без НДС |
-| `SUPPLIER_PAYMENT` | Оплата поставщику |
+| `SUPPLIER_PAYMENT` | Оплата поставщику (устаревший тип, `mode: MANUAL_ONLY` — новые операции см. `SUPPLIER_PAYMENT_SERVICES`/`_GOODS`/`_OTHER`/`_VAT`) |
 | `SALARY` | Выплата зарплаты |
 | `TAX_PAYMENT` | Уплата налога (НДФЛ, НДС, НнП, НсО) |
 | `INPS_PAYMENT` | Уплата ИНПС |
@@ -155,6 +155,9 @@ interface Document {
 | `PERIOD_CLOSING` | Реформация баланса (закрытие TRANSIT-счетов) |
 | `YEAR_END_CLOSE` | Перенос 9910 → 8710 (годовое закрытие) |
 
+Таблица иллюстративная (не полная) — полный и всегда актуальный список типов документов
+и их проводок: `docs/modules/module_DOCUMENT_TYPES.md`.
+
 ---
 
-*Последнее обновление: 2026-06-30*
+*Последнее обновление: 2026-07-02*

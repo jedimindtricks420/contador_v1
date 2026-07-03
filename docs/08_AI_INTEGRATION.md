@@ -113,10 +113,12 @@ System:
   
   Доступные типы документов:
   - REVENUE_NO_VAT: Поступление без НДС
-  - SUPPLIER_PAYMENT: Оплата поставщику
+  - SUPPLIER_PAYMENT_SERVICES: Оплата за услуги (погашение долга)
   - SALARY: Выплата зарплаты
   - TAX_PAYMENT: Уплата налога
   ...
+  # SUPPLIER_PAYMENT (без суффикса) — устаревший тип, mode: MANUAL_ONLY,
+  # каталогу AI больше не предлагается (см. aiClassifier.ts, ensureBaseData.ts)
 
 User:
   Классифицируй следующие транзакции. Верни JSON-массив:
@@ -256,7 +258,7 @@ curl -s https://api.openai.com/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
-    "messages": [{"role":"user","content":"Classify: AGROSERVIS 5000000 UZS. Types: REVENUE_NO_VAT, SUPPLIER_PAYMENT. JSON: {code, confidence}"}],
+    "messages": [{"role":"user","content":"Classify: AGROSERVIS 5000000 UZS. Types: REVENUE_NO_VAT, SUPPLIER_PAYMENT_SERVICES. JSON: {code, confidence}"}],
     "max_tokens": 50
   }' | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['choices'][0]['message']['content'])"
 ```

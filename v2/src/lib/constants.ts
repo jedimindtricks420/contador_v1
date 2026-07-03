@@ -18,6 +18,7 @@ export const ACCOUNTS = {
   RECEIVABLES: "4010",
   ADVANCE_PAID_GOODS: "4310",
   ADVANCE_PAID_TRAVEL: "4220",
+  ADVANCE_PAID_GENERAL: "4230",
   VAT_INPUT: "4410",        // Входящий НДС (НДС к зачёту / аванс по налогам)
   EMPLOYEE_LOAN_RECEIVABLE: "4720", // Задолженность персонала по займам
   FIXED_ASSET_ACQUISITION: "0820",  // Приобретение ОС (кап. вложения)
@@ -47,9 +48,12 @@ export const ACCOUNTS = {
   RETAINED_EARNINGS: "8710",     // Нераспределённая прибыль (непокрытый убыток)
   OPENING_BALANCE_EQUITY: "8890", // Сальдо при открытии / балансирующий счёт
   ASSET_DISPOSAL: "9210",        // Выбытие основных средств
+  OTHER_ASSET_DISPOSAL: "9220",  // Выбытие прочих активов
   SHARE_CAPITAL: "8330",         // Уставный капитал
   INTEREST_EXPENSE: "9610",      // Расходы по процентам
   FIXED_ASSET: "0100",           // Основные средства (первоначальная стоимость)
+  INTANGIBLE_ACQUISITION: "0830", // Приобретение нематериальных активов (кап. вложения)
+  DIVIDENDS_PAYABLE: "6610",     // Дивиденды к оплате (начислены, но не выплачены)
 } as const;
 
 export const MARKETPLACE_INNS = ["302179836", "302061230", "309532578", "205370258"];
@@ -76,12 +80,20 @@ export const EXPENSE_ACCOUNT_CODES = [
   ACCOUNTS.EXPENSE_OTHER,
 ];
 
-// Open-item risk deadlines (days)
-export const RISK_DAYS = {
-  ACCOUNTABLE: 10,        // 4220 — travel advances
-  DEFAULT: 30,            // 4310, 6310, 6990 — trade advances / unidentified
-  LONG_TERM: 365,         // 4890, 6820 — deposits, founder loans
-} as const;
+// Open-item risk deadlines (days).
+// Single source of truth for default risk windows per buffer account — consumed by
+// getRiskDeadline() (lib/openItems.ts), the settings API (api/settings/open-item-deadlines)
+// and the settings UI (settings/open-items-deadlines). Org-specific overrides are stored
+// in org.settings.openItemDeadlines and take precedence over these defaults at runtime —
+// see getRiskDeadline(). Accounts not listed here fall back to RISK_DAYS_DEFAULT.
+export const RISK_DAYS_DEFAULT = 30;
+export const RISK_DAYS_BY_ACCOUNT: Record<string, number> = {
+  [ACCOUNTS.ADVANCE_PAID_TRAVEL]: 10,   // 4220 — командировочные подотчётные
+  [ACCOUNTS.ADVANCE_PAID_GENERAL]: 10,  // 4230 — общехозяйственные подотчётные
+  [ACCOUNTS.DEPOSIT]: 365,              // 4890 — депозиты / расчёты с агрегаторами
+  [ACCOUNTS.FOUNDER_LOAN]: 365,         // 6820 — займы от учредителей
+  [ACCOUNTS.DIVIDENDS_PAYABLE]: 365,    // 6610 — дивиденды к оплате
+};
 
 // Month-closing defaults
 export const CLOSING = {

@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/lib/posting/postingEngine.ts`, `src/lib/posting/expressionEval.ts`, `src/app/api/posting/`  
-**Последнее обновление:** 2026-06-30
+**Последнее обновление:** 2026-07-02
 
 ---
 
@@ -28,9 +28,10 @@
    - Вычислить сумму через `evaluate(expression, evalPayload)`; 0 → пропустить
 7. Валидация: Σ Дт == Σ Кт (иначе ошибка с суммами).
 8. Записать JournalEntry[] в БД.
-9a. Если `template.opensItem === true` → создать OpenItem (буферный счёт `template.itemAccountCode`, дедлайн `getRiskDeadline()`).
-9b. Если `template.closesOpenItemByAccount` задан → найти OPEN позицию (orgId + счёт + counterpartyId); предпочесть точное совпадение по сумме, иначе самую старую; закрыть (`status: "CLOSED"`).
-    - Применяется для: **SUPPLIER_REFUND** (закрывает 4310), **ADVANCE_RETURN_SENT** (закрывает 6310)
+9a. Если `template.opensItem === true` → создать OpenItem (буферный счёт `template.itemAccountCode`, дедлайн `getRiskDeadline(accountCode, date, org.settings)` — учитывает org-override из `Organization.settings.openItemDeadlines`, см. Модуль D).
+9b. Если `template.closesOpenItemByAccount` задан **и** у документа определён `counterpartyId` → найти OPEN позицию (orgId + счёт + counterpartyId); предпочесть точное совпадение по сумме, иначе самую старую; закрыть (`status: "CLOSED"`).
+    - **Без `counterpartyId` шаг закрытия молча пропускается** — если payload документа не содержит `counterpartyInn`/`counterpartyHint`, соответствующий OpenItem никогда не закроется этим документом.
+    - Полный список типов с `closesOpenItemByAccount` — Модуль D.
 10. Записать AuditLog (action: `POST_DOCUMENT`).
 
 **После записи:**  
@@ -137,24 +138,36 @@ Body: { documentId, newTypeId }
 |------|-------|--------|-----------|
 | `REVENUE_VAT` | 5110 | 9030 + 6410 | НДС включён |
 | `REVENUE_NO_VAT` | 5110 | 9010 | Без НДС |
-| `SUPPLIER_PAYMENT` | 6010 | 5110 | Субконто контрагент |
+| `SUPPLIER_PAYMENT` | 6010 | 5110 | Устаревший тип, `mode: MANUAL_ONLY`. Новые операции: `SUPPLIER_PAYMENT_SERVICES`/`_GOODS`/`_OTHER`/`_VAT` |
 | `SALARY` | 6710 | 5110 | Выплата зарплаты |
 | `TAX_PAYMENT` | 6410 | 5110 | Закрывает VAT/НДФЛ/НнП/НсО события |
 | `INPS_PAYMENT` | 6530 | 5110 | Закрывает INPS события |
 | `SOCIAL_TAX_PAYMENT` | 6520 | 5110 | Закрывает SOCIAL_TAX события |
-| `RENT` | 6010 | 5110 | Аренда (оплата) |
+| `RENT` | 9420 | 5110 | Аренда — прямой расход, без начисления |
+| `RENT_PAYMENT` | 6010 | 5110 | Аренда — оплата после `RENT_ACCRUAL`, closesOpenItemByAccount не задан (гасит 6010 вручную) |
 | `SALARY_ACCRUAL` | 9420 | 6710+6520+6530+6410 | ФОТ + налоги |
 | `DEPRECIATION_ACCRUAL` | 9430 | 0200 | Амортизация ОС |
 | `RENT_ACCRUAL` | 9420 | 6010 | Начисление аренды |
 | `PROFIT_TAX_ACCRUAL` | 9810 | 6410 | Налог на прибыль 15% |
 | `TURNOVER_TAX_ACCRUAL` | 9810 | 6410 | Налог с оборота |
-| `FX_DIFFERENCE` | 5210 / 9620 | 9540 / 5210 | Счета 9540/9620 (FX_INCOME/FX_EXPENSE) |
+| `FX_DIFFERENCE` | $fxAccountCode / 9620 | 9540 / $fxAccountCode | Счёт из payload (`fxAccountCode`), не хардкод; 9540/9620 = FX_INCOME/FX_EXPENSE |
 | `ADVANCE_PAID` | 4310 | 5110 | opensItem: true, счёт 4310 |
 | `ADVANCE_RECEIVED` | 5110 | 6310 | opensItem: true, счёт 6310 |
 | `SUPPLIER_REFUND` | 5110 | 4310 | closesOpenItemByAccount: "4310" |
 | `ADVANCE_RETURN_SENT` | 6310 | 5110 | closesOpenItemByAccount: "6310" |
-| `PERIOD_CLOSING` | 9xxx/9910 | 9910/9xxx | Реформация баланса |
-| `YEAR_END_CLOSE` | 9910/8710 | 8710/9910 | Перенос в 8710 |
+| `DIVIDEND_ACCRUAL` | 8710 | 6610 | opensItem: true, счёт 6610 |
+| `DIVIDEND_PAYMENT` | 6610 | 5110 | closesOpenItemByAccount: "6610" |
+| `ACCOUNTABLE_WRITEOFF` / `ACCOUNTABLE_RETURN` | 9420 / 5110 | 4220 | closesOpenItemByAccount: "4220" |
+| `ACCOUNTABLE_GENERAL_WRITEOFF` / `ACCOUNTABLE_GENERAL_RETURN` | 9430 / 5110 | 4230 | closesOpenItemByAccount: "4230" |
+| `DEPOSIT_RETURN` | 5110 | 4890 | closesOpenItemByAccount: "4890" |
+| `INTERNAL_TRANSFER_RECEIVED` | 5210 | 5710 | Приёмная сторона `INTERNAL_TRANSFER` (5710 Дт / 5110 Кт) |
+| `INTANGIBLE_ASSET_PURCHASE` | 0830 | 5110 | НМА (лицензии, ПО, товарный знак, патент) |
+| `INTANGIBLE_ASSET_COMMISSIONING` | $assetAccountCode | 0830 | Ввод НМА в эксплуатацию |
+| `PERIOD_CLOSING` | 9xxx/9910 | 9910/9xxx | Реформация баланса; предупреждает, если 9210/9220 ненулевые (см. Модуль E) |
+| `YEAR_END_CLOSE` | 9910/8710 | 8710/9910 | Перенос в 8710. `net9910 = Σ(credit − debit)`, прибыль при `> 0` (см. Модуль E) |
+
+Полный и всегда актуальный список — `docs/modules/module_DOCUMENT_TYPES.md`
+(источник истины: `src/lib/ensureBaseData.ts`).
 
 ---
 

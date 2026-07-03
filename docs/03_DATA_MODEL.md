@@ -203,7 +203,7 @@ IMPORTED → AUTO_MATCHED → POSTED
 ```json
 {
   "categoryId": "uuid-of-document-type",
-  "documentTypeCode": "SUPPLIER_PAYMENT",
+  "documentTypeCode": "SUPPLIER_PAYMENT_SERVICES",
   "confidence": 85,
   "reason": "Платёж поставщику ООО AGROSERVIS",
   "extractedCounterparty": "ООО AGROSERVIS",
@@ -262,7 +262,7 @@ model Account {
 ```prisma
 model DocumentType {
   id              String @id @default(uuid())
-  code            String @unique    // "REVENUE_VAT", "SUPPLIER_PAYMENT" и т.д.
+  code            String @unique    // "REVENUE_VAT", "SUPPLIER_PAYMENT_SERVICES" и т.д.
   name            String
   postingTemplate Json              // PostingTemplate JSON
 }

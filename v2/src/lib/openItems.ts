@@ -1,21 +1,24 @@
 import prisma from "./prisma";
-import { ACCOUNTS, RISK_DAYS } from "./constants";
+import { RISK_DAYS_BY_ACCOUNT, RISK_DAYS_DEFAULT } from "./constants";
+
+interface OpenItemDeadlineOverrides {
+  openItemDeadlines?: Record<string, number>;
+}
 
 /**
  * Calculates the deadline for a buffer account open position.
- * - 4220 (Accountable): 10 days
- * - 4310, 6310, 6990 (Advances / Unidentified): 30 days
- * - 4890, 6820 (Deposits / Founder loans): 365 days
+ * Precedence: org.settings.openItemDeadlines[accountCode] (per-org override, configured on
+ * the "Сроки риска" settings page) → RISK_DAYS_BY_ACCOUNT[accountCode] (built-in default for
+ * that account) → RISK_DAYS_DEFAULT (generic fallback for any other buffer account).
  */
-export function getRiskDeadline(accountCode: string, dateOpened: Date): Date {
+export function getRiskDeadline(accountCode: string, dateOpened: Date, orgSettings?: unknown): Date {
   const date = new Date(dateOpened);
-  let days: number = RISK_DAYS.DEFAULT;
+  const overrides = (orgSettings as OpenItemDeadlineOverrides | null | undefined)?.openItemDeadlines;
+  const overrideDays = overrides?.[accountCode];
 
-  if (accountCode === ACCOUNTS.ADVANCE_PAID_TRAVEL) {
-    days = RISK_DAYS.ACCOUNTABLE;
-  } else if (accountCode === ACCOUNTS.DEPOSIT || accountCode === ACCOUNTS.FOUNDER_LOAN) {
-    days = RISK_DAYS.LONG_TERM;
-  }
+  const days = typeof overrideDays === "number" && overrideDays > 0
+    ? overrideDays
+    : RISK_DAYS_BY_ACCOUNT[accountCode] ?? RISK_DAYS_DEFAULT;
 
   date.setDate(date.getDate() + days);
   return date;

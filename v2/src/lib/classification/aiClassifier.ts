@@ -16,10 +16,14 @@ const CREDIT_ONLY_CODES = new Set([
   "FOUNDER_LOAN", "CAPITAL_CONTRIBUTION", "BANK_LOAN_RECEIVED",
   "EMPLOYEE_LOAN_REPAYMENT", "FIXED_ASSET_SALE", "SUPPLIER_REFUND",
   "REVENUE_VAT", "REVENUE_NO_VAT",
+  "DEPOSIT_RETURN",             // 5110 Дт — 4890 Кт, депозит возвращён арендодателем
+  "ACCOUNTABLE_RETURN",         // 5110 Дт — 4220 Кт, остаток подотчётных сумм возвращён
+  "ACCOUNTABLE_GENERAL_RETURN", // 5110 Дт — 4230 Кт, остаток подотчётных сумм возвращён
+  "INTERNAL_TRANSFER_RECEIVED", // 5210 Дт — 5710 Кт, приёмная сторона внутреннего перевода
 ]);
 
 const DEBIT_ONLY_CODES = new Set([
-  "SUPPLIER_PAYMENT", "SUPPLIER_PAYMENT_GOODS", "SUPPLIER_PAYMENT_SERVICES",
+  "SUPPLIER_PAYMENT_GOODS", "SUPPLIER_PAYMENT_SERVICES",
   "SUPPLIER_PAYMENT_OTHER", "SUPPLIER_PAYMENT_VAT", "ADVANCE_PAID",
   "SALARY", "TAX_PAYMENT", "SOCIAL_TAX_PAYMENT", "INPS_PAYMENT", "RENT", "ADVERTISING",
   "OTHER_EXPENSE", "ACCOUNTABLE", "FIXED_ASSET_PURCHASE", "BANK_COMMISSION",
@@ -28,10 +32,12 @@ const DEBIT_ONLY_CODES = new Set([
   "SUBSCRIPTION", "CUSTOMS_DUTY", "DEPOSIT", "REFUND",
   "ADVANCE_RETURN_SENT", // 6310 Дт — 5110 Кт, деньги уходят
   // INTERNAL_TRANSFER шаблон: Дт5710/Кт5110 — только исходящий (DEBIT).
-  // Входящий перевод (CREDIT) не существует как отдельный тип — требует уточнения.
+  // Входящий перевод (CREDIT) на другой счёт — см. INTERNAL_TRANSFER_RECEIVED выше.
   "INTERNAL_TRANSFER",
   "RENT_PAYMENT",        // 6010 Дт — 5110 Кт, оплата аренды после начисления
   "ACCOUNTABLE_GENERAL", // 4230 Дт — 5110 Кт, подотчётные (общехозяйственные)
+  "INTANGIBLE_ASSET_PURCHASE", // 0830 Дт — 5110 Кт, покупка НМА (лицензии, ПО, товарный знак)
+  // SUPPLIER_PAYMENT — устаревший тип, mode=MANUAL_ONLY, AI больше его не предлагает.
 ]);
 
 
@@ -44,7 +50,9 @@ const ACCOUNT_LABELS: Record<string, string> = {
   "4720": "Займы сотрудникам",
   "4890": "Задолженность прочих дебиторов (депозиты, расчёты с агрегаторами)",
   "6990": "Неидентифицированные поступления",
-  "4220": "Подотчётные суммы",
+  "4220": "Подотчётные суммы (командировочные)",
+  "4230": "Подотчётные суммы (общехозяйственные)",
+  "6610": "Дивиденды к оплате (начислены, не выплачены)",
 };
 
 // ─── Context builder ───────────────────────────────────────────────────────────
@@ -284,10 +292,10 @@ ${activityLabel !== "Не указано" ? `Вид деятельности: ${
 ━━━ ЗАКОН НАПРАВЛЕНИЯ — АБСОЛЮТНЫЙ ЗАПРЕТ ━━━
 Каждая транзакция имеет поле directionLabel. Читай его ДО выбора категории.
 direction="CREDIT" (деньги ПРИХОДЯТ, ВХОДЯЩИЙ ПЛАТЁЖ, 5110 Дт) → только:
-  ADVANCE_RECEIVED, REVENUE_COLLECTION, MARKETPLACE_INCOME, FOUNDER_LOAN, CAPITAL_CONTRIBUTION, BANK_LOAN_RECEIVED, EMPLOYEE_LOAN_REPAYMENT, FIXED_ASSET_SALE, SUPPLIER_REFUND, REVENUE_VAT, REVENUE_NO_VAT
+  ADVANCE_RECEIVED, REVENUE_COLLECTION, MARKETPLACE_INCOME, FOUNDER_LOAN, CAPITAL_CONTRIBUTION, BANK_LOAN_RECEIVED, EMPLOYEE_LOAN_REPAYMENT, FIXED_ASSET_SALE, SUPPLIER_REFUND, REVENUE_VAT, REVENUE_NO_VAT, DEPOSIT_RETURN, ACCOUNTABLE_RETURN, ACCOUNTABLE_GENERAL_RETURN, INTERNAL_TRANSFER_RECEIVED
 
 direction="DEBIT" (деньги УХОДЯТ, ИСХОДЯЩИЙ ПЛАТЁЖ, 5110 Кт) → только:
-  SUPPLIER_PAYMENT и варианты, ADVANCE_PAID, SALARY, TAX_PAYMENT, SOCIAL_TAX_PAYMENT, INPS_PAYMENT, RENT, ADVERTISING, OTHER_EXPENSE, ACCOUNTABLE, FIXED_ASSET_PURCHASE, BANK_COMMISSION, BANK_LOAN_REPAYMENT, FOUNDER_LOAN_REPAYMENT, EMPLOYEE_LOAN, INTEREST_PAYMENT, DIVIDEND_PAYMENT, FINE_PENALTY, INSURANCE_PAYMENT, UTILITY_PAYMENT, SUBSCRIPTION, CUSTOMS_DUTY, DEPOSIT, REFUND, ADVANCE_RETURN_SENT, INTERNAL_TRANSFER
+  SUPPLIER_PAYMENT_GOODS/_SERVICES/_OTHER/_VAT, ADVANCE_PAID, SALARY, TAX_PAYMENT, SOCIAL_TAX_PAYMENT, INPS_PAYMENT, RENT, ADVERTISING, OTHER_EXPENSE, ACCOUNTABLE, ACCOUNTABLE_GENERAL, FIXED_ASSET_PURCHASE, INTANGIBLE_ASSET_PURCHASE, BANK_COMMISSION, BANK_LOAN_REPAYMENT, FOUNDER_LOAN_REPAYMENT, EMPLOYEE_LOAN, INTEREST_PAYMENT, DIVIDEND_PAYMENT, FINE_PENALTY, INSURANCE_PAYMENT, UTILITY_PAYMENT, SUBSCRIPTION, CUSTOMS_DUTY, DEPOSIT, REFUND, ADVANCE_RETURN_SENT, INTERNAL_TRANSFER
 
 Запрещённый пример: directionLabel="ВХОДЯЩИЙ ПЛАТЁЖ +2 200 000 сум" → ADVANCE_PAID. ADVANCE_PAID — расход (DEBIT). Правильно: ADVANCE_RECEIVED.
 
@@ -296,10 +304,13 @@ ${ctx.openItemsText}
 
 Как использовать открытые позиции:
 • Видишь CREDIT от контрагента из "Авансы ПОЛУЧЕННЫЕ" → он платит ещё раз (ADVANCE_RECEIVED) или дублирует
-• Видишь DEBIT контрагенту из "Авансы ВЫДАННЫЕ" → мы гасим долг (SUPPLIER_PAYMENT), а не выдаём новый аванс
+• Видишь DEBIT контрагенту из "Авансы ВЫДАННЫЕ" → мы гасим долг (SUPPLIER_PAYMENT_SERVICES/_GOODS/_OTHER/_VAT), а не выдаём новый аванс
 • Видишь CREDIT от контрагента из "Авансы ВЫДАННЫЕ" → он возвращает наш аванс (SUPPLIER_REFUND)
 • Видишь DEBIT контрагенту из "Авансы ПОЛУЧЕННЫЕ" → мы возвращаем аванс клиенту (ADVANCE_RETURN_SENT)
 • Видишь DEBIT с суммой ≈ остатку по банковскому кредиту → вероятно BANK_LOAN_REPAYMENT или INTEREST_PAYMENT
+• Видишь CREDIT от контрагента с открытым депозитом (4890, DEPOSIT) → вероятно DEPOSIT_RETURN
+• Видишь CREDIT от сотрудника с открытыми подотчётными (4220/4230) → вероятно ACCOUNTABLE_RETURN/ACCOUNTABLE_GENERAL_RETURN
+• Видишь CREDIT от учредителя с открытым 6610 (DIVIDEND_ACCRUAL) → вероятно ошибка/не дивиденды; выплата дивидендов — DEBIT (DIVIDEND_PAYMENT)
 
 ━━━ ИСТОРИЯ КОНТРАГЕНТОВ (последние 3 месяца) ━━━
 ${ctx.counterpartyHistoryText}
@@ -333,20 +344,20 @@ ${JSON.stringify(catalog, null, 2)}
 3.  Социальный налог → SOCIAL_TAX_PAYMENT
 4.  Поступление от клиентов до выставления ЭСФ → ADVANCE_RECEIVED; после ЭСФ/акта → REVENUE_COLLECTION
 5.  Поступление от маркетплейса (Payme, Click, Uzum, Ozon) → MARKETPLACE_INCOME
-6.  Оплата поставщику по существующему долгу → SUPPLIER_PAYMENT; предоплата без акта → ADVANCE_PAID
+6.  Оплата поставщику по существующему долгу → SUPPLIER_PAYMENT_SERVICES (услуги, по умолчанию) / _GOODS (товары) / _VAT (с НДС) / _OTHER; предоплата без акта → ADVANCE_PAID
 7.  Комиссия банка, РКО → BANK_COMMISSION
-8.  Покупка основного средства → FIXED_ASSET_PURCHASE; поступление от продажи ОС → FIXED_ASSET_SALE
+8.  Покупка основного средства → FIXED_ASSET_PURCHASE; поступление от продажи ОС → FIXED_ASSET_SALE; покупка НМА (лицензия/ПО/товарный знак/патент) → INTANGIBLE_ASSET_PURCHASE
 9.  Займ от учредителя (CREDIT) → FOUNDER_LOAN; возврат займа учредителю (DEBIT) → FOUNDER_LOAN_REPAYMENT; взнос в уставный капитал → CAPITAL_CONTRIBUTION
 10. Получение банковского кредита → BANK_LOAN_RECEIVED; погашение кредита → BANK_LOAN_REPAYMENT
 11. Займ сотруднику → EMPLOYEE_LOAN; возврат займа сотрудником → EMPLOYEE_LOAN_REPAYMENT
-12. Перевод DEBIT (деньги уходят на свой другой счёт) → INTERNAL_TRANSFER. Входящий CREDIT от своего счёта — не классифицируй как INTERNAL_TRANSFER, оставь на уточнение (низкий confidence)
+12. Перевод DEBIT (деньги уходят на свой другой счёт) → INTERNAL_TRANSFER. Входящий CREDIT от своего счёта на валютный счёт (обычно 5210) → INTERNAL_TRANSFER_RECEIVED
 13. Аренда → RENT; реклама/маркетинг → ADVERTISING; проценты по кредиту → INTEREST_PAYMENT
-14. Дивиденды → DIVIDEND_PAYMENT; штрафы/пени → FINE_PENALTY; страховка → INSURANCE_PAYMENT
+14. Дивиденды (выплата, DEBIT) → DIVIDEND_PAYMENT; штрафы/пени → FINE_PENALTY; страховка → INSURANCE_PAYMENT
 15. Коммунальные → UTILITY_PAYMENT; подписки/SaaS/домен → SUBSCRIPTION; таможня → CUSTOMS_DUTY
-16. Гарантийный депозит → DEPOSIT; подотчётные суммы → ACCOUNTABLE
+16. Гарантийный депозит (выдан, DEBIT) → DEPOSIT; депозит возвращён (CREDIT) → DEPOSIT_RETURN; подотчётные суммы (выданы, DEBIT) → ACCOUNTABLE/ACCOUNTABLE_GENERAL; остаток подотчётных возвращён (CREDIT) → ACCOUNTABLE_RETURN/ACCOUNTABLE_GENERAL_RETURN
 17. Поставщик возвращает НАШИ деньги (CREDIT) → SUPPLIER_REFUND
 18. Мы возвращаем деньги КЛИЕНТУ (DEBIT, закрываем 6310) → ADVANCE_RETURN_SENT
-19. Возврат/корректировка покупателю (уменьшает выручку) → REFUND (DEBIT)
+19. Возврат/корректировка покупателю (уменьшает выручку, DEBIT — деньги уходят обратно клиенту) → REFUND
 20. При неуверенности — выбирай ближайшее, но снижай confidence < ${confidenceThreshold}
 
 В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на directionLabel, историю или открытые позиции.

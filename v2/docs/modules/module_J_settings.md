@@ -2,7 +2,7 @@
 
 **Статус:** ✅ Реализован  
 **Файлы:** `src/app/api/settings/`, `src/app/api/rules/`, `src/app/settings/`  
-**Последнее обновление:** 2026-06-30
+**Последнее обновление:** 2026-07-02
 
 ---
 
@@ -176,29 +176,35 @@ Body: { lines: [{ accountCode, debit, credit }], date? }
 
 **API:** `GET/PATCH /api/settings/open-item-deadlines`
 
-Переопределение дедлайнов риска для буферных счетов. Хранится в `Organization.settings` (JSON).
+Переопределение дедлайнов риска для буферных счетов. Хранится в
+`Organization.settings.openItemDeadlines` (JSON) и **реально применяется** —
+`getRiskDeadline(accountCode, dateOpened, org.settings)` в `openItems.ts` читает override
+для конкретного счёта при создании OpenItem в `postDocument()` (приоритет: override
+организации → встроенный дефолт `RISK_DAYS_BY_ACCOUNT` → общий `RISK_DAYS_DEFAULT`).
+
+Список счетов не хардкодится в UI/API — `getOpenItemBufferAccountCodes()` в
+`ensureBaseData.ts` вычисляет его из всех типов документов с `opensItem: true`, а названия
+берутся из таблицы `Account`.
 
 ### Формат
 
-```typescript
-{
-  "4310": 30,   // Авансы выданные — 30 дней
-  "6310": 30,   // Авансы полученные — 30 дней
-  "4220": 10,   // Подотчётные суммы — 10 дней
-  "5110_UNIDENTIFIED": 5
-}
-```
-
 ```
 GET /api/settings/open-item-deadlines
-→ { "4310": 30, ... }
+→ {
+    "accounts": [
+      { "code": "4220", "name": "Авансы, выданные на служебные командировки", "days": 10 },
+      { "code": "4310", "name": "Авансы поставщикам под ТМЦ", "days": 30 },
+      ...
+    ]
+  }
 
 PATCH /api/settings/open-item-deadlines
-Body: { "4310": 45, ... }   // полная замена объекта
-→ обновлённый объект
+Body: { "4310": 45, "6610": 180 }   // частичное обновление — только переданные коды
+→ { "openItemDeadlines": { "4310": 45, "6610": 180, ... } }   // объединённый объект overrides
 ```
 
-Используется функцией `getRiskDeadline()` в `openItems.ts` при создании OpenItem.
+**Валидация PATCH:** код счёта должен входить в `getOpenItemBufferAccountCodes()` (иначе
+400 — «не используется как буферный счёт»), значение — положительное число (иначе 400).
 
 ---
 
@@ -216,9 +222,9 @@ Body: { "4310": 45, ... }   // полная замена объекта
 | Правила | `/v2/settings/rules` |
 | Участники | `/v2/settings/members` |
 | Налоговый календарь | `/v2/settings/tax-deadlines` |
-| Открытые позиции | `/v2/settings/open-item-deadlines` |
+| Открытые позиции | `/v2/settings/open-items-deadlines` |
 | Счета (видимость) | `/v2/settings/accounts` |
 
 ---
 
-*Последнее обновление: 2026-06-30*
+*Последнее обновление: 2026-07-02*
