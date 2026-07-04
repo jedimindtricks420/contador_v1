@@ -65,6 +65,17 @@ describe("postDocument — CAPITAL_CONTRIBUTION charter-capital guard", () => {
     await expect(postDocument("doc-1", mockTx)).rejects.toThrow(/погашен/);
   });
 
+  it("throws when the transaction amount exceeds the remaining 4610 debt (would overpay it)", async () => {
+    // baseDoc.payload.amount = 1_000_000 — debt smaller than that must be rejected,
+    // not silently capped or overpaid.
+    mockTx.organization.findUnique.mockResolvedValue({ id: "org-1", isVatPayer: false, charterCapitalDeclaredAt: new Date() });
+    mockGetCharterCapitalDebt.mockResolvedValue(new Decimal(400_000));
+
+    const { postDocument } = await import("@/lib/posting/postingEngine");
+    await expect(postDocument("doc-1", mockTx)).rejects.toThrow(/превышает остаток долга/);
+    expect(mockTx.journalEntry.create).not.toHaveBeenCalled();
+  });
+
   it("posts normally when there is outstanding 4610 debt", async () => {
     mockTx.organization.findUnique.mockResolvedValue({ id: "org-1", isVatPayer: false, charterCapitalDeclaredAt: new Date() });
     mockGetCharterCapitalDebt.mockResolvedValue(new Decimal(5_000_000));

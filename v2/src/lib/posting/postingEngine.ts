@@ -83,16 +83,25 @@ export async function postDocument(
 
   // Guard: CAPITAL_CONTRIBUTION credits 4610 (debt of the founders towards the
   // company) — it must never post when there's no declared/outstanding debt on that
-  // account, otherwise it would silently create an unbacked liability. Any $transaction
-  // wrapper around postDocument (category route, clarification/answer, rulesEngine,
+  // account, and never for more than what's actually still owed (that would leave
+  // 4610 negative — overpaid "debt" — which НСБУ-21 §348 doesn't allow; the excess
+  // belongs on 6630 via CAPITAL_INCREASE_PENDING instead). Any $transaction wrapper
+  // around postDocument (category route, clarification/answer, rulesEngine,
   // aiClassifier) rolls back on this throw, leaving the transaction unclassified/
-  // NEEDS_CLARIFICATION instead of posting.
+  // NEEDS_CLARIFICATION instead of posting — regardless of which code path attempted
+  // it, not just the AI classifier's own (best-effort) prompt-level guidance.
   if (doc.type.code === "CAPITAL_CONTRIBUTION") {
     const { getCharterCapitalDebt } = await import("../charterCapital");
     const debt = await getCharterCapitalDebt(doc.orgId, tx);
     if (!org.charterCapitalDeclaredAt || debt.lte(0)) {
       throw new Error(
         "Невозможно провести как «Оплата доли в уставном капитале»: уставный капитал не задекларирован или долг по счёту 4610 уже полностью погашен. Укажите уставный капитал в Настройках или выберите другую категорию."
+      );
+    }
+    const contributionAmount = new Decimal(payload.amount ?? 0);
+    if (contributionAmount.gt(debt)) {
+      throw new Error(
+        `Сумма операции (${contributionAmount.toString()}) превышает остаток долга по уставному капиталу на счёте 4610 (${debt.toString()}). Разделите операцию: часть в пределах остатка — «Оплата доли в уставном капитале», остальное — «Довзнос учредителя сверх устава» (CAPITAL_INCREASE_PENDING).`
       );
     }
   }
