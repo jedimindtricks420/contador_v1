@@ -151,8 +151,10 @@ export async function GET(req: NextRequest) {
     const line420 = balCredit("8410","8420");
     const line430 = balCredit("8510","8520","8530");
     const line440 = balDebit("8610","8620");
-    // balNet сохраняет отрицательное значение при дебетовом остатке 8710 (непокрытый убыток)
-    const line450 = balNet("8710").plus(transitNet);
+    // balNet сохраняет отрицательное значение при дебетовом остатке 8710/8720 (непокрытый убыток)
+    // 8720 "Накопленная прибыль (непокрытый убыток)" сейчас не используется ни одним типом документа,
+    // но входит в состав того же раздела капитала — включаем на случай будущей реформации/переноса.
+    const line450 = balNet("8710", "8720").plus(transitNet);
     const line460 = balCredit("8810","8820","8830","8840","8890");
     const line470 = balCredit("8910");
     const line480 = line410.plus(line420).plus(line430).minus(line440)

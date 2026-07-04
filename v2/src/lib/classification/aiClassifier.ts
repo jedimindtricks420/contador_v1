@@ -224,6 +224,12 @@ interface ClassificationResult {
   reasoning: string;
   suggestedRuleType: "INN" | "KEYWORD" | "NONE";
   suggestedRuleValue: string;
+  // Categorical fields that a handful of templates branch on (posting engine
+  // silently defaults to the "else" branch when these are missing — see CUSTOMS_DUTY,
+  // SUBSCRIPTION, TARGET_RECEIPTS in ensureBaseData.ts). null unless categoryCode needs them.
+  customsType: "import_goods" | "import_asset" | null;
+  subscriptionPeriod: "monthly" | "other" | null;
+  receiptType: "membership" | "other" | null;
 }
 
 /**
@@ -376,6 +382,23 @@ ${JSON.stringify(catalog, null, 2)}
 
 В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на directionLabel, историю или открытые позиции.
 
+━━━ ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ-РАЗВИЛКИ (customsType / subscriptionPeriod / receiptType) ━━━
+У трёх типов документов проводка зависит от подтипа операции. Заполняй соответствующее поле
+ТОЛЬКО когда categoryCode совпадает; для всех остальных categoryCode — null во всех трёх полях.
+
+• categoryCode = "CUSTOMS_DUTY" → customsType:
+    "import_goods" — пошлина/сбор при ввозе ТМЗ, сырья, товаров для перепродажи;
+    "import_asset" — пошлина/сбор при ввозе основных средств, оборудования;
+    null — если из описания не ясно (пойдёт в прочие расходы по умолчанию).
+• categoryCode = "SUBSCRIPTION" → subscriptionPeriod:
+    "monthly" — явно ежемесячная подписка/оплата;
+    "other" — годовая, полугодовая или иная не-ежемесячная предоплата;
+    null — если период не ясен из описания.
+• categoryCode = "TARGET_RECEIPTS" → receiptType:
+    "membership" — членский/вступительный взнос;
+    "other" — прочие целевые поступления;
+    null — если не ясно.
+
 ━━━ ПРАВИЛО ДЛЯ АВТОМАТИЗАЦИИ (suggestedRuleType / suggestedRuleValue) ━━━
 Выбери ЛУЧШИЙ признак для автоматической классификации похожих операций в будущем.
 
@@ -413,8 +436,11 @@ suggestedRuleValue:
                 reasoning:             { type: "string" as const },
                 suggestedRuleType:     { type: "string" as const },
                 suggestedRuleValue:    { type: "string" as const },
+                customsType:           { type: ["string", "null"] as any, enum: ["import_goods", "import_asset", null] },
+                subscriptionPeriod:    { type: ["string", "null"] as any, enum: ["monthly", "other", null] },
+                receiptType:           { type: ["string", "null"] as any, enum: ["membership", "other", null] },
               },
-              required: ["transactionId", "categoryCode", "confidence", "extractedCounterparty", "extractedInn", "vatApplicable", "reasoning", "suggestedRuleType", "suggestedRuleValue"],
+              required: ["transactionId", "categoryCode", "confidence", "extractedCounterparty", "extractedInn", "vatApplicable", "reasoning", "suggestedRuleType", "suggestedRuleValue", "customsType", "subscriptionPeriod", "receiptType"],
               additionalProperties: false,
             }
           }
@@ -482,6 +508,9 @@ suggestedRuleValue:
         extractedInn: res.extractedInn,
         vatApplicable: res.vatApplicable,
         reasoning: res.reasoning,
+        customsType: res.customsType,
+        subscriptionPeriod: res.subscriptionPeriod,
+        receiptType: res.receiptType,
       };
 
       // Unknown code
@@ -534,6 +563,11 @@ suggestedRuleValue:
                   counterpartyInn: res.extractedInn || tx.counterpartyInn || null,
                   aiConfidence: res.confidence,
                   aiReasoning: res.reasoning,
+                  // Only set when the AI actually resolved the subtype — omitting them lets the
+                  // template's default branch apply exactly as before when the AI is unsure.
+                  ...(res.customsType ? { customsType: res.customsType } : {}),
+                  ...(res.subscriptionPeriod ? { subscriptionPeriod: res.subscriptionPeriod } : {}),
+                  ...(res.receiptType ? { receiptType: res.receiptType } : {}),
                 } as any
               }
             });

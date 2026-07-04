@@ -52,28 +52,53 @@ export default function NewDocumentPage() {
 
   const selectedType = docTypes.find(t => t.id === selectedTypeId);
 
-  // Determine required payload fields from template
-  const payloadFields: string[] = [];
+  // Strip quoted string literals so they aren't mistaken for field names
+  // (e.g. `customsType == 'import_goods'` must yield field `customsType`, not `import_goods`).
+  const stripStrings = (s: string) => s.replace(/'[^']*'|"[^"]*"/g, " ");
+  const identifiers = (s: string) => stripStrings(s).match(/\b[a-zA-Z_][a-zA-Z0-9_]*\b/g) || [];
+
+  // Determine required payload fields directly from the template's expressions/conditions —
+  // no hardcoded allowlist, since every new field a template introduces must "just work" here.
+  type FieldType = "number" | "boolean" | "enum";
+  const fieldOrder: string[] = [];
+  const fieldMeta: Record<string, { type: FieldType; options: string[]; isCode: boolean }> = {};
+  const addField = (name: string, patch: Partial<{ type: FieldType; options: string[] }> = {}) => {
+    if (!fieldMeta[name]) {
+      fieldOrder.push(name);
+      fieldMeta[name] = { type: "number", options: [], isCode: name.toLowerCase().endsWith("code") };
+    }
+    if (patch.type) fieldMeta[name].type = patch.type;
+    if (patch.options) {
+      fieldMeta[name].options = Array.from(new Set([...fieldMeta[name].options, ...patch.options]));
+    }
+  };
+
   if (selectedType?.postingTemplate?.lines) {
-    const seen = new Set<string>();
     for (const line of selectedType.postingTemplate.lines) {
-      // Extract variable names from expressions (simple heuristic: words that aren't operators)
-      const vars = line.expression.match(/\b[a-zA-Z][a-zA-Z0-9_]*\b/g) || [];
-      for (const v of vars) {
-        if (!["salaryAmount","depreciationAmount","rentAmount","taxAmount","fxDifference","amount",
-              "acquisitionCost","residualValue","salePrice","vatRate","isVatPayer",
-              "netAmount","commissionAmount","grossSaleAmount","vatAmount"].includes(v)) continue;
-        if (!seen.has(v)) { seen.add(v); payloadFields.push(v); }
-      }
-      // Dynamic account codes
-      if (line.accountCode.startsWith("$")) {
-        const fieldName = line.accountCode.slice(1);
-        if (!seen.has(fieldName)) { seen.add(fieldName); payloadFields.push(fieldName); }
+      for (const v of identifiers(line.expression)) addField(v);
+
+      // Dynamic account codes: `"$fieldName"` means the account code itself comes from payload
+      if (line.accountCode.startsWith("$")) addField(line.accountCode.slice(1));
+
+      if (line.condition) {
+        const trimmed = line.condition.trim();
+        const boolMatch = trimmed.match(/^!?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/);
+        if (boolMatch) {
+          // Bare (or negated) identifier condition, e.g. "hasCulprit" / "!useReserve"
+          addField(boolMatch[1], { type: "boolean" });
+        } else {
+          // Comparisons: numeric ("vatAmount > 0") contribute plain identifiers,
+          // string ("customsType == 'import_goods'") also contribute known option values.
+          for (const v of identifiers(line.condition)) addField(v);
+          const strCmp = line.condition.matchAll(/([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:==|!=)\s*'([^']*)'/g);
+          for (const m of strCmp) addField(m[1], { type: "enum", options: [m[2]] });
+        }
       }
     }
     // Always include `amount` as a fallback
-    if (!seen.has("amount")) payloadFields.push("amount");
+    if (!fieldMeta["amount"]) addField("amount");
   }
+  const payloadFields = fieldOrder;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,6 +111,13 @@ export default function NewDocumentPage() {
     try {
       const numericPayload: Record<string, any> = {};
       for (const [k, v] of Object.entries(payload)) {
+        // Account codes (e.g. "0140") and enum values (e.g. "import_goods") must stay strings —
+        // parseFloat would otherwise turn "0140" into the number 140, breaking account lookup.
+        const meta = fieldMeta[k];
+        if (meta && (meta.isCode || meta.type === "enum")) {
+          numericPayload[k] = v;
+          continue;
+        }
         const n = parseFloat(v);
         numericPayload[k] = isNaN(n) ? v : n;
       }
@@ -186,18 +218,50 @@ export default function NewDocumentPage() {
             {selectedType && payloadFields.length > 0 && (
               <div className="space-y-4 border-t border-gray-100 pt-4">
                 <p className="text-xs font-bold text-gray-500">Параметры проводки</p>
-                {payloadFields.map(field => (
-                  <div key={field} className="space-y-1">
-                    <label className="text-xs font-semibold text-gray-500">{field}</label>
-                    <input
-                      type={field.toLowerCase().endsWith("code") ? "text" : "number"}
-                      value={payload[field] ?? ""}
-                      onChange={e => setPayload(prev => ({ ...prev, [field]: e.target.value }))}
-                      placeholder={field.toLowerCase().endsWith("code") ? "Код счёта, напр. 0140" : "0"}
-                      className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
-                    />
-                  </div>
-                ))}
+                {payloadFields.map(field => {
+                  const meta = fieldMeta[field];
+                  return (
+                    <div key={field} className="space-y-1">
+                      {meta.type === "boolean" ? (
+                        <label className="flex items-center gap-2 text-xs font-semibold text-gray-500">
+                          <input
+                            type="checkbox"
+                            checked={payload[field] === "1"}
+                            onChange={e => setPayload(prev => ({ ...prev, [field]: e.target.checked ? "1" : "0" }))}
+                          />
+                          {field}
+                        </label>
+                      ) : meta.type === "enum" ? (
+                        <>
+                          <label className="text-xs font-semibold text-gray-500">{field}</label>
+                          <select
+                            value={payload[field] ?? ""}
+                            onChange={e => setPayload(prev => ({ ...prev, [field]: e.target.value }))}
+                            required
+                            className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
+                          >
+                            <option value="">— выберите —</option>
+                            {meta.options.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                            <option value="other">Другое</option>
+                          </select>
+                        </>
+                      ) : (
+                        <>
+                          <label className="text-xs font-semibold text-gray-500">{field}</label>
+                          <input
+                            type={meta.isCode ? "text" : "number"}
+                            value={payload[field] ?? ""}
+                            onChange={e => setPayload(prev => ({ ...prev, [field]: e.target.value }))}
+                            placeholder={meta.isCode ? "Код счёта, напр. 0140" : "0"}
+                            className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
+                          />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

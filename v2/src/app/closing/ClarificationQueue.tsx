@@ -23,6 +23,9 @@ interface ClarificationGroup {
     extractedCounterparty: string;
     extractedInn: string;
     vatApplicable: boolean;
+    customsType?: string | null;
+    subscriptionPeriod?: string | null;
+    receiptType?: string | null;
   } | null;
 }
 
@@ -30,6 +33,46 @@ interface DocumentType {
   id: string;
   code: string;
   name: string;
+  postingTemplate?: {
+    lines: { accountCode: string; side: string; expression: string; condition?: string }[];
+  };
+}
+
+// Fields the posting engine already supplies on its own — never prompt for these.
+const AUTO_SUPPLIED_FIELDS = new Set(["amount", "vatAmount", "isVatPayer", "vatRate"]);
+
+interface ExtraField {
+  name: string;
+  type: "boolean" | "enum";
+  options: string[];
+}
+
+// A BANK_AUTO template's `condition` strings are the only place a categorical
+// branch field (e.g. customsType/subscriptionPeriod/receiptType) can show up —
+// arithmetic `expression`s here are always just "amount". Detect those fields
+// dynamically instead of hardcoding per document type.
+function extraFieldsForType(type: DocumentType | undefined): ExtraField[] {
+  if (!type?.postingTemplate?.lines) return [];
+  const meta: Record<string, ExtraField> = {};
+  const order: string[] = [];
+  for (const line of type.postingTemplate.lines) {
+    if (!line.condition) continue;
+    const trimmed = line.condition.trim();
+    const boolMatch = trimmed.match(/^!?\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*$/);
+    if (boolMatch) {
+      const name = boolMatch[1];
+      if (AUTO_SUPPLIED_FIELDS.has(name)) continue;
+      if (!meta[name]) { meta[name] = { name, type: "boolean", options: [] }; order.push(name); }
+    } else {
+      for (const m of line.condition.matchAll(/([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:==|!=)\s*'([^']*)'/g)) {
+        const name = m[1];
+        if (AUTO_SUPPLIED_FIELDS.has(name)) continue;
+        if (!meta[name]) { meta[name] = { name, type: "enum", options: [] }; order.push(name); }
+        meta[name].options = Array.from(new Set([...meta[name].options, m[2]]));
+      }
+    }
+  }
+  return order.map(name => meta[name]);
 }
 
 function TypeaheadSelect({
@@ -125,6 +168,8 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
   // Category selections per group
   const [selectedCategories, setSelectedCategories] = useState<Record<string, string>>({});
   const [rememberSelections, setRememberSelections] = useState<Record<string, boolean>>({});
+  // Extra categorical/boolean payload fields some document types need (e.g. customsType) — per group, per field name
+  const [extraAnswers, setExtraAnswers] = useState<Record<string, Record<string, string>>>({});
 
   const loadQueue = async () => {
     try {
@@ -142,10 +187,18 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
       // Pre-select AI suggestion category where available
       const initialCats: Record<string, string> = {};
       const initialRemember: Record<string, boolean> = {};
+      const initialExtra: Record<string, Record<string, string>> = {};
 
       queueData.forEach((g) => {
         if (g.aiSuggestion) {
           initialCats[g.groupId] = g.aiSuggestion.categoryId;
+          // Pre-fill whatever categorical subtype the AI already resolved, so the user
+          // only has to fill it in when the AI genuinely couldn't tell (customsType: null, etc.)
+          const extra: Record<string, string> = {};
+          if (g.aiSuggestion.customsType) extra.customsType = g.aiSuggestion.customsType;
+          if (g.aiSuggestion.subscriptionPeriod) extra.subscriptionPeriod = g.aiSuggestion.subscriptionPeriod;
+          if (g.aiSuggestion.receiptType) extra.receiptType = g.aiSuggestion.receiptType;
+          if (Object.keys(extra).length > 0) initialExtra[g.groupId] = extra;
         } else if (docTypesData.length > 0) {
           initialCats[g.groupId] = docTypesData[0].id;
         }
@@ -154,6 +207,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
 
       setSelectedCategories(initialCats);
       setRememberSelections(initialRemember);
+      setExtraAnswers(initialExtra);
     } catch (err) {
       console.error("Failed to load clarification queue:", err);
       setLoadError(true);
@@ -213,10 +267,23 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
     const categoryId = forceCategoryId || selectedCategories[group.groupId];
     if (!categoryId) return;
 
+    // Block submission until every categorical field the chosen type needs is answered —
+    // an unanswered field would otherwise silently fall through to the template's default branch.
+    const type = docTypes.find(t => t.id === categoryId);
+    const fields = extraFieldsForType(type);
+    const answers = extraAnswers[group.groupId] || {};
+    if (fields.some(f => !answers[f.name])) return;
+
     setAnsweringGroupId(group.groupId);
 
     const matchType = group.counterpartyInn ? "INN" : "KEYWORD";
     const matchValue = group.counterpartyInn || group.counterpartyHint;
+
+    const extraPayload: Record<string, string> = {};
+    for (const f of fields) {
+      extraPayload[f.name] = f.type === "boolean" ? (answers[f.name] === "1" ? "1" : "0")
+        : (answers[f.name] === "other" ? "" : answers[f.name]);
+    }
 
     try {
       const res = await fetch("/v2/api/clarification/answer", {
@@ -227,7 +294,8 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
           documentTypeId: categoryId,
           createRule: rememberSelections[group.groupId],
           ruleMatchType: matchType,
-          ruleMatchValue: matchValue
+          ruleMatchValue: matchValue,
+          extraPayload
         })
       });
 
@@ -385,9 +453,13 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
         {groups.map((group) => {
           const isDismissing = dismissedGroups.includes(group.groupId);
           const isAnswering = answeringGroupId === group.groupId;
-          const aiRecType = group.aiSuggestion 
-            ? docTypes.find(t => t.id === group.aiSuggestion?.categoryId) 
+          const aiRecType = group.aiSuggestion
+            ? docTypes.find(t => t.id === group.aiSuggestion?.categoryId)
             : null;
+          const selectedType = docTypes.find(t => t.id === selectedCategories[group.groupId]);
+          const pendingExtraFields = extraFieldsForType(selectedType);
+          const groupExtraAnswers = extraAnswers[group.groupId] || {};
+          const extraFieldsComplete = pendingExtraFields.every(f => !!groupExtraAnswers[f.name]);
 
           const groupTotal = group.transactions.reduce((sum, t) => sum + t.amount, 0);
 
@@ -455,7 +527,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
                       </div>
                       <button
                         onClick={() => handleAnswer(group, aiRecType.id)}
-                        disabled={isAnswering}
+                        disabled={isAnswering || !extraFieldsComplete}
                         className="bg-black hover:opacity-80 text-white text-xs font-bold py-1.5 px-3.5 rounded transition whitespace-nowrap disabled:opacity-50"
                       >
                         Это верно
@@ -475,13 +547,51 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
 
                     <button
                       onClick={() => handleAnswer(group)}
-                      disabled={isAnswering}
+                      disabled={isAnswering || !extraFieldsComplete}
                       className="bg-gray-800 hover:bg-gray-900 text-white text-xs font-bold py-2 px-5 rounded transition disabled:opacity-50"
                     >
                       {isAnswering ? "..." : "Выбрать"}
                     </button>
                   </div>
                 </div>
+
+                {/* Extra categorical fields the selected type needs (e.g. таможня: товар/ОС/прочее) */}
+                {pendingExtraFields.length > 0 && (
+                  <div className="flex flex-wrap gap-3 pt-1">
+                    {pendingExtraFields.map(field => (
+                      <div key={field.name} className="space-y-1">
+                        {field.type === "boolean" ? (
+                          <label className="flex items-center gap-2 text-[11px] font-semibold text-gray-500 bg-white border border-gray-200 rounded px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={groupExtraAnswers[field.name] === "1"}
+                              onChange={e => setExtraAnswers(prev => ({
+                                ...prev,
+                                [group.groupId]: { ...prev[group.groupId], [field.name]: e.target.checked ? "1" : "0" }
+                              }))}
+                            />
+                            {field.name}
+                          </label>
+                        ) : (
+                          <select
+                            value={groupExtraAnswers[field.name] ?? ""}
+                            onChange={e => setExtraAnswers(prev => ({
+                              ...prev,
+                              [group.groupId]: { ...prev[group.groupId], [field.name]: e.target.value }
+                            }))}
+                            className="text-[11px] font-semibold bg-white border border-gray-200 rounded px-3 py-2 text-gray-600 outline-hidden focus:border-black"
+                          >
+                            <option value="">{field.name} — выберите</option>
+                            {field.options.map(opt => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                            <option value="other">Другое</option>
+                          </select>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Remember Rule Checkbox */}
                 <div className="flex items-center gap-2 pt-2 border-t border-gray-100">

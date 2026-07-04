@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
       documentTypeId,
       createRule,
       ruleMatchType,
-      ruleMatchValue
+      ruleMatchValue,
+      extraPayload
     } = await req.json();
 
     if (!transactionIds || !Array.isArray(transactionIds) || transactionIds.length === 0 || !documentTypeId) {
@@ -58,7 +59,10 @@ export async function POST(req: NextRequest) {
               direction: stagedTx.direction,
               counterpartyHint: stagedTx.counterpartyHint,
               counterpartyInn: stagedTx.counterpartyInn,
-              confirmedBy: "USER"
+              confirmedBy: "USER",
+              // Categorical fields some templates branch on (customsType, subscriptionPeriod, etc.) —
+              // collected in the clarification UI when the chosen type's template needs them.
+              ...(extraPayload && typeof extraPayload === "object" ? extraPayload : {})
             } as any
           }
         });
