@@ -1,0 +1,13 @@
+-- Migration: enforce one Document per StagedTransaction.
+-- Several posting call sites (transactions/[id]/category, clarification/answer,
+-- rules/[id]/apply, rulesEngine, aiClassifier) read a StagedTransaction and then
+-- create a Document from it without an atomic check-and-create guard. Two
+-- concurrent requests for the same StagedTransaction (double click / retry /
+-- two tabs) could each create a POSTED Document, double-counting the amount in
+-- every report that reads JournalEntry/Document directly (Cash Flow, ОСВ,
+-- Balance, P&L). This constraint makes the second create fail (P2002) instead
+-- of silently succeeding, so callers can catch it and reuse the existing doc.
+--
+-- NOTE: requires no duplicate non-null sourceTransactionId values in Document.
+-- Run the cleanup (void the orphaned duplicates) before applying this file.
+CREATE UNIQUE INDEX "Document_sourceTransactionId_key" ON "Document"("sourceTransactionId");

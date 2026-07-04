@@ -52,7 +52,15 @@ export async function PATCH(
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      let docId = stagedTx.documentId;
+      // Re-read with a row lock so two concurrent requests for the same staged
+      // transaction (double click, retry, two tabs) serialize instead of both
+      // seeing documentId as null and both creating a Document — the second
+      // one to acquire the lock sees the first one's committed documentId and
+      // reposts it instead of creating a duplicate POSTED document.
+      const [lockedTx] = await tx.$queryRaw<{ documentId: string | null }[]>`
+        SELECT "documentId" FROM "StagedTransaction" WHERE id = ${id} FOR UPDATE
+      `;
+      let docId = lockedTx?.documentId ?? stagedTx.documentId;
       let doc;
 
       if (docId) {

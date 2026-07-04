@@ -653,16 +653,75 @@ export const baseDocumentTypes = [
     }
   },
   {
+    // НСБУ-21 §344, §348: 8330 увеличивается только через декларационную проводку
+    // (см. OPENING_CAPITAL_DECLARATION), а фактическая оплата гасит долг учредителя
+    // на счёте 4610 — она НЕ создаёт капитал напрямую.
     code: "CAPITAL_CONTRIBUTION",
-    name: "Пополнение уставного фонда учредителем",
+    name: "Оплата доли в уставном капитале",
     mode: "BANK_AUTO",
     template: {
       lines: [
         { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4610", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4610",
+      requiresCounterparty: true
+    }
+  },
+  {
+    // Довзнос учредителя сверх зарегистрированного устава — до регистрации
+    // изменений устава это обязательство компании перед учредителем (6630),
+    // а не капитал. Реклассифицируется в 8330 вручную через
+    // CAPITAL_INCREASE_REGISTERED после регистрации изменений.
+    code: "CAPITAL_INCREASE_PENDING",
+    name: "Довзнос учредителя сверх устава (до регистрации изменений)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "6630", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "6630",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "CAPITAL_INCREASE_REGISTERED",
+    name: "Реклассификация довзноса в уставный капитал (после регистрации устава)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6630", side: "debit", expression: "amount" },
         { accountCode: "8330", side: "credit", expression: "amount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "6630",
       requiresCounterparty: true
+    }
+  },
+  {
+    // Разовый декларационный документ, создаётся POST /api/settings/charter-capital
+    // при первом указании уставного капитала (и повторно — при регистрации его
+    // увеличения). Условные строки покрывают все 4 варианта fundingType из ТЗ;
+    // строки с нулевой суммой/невыполненным условием пропускаются движком проводок.
+    code: "OPENING_CAPITAL_DECLARATION",
+    name: "Декларация уставного капитала",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "4610", side: "debit", expression: "amount" },
+        { accountCode: "8330", side: "credit", expression: "amount" },
+        { accountCode: "5110", side: "debit", expression: "amount", condition: "fundingType == 'FULLY_PAID_CASH'" },
+        { accountCode: "4610", side: "credit", expression: "amount", condition: "fundingType == 'FULLY_PAID_CASH'" },
+        { accountCode: "5110", side: "debit", expression: "paidAmount", condition: "fundingType == 'PARTIALLY_PAID'" },
+        { accountCode: "4610", side: "credit", expression: "paidAmount", condition: "fundingType == 'PARTIALLY_PAID'" },
+        { accountCode: "$fundedAccountCode", side: "debit", expression: "paidAmount", condition: "fundingType == 'PAID_IN_KIND'" },
+        { accountCode: "4610", side: "credit", expression: "paidAmount", condition: "fundingType == 'PAID_IN_KIND'" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
     }
   },
 

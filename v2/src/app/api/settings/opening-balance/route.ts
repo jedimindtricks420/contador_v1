@@ -65,6 +65,23 @@ export async function POST(req: NextRequest) {
 
     const balanceDate = date ? new Date(date) : new Date(period.year, period.month - 1, 1);
 
+    // Reject unbalanced input up front — no more silent parking of the difference
+    // on 8890. The caller must add the missing line themselves (see 8890's real
+    // purpose: "Прочие целевые поступления", not a balancing plug).
+    let totalDebitCheck = 0;
+    let totalCreditCheck = 0;
+    for (const line of lines) {
+      totalDebitCheck += line.debit;
+      totalCreditCheck += line.credit;
+    }
+    const diffCheck = Math.round((totalDebitCheck - totalCreditCheck) * 100) / 100;
+    if (diffCheck !== 0) {
+      return NextResponse.json(
+        { error: `Строки не сбалансированы. Разница: ${diffCheck}. Добавьте недостающую проводку (например, по уставному капиталу или нераспределённой прибыли).` },
+        { status: 400 }
+      );
+    }
+
     // Ensure OPENING_BALANCE document type exists
     let obType = await prisma.documentType.findUnique({ where: { code: "OPENING_BALANCE" } });
     if (!obType) {
@@ -74,21 +91,6 @@ export async function POST(req: NextRequest) {
           name: "Ввод начальных остатков",
           mode: "MANUAL_ONLY",
           postingTemplate: { lines: [], opensItem: false }
-        }
-      });
-    }
-
-    // Ensure equity "counterpart" account 8890 exists
-    let eq8890 = await prisma.account.findUnique({ where: { code: ACCOUNTS.OPENING_BALANCE_EQUITY } });
-    if (!eq8890) {
-      const parent88 = await prisma.account.findFirst({ where: { code: { startsWith: "88" } } });
-      eq8890 = await prisma.account.create({
-        data: {
-          code: ACCOUNTS.OPENING_BALANCE_EQUITY,
-          name: "Нераспределённая прибыль (начальный остаток)",
-          type: "LIABILITY",
-          isSystem: false,
-          parentId: parent88?.id ?? null
         }
       });
     }
@@ -115,9 +117,8 @@ export async function POST(req: NextRequest) {
         }
       });
 
-      // Build journal entries
-      let totalDebit = 0;
-      let totalCredit = 0;
+      // Build journal entries — balance already verified above (diffCheck === 0),
+      // so no plug entry into 8890 is needed here.
       const entries: any[] = [];
 
       for (const line of lines) {
@@ -132,16 +133,6 @@ export async function POST(req: NextRequest) {
           credit: line.credit,
           date: balanceDate
         });
-        totalDebit += line.debit;
-        totalCredit += line.credit;
-      }
-
-      // Balance using 8890
-      const diff = totalDebit - totalCredit;
-      if (diff > 0) {
-        entries.push({ documentId: doc.id, accountId: eq8890!.id, debit: 0, credit: diff, date: balanceDate });
-      } else if (diff < 0) {
-        entries.push({ documentId: doc.id, accountId: eq8890!.id, debit: -diff, credit: 0, date: balanceDate });
       }
 
       await tx.journalEntry.createMany({ data: entries });

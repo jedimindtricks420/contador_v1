@@ -6,6 +6,11 @@ import { AI, TRANSIT_INNS } from "../constants";
 import { getActivityLabel } from "../activityCategories";
 import { postDocument } from "../posting/postingEngine";
 import { clearRulesCache } from "./rulesEngine";
+import { getCharterCapitalDebt } from "../charterCapital";
+
+// Transactions whose description mentions the charter capital but whose category
+// can't be safely auto-decided (see the charter-capital guard in classifyAllWithAI).
+const CHARTER_CAPITAL_MENTION_RE = /устав/i;
 
 // ─── Direction guards ──────────────────────────────────────────────────────────
 // These sets are the ground truth — overrides whatever the AI returns.
@@ -269,6 +274,11 @@ export async function classifyAllWithAI(
   // Only codes that were actually offered to the AI are safe to auto-create
   const codeToId = new Map(catalog.map(dt => [dt.code, dt.id]));
 
+  // Outstanding founders' debt on 4610 — null when the charter capital was never
+  // declared. Passed into the prompt AND used as a hard guardrail below: CAPITAL_
+  // CONTRIBUTION (and anything mentioning "устав") never gets auto-posted without it.
+  const remainingCharterDebt = org.charterCapitalDeclaredAt ? await getCharterCapitalDebt(orgId) : null;
+
   // ── Enrich transactions: extract INN/name from description ──────────────────
   const enriched = transactions.map(tx => {
     let inn = tx.counterpartyInn || "";
@@ -367,7 +377,12 @@ ${JSON.stringify(catalog, null, 2)}
 6.  Оплата поставщику по существующему долгу → SUPPLIER_PAYMENT_SERVICES (услуги, по умолчанию) / _GOODS (товары) / _VAT (с НДС) / _OTHER; предоплата без акта → ADVANCE_PAID
 7.  Комиссия банка, РКО → BANK_COMMISSION
 8.  Покупка основного средства → FIXED_ASSET_PURCHASE; поступление от продажи ОС → FIXED_ASSET_SALE; покупка НМА (лицензия/ПО/товарный знак/патент) → INTANGIBLE_ASSET_PURCHASE
-9.  Займ от учредителя (CREDIT) → FOUNDER_LOAN; возврат займа учредителю (DEBIT) → FOUNDER_LOAN_REPAYMENT; взнос в уставный капитал → CAPITAL_CONTRIBUTION
+9.  Поступление от учредителя (CREDIT), назначение платежа упоминает "заём"/"займ" → FOUNDER_LOAN.
+    Назначение платежа упоминает "уставный капитал"/"уставный фонд" — остаток долга по счёту 4610 передан как remainingCharterDebt = ${remainingCharterDebt !== null ? remainingCharterDebt.toNumber().toLocaleString("ru") + " сум" : "НЕ ОПРЕДЕЛЁН (устав не задекларирован)"}:
+      а) remainingCharterDebt определён И сумма операции ≤ remainingCharterDebt → CAPITAL_CONTRIBUTION;
+      б) remainingCharterDebt НЕ определён (устав не задекларирован) → НИКОГДА не бери CAPITAL_CONTRIBUTION и НИКОГДА не ставь confidence ≥ ${confidenceThreshold}. Выбери наиболее вероятный вариант из FOUNDER_LOAN / CAPITAL_INCREASE_PENDING, но confidence должен быть низким (< ${confidenceThreshold}), чтобы операция ушла на уточнение пользователю;
+      в) remainingCharterDebt определён, но сумма операции > remainingCharterDebt → сумма превышает остаток долга, разделить одной проводкой нельзя: выбери CAPITAL_INCREASE_PENDING и снизь confidence < ${confidenceThreshold} — пользователь должен уточнить вручную, как разделить сумму между оплатой УК и довзносом сверх устава.
+    Возврат займа учредителю (DEBIT) → FOUNDER_LOAN_REPAYMENT.
 10. Получение банковского кредита → BANK_LOAN_RECEIVED; погашение кредита → BANK_LOAN_REPAYMENT
 11. Займ сотруднику → EMPLOYEE_LOAN; возврат займа сотрудником → EMPLOYEE_LOAN_REPAYMENT
 12. Перевод DEBIT (деньги уходят на свой другой счёт) → INTERNAL_TRANSFER. Входящий CREDIT от своего счёта на валютный счёт (обычно 5210) → INTERNAL_TRANSFER_RECEIVED
@@ -536,6 +551,39 @@ suggestedRuleValue:
           data: {
             status: "NEEDS_CLARIFICATION",
             aiSuggestion: { ...aiSuggestion, directionMismatch: true } as any
+          }
+        });
+        needsClarification++;
+        continue;
+      }
+
+      // Charter-capital guard: never auto-post CAPITAL_CONTRIBUTION (and never leave
+      // "Авто" for anything mentioning "устав") when the declared/outstanding 4610
+      // debt can't back it up — ground truth overrides the AI's own confidence here,
+      // same as the direction guard above. See getCharterCapitalDebt / ensureBaseData
+      // (OPENING_CAPITAL_DECLARATION) and the postDocument guard for the enforcement
+      // backstop if this is ever bypassed.
+      const txAmount = new Decimal(tx.amount.toString());
+      let charterGuardReason: string | null = null;
+      if (res.categoryCode === "CAPITAL_CONTRIBUTION") {
+        if (remainingCharterDebt === null) {
+          charterGuardReason = "Уставный капитал не задекларирован — уточните вручную (заём учредителя или довзнос сверх устава).";
+        } else if (remainingCharterDebt.lte(0)) {
+          charterGuardReason = "Долг по счёту 4610 уже полностью погашен — уточните вручную.";
+        } else if (txAmount.gt(remainingCharterDebt)) {
+          charterGuardReason = `Сумма операции (${txAmount.toNumber().toLocaleString("ru")}) превышает остаток долга по УК (${remainingCharterDebt.toNumber().toLocaleString("ru")}) — разделите вручную на оплату УК и довзнос сверх устава.`;
+        }
+      } else if (CHARTER_CAPITAL_MENTION_RE.test(tx.description) && (remainingCharterDebt === null || remainingCharterDebt.lte(0))) {
+        charterGuardReason = "Описание упоминает устав/уставный капитал, но он не задекларирован — уточните вручную.";
+      }
+
+      if (charterGuardReason) {
+        console.warn(`AI charter-capital guard: tx ${tx.id} — ${charterGuardReason}`);
+        await prisma.stagedTransaction.update({
+          where: { id: tx.id },
+          data: {
+            status: "NEEDS_CLARIFICATION",
+            aiSuggestion: { ...aiSuggestion, charterGuardReason } as any
           }
         });
         needsClarification++;

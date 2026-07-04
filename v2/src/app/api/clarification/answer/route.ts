@@ -18,8 +18,15 @@ export async function POST(req: NextRequest) {
       extraPayload
     } = await req.json();
 
-    if (!transactionIds || !Array.isArray(transactionIds) || transactionIds.length === 0 || !documentTypeId) {
-      return NextResponse.json({ error: "transactionIds и documentTypeId обязательны" }, { status: 400 });
+    const ids: string[] = Array.isArray(transactionIds) ? transactionIds : [];
+
+    if (!documentTypeId) {
+      return NextResponse.json({ error: "documentTypeId обязателен" }, { status: 400 });
+    }
+    // Allow an empty transactionIds list when the caller only wants to save a rule
+    // (e.g. "save rule" checkbox ticked with no other transactions selected for bulk-apply).
+    if (ids.length === 0 && !createRule) {
+      return NextResponse.json({ error: "transactionIds или createRule обязательны" }, { status: 400 });
     }
 
     // Verify document type exists
@@ -35,12 +42,20 @@ export async function POST(req: NextRequest) {
       let createdDocsCount = 0;
       const classifiedDirections: string[] = [];
 
-      for (const txId of transactionIds) {
+      for (const txId of ids) {
         const stagedTx = await tx.stagedTransaction.findFirst({
           where: { id: txId, orgId }
         });
 
         if (!stagedTx) continue;
+
+        // Lock the row so a concurrent request for the same staged transaction
+        // (double submit / retry) can't also create a document for it — the
+        // second request blocks here, then sees documentId already set and skips.
+        const [lockedTx] = await tx.$queryRaw<{ documentId: string | null }[]>`
+          SELECT "documentId" FROM "StagedTransaction" WHERE id = ${txId} FOR UPDATE
+        `;
+        if (lockedTx?.documentId) continue;
 
         classifiedDirections.push(stagedTx.direction);
 
@@ -87,6 +102,7 @@ export async function POST(req: NextRequest) {
       const ruleDirection = uniqueDirs.length === 1 ? uniqueDirs[0] : null;
 
       let ruleCreated = false;
+      let ruleId: string | null = null;
 
       // Create rule if requested
       if (createRule && ruleMatchType && ruleMatchValue) {
@@ -99,7 +115,7 @@ export async function POST(req: NextRequest) {
           });
 
           if (!existingRule) {
-            await tx.rule.create({
+            const newRule = await tx.rule.create({
               data: {
                 orgId,
                 matchType: ruleMatchType,
@@ -110,11 +126,14 @@ export async function POST(req: NextRequest) {
               }
             });
             ruleCreated = true;
+            ruleId = newRule.id;
+          } else {
+            ruleId = existingRule.id;
           }
         }
       }
 
-      return { classified: createdDocsCount, ruleCreated };
+      return { classified: createdDocsCount, ruleCreated, ruleId };
     });
 
     if (result.ruleCreated) {

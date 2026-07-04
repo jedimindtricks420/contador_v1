@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { ACTIVITY_CATEGORIES } from "@/lib/activityCategories";
+import CharterCapitalModal from "@/components/CharterCapitalModal";
+
+interface CharterCapitalInfo {
+  amount: number | null;
+  fundingType: string | null;
+  declaredAt: string | null;
+  remainingDebt: number;
+}
 
 interface OrgSettings {
   name: string;
@@ -24,6 +32,18 @@ export default function OrgSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const [charterCapital, setCharterCapital] = useState<CharterCapitalInfo | null>(null);
+  const [charterModalOpen, setCharterModalOpen] = useState(false);
+
+  const loadCharterCapital = () => {
+    fetch("/v2/api/settings/charter-capital")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.error) setCharterCapital(data);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetch("/v2/api/settings/org")
       .then((res) => res.json())
@@ -36,6 +56,7 @@ export default function OrgSettingsPage() {
         setError("Failed to load settings");
         setLoading(false);
       });
+    loadCharterCapital();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -172,6 +193,53 @@ export default function OrgSettingsPage() {
           </div>
         </div>
 
+        {/* Charter Capital */}
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-100 pb-2">Уставный капитал</h2>
+
+          {charterCapital?.declaredAt ? (
+            <div className="bg-gray-50 border border-gray-200 rounded p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Сумма по уставу:</span>
+                <span className="font-semibold text-gray-900">{Number(charterCapital.amount).toLocaleString("ru")} сум</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Оплачено:</span>
+                <span className="font-semibold text-gray-900">
+                  {(Number(charterCapital.amount) - charterCapital.remainingDebt).toLocaleString("ru")} сум
+                  {" "}({charterCapital.amount ? Math.round(((Number(charterCapital.amount) - charterCapital.remainingDebt) / Number(charterCapital.amount)) * 100) : 0}%)
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Остаток долга (сч. 4610):</span>
+                <span className="font-semibold text-gray-900">{charterCapital.remainingDebt.toLocaleString("ru")} сум</span>
+              </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setCharterModalOpen(true)}
+                  className="text-xs border border-gray-300 text-gray-700 font-medium py-1.5 px-4 rounded hover:bg-white transition"
+                >
+                  Изменить
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-200 rounded p-4 flex items-center justify-between">
+              <span className="text-sm text-gray-500 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-gray-300 inline-block" /> Не задекларирован
+              </span>
+              <button
+                type="button"
+                onClick={() => setCharterModalOpen(true)}
+                className="text-xs bg-black text-white font-bold py-1.5 px-4 rounded hover:opacity-80 transition"
+              >
+                Указать уставный капитал
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Taxes */}
         <div className="space-y-6">
           <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-100 pb-2">Налогообложение</h2>
@@ -283,6 +351,13 @@ export default function OrgSettingsPage() {
           </button>
         </div>
       </form>
+
+      <CharterCapitalModal
+        open={charterModalOpen}
+        onClose={() => setCharterModalOpen(false)}
+        onSaved={loadCharterCapital}
+        currentAmount={charterCapital?.amount ?? null}
+      />
     </div>
   );
 }

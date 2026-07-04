@@ -81,6 +81,22 @@ export async function postDocument(
     throw new Error("Шаблон проводок документа пуст или некорректен");
   }
 
+  // Guard: CAPITAL_CONTRIBUTION credits 4610 (debt of the founders towards the
+  // company) — it must never post when there's no declared/outstanding debt on that
+  // account, otherwise it would silently create an unbacked liability. Any $transaction
+  // wrapper around postDocument (category route, clarification/answer, rulesEngine,
+  // aiClassifier) rolls back on this throw, leaving the transaction unclassified/
+  // NEEDS_CLARIFICATION instead of posting.
+  if (doc.type.code === "CAPITAL_CONTRIBUTION") {
+    const { getCharterCapitalDebt } = await import("../charterCapital");
+    const debt = await getCharterCapitalDebt(doc.orgId, tx);
+    if (!org.charterCapitalDeclaredAt || debt.lte(0)) {
+      throw new Error(
+        "Невозможно провести как «Оплата доли в уставном капитале»: уставный капитал не задекларирован или долг по счёту 4610 уже полностью погашен. Укажите уставный капитал в Настройках или выберите другую категорию."
+      );
+    }
+  }
+
   const entries: any[] = [];
 
   // 6. Generate entries

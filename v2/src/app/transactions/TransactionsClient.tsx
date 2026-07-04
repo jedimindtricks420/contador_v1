@@ -57,6 +57,20 @@ interface Transaction {
   document: Document | null;
 }
 
+// One row inside the "other transactions from this counterparty" modal.
+interface CounterpartyTx {
+  id: string;
+  date: string;
+  amount: number;
+  direction: "CREDIT" | "DEBIT";
+  description: string;
+  counterpartyHint: string | null;
+  status: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  selectable: boolean;
+}
+
 // Searchable combobox for category selection.
 // allOption: if provided, adds "All" option with that value (used in filter bar).
 // compact: smaller styling for use inside table rows.
@@ -187,23 +201,25 @@ export default function TransactionsClient() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-  const [rulePromptTx, setRulePromptTx] = useState<Transaction | null>(null);
-  const [rulePromptCategory, setRulePromptCategory] = useState<string>("");
 
   // M-06: undo toast after rule creation
   const [undoToast, setUndoToast] = useState<{
     ruleId: string; matchValue: string; timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
 
-  // Bulk-apply modal: shown after saving a rule if similar unclassified transactions exist
-  const [bulkApply, setBulkApply] = useState<{
-    ruleId: string;
-    matchType: string;
-    matchValue: string;
-    transactions: Array<{ id: string; date: string; amount: number; direction: string; description: string; counterpartyHint: string | null }>;
+  // Counterparty clarification modal: shown right after a category is chosen for a
+  // transaction — lists every other transaction from the same counterparty (unclassified
+  // ones first) so several can be clarified at once, with an option to save a rule.
+  const [counterpartyModal, setCounterpartyModal] = useState<{
+    categoryId: string;
+    categoryName: string;
+    counterpartyInn: string | null;
+    counterpartyHint: string | null;
+    transactions: CounterpartyTx[];
   } | null>(null);
-  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
-  const [bulkApplying, setBulkApplying] = useState(false);
+  const [counterpartySelected, setCounterpartySelected] = useState<Set<string>>(new Set());
+  const [saveRule, setSaveRule] = useState(true);
+  const [counterpartySubmitting, setCounterpartySubmitting] = useState(false);
   const [updatingTxId, setUpdatingTxId] = useState<string | null>(null);
   const [voidingDocId, setVoidingDocId] = useState<string | null>(null);
 
@@ -343,6 +359,43 @@ export default function TransactionsClient() {
     }
   };
 
+  // After a category is set for one transaction, look up every other transaction from
+  // the same counterparty (INN preferred, falls back to the counterparty name for
+  // transit accounts / accounts with no INN) so the user can clarify several at once.
+  const openCounterpartyModal = async (tx: Transaction, categoryId: string) => {
+    const isTransit = tx.counterpartyInn ? TRANSIT_INNS.has(tx.counterpartyInn) : false;
+    const useInn = !!(tx.counterpartyInn && !isTransit);
+    const hint = tx.counterpartyHint?.trim() || null;
+    if (!useInn && !hint) return; // nothing reliable to group by — skip the modal
+
+    try {
+      const params = new URLSearchParams();
+      if (useInn) params.append("inn", tx.counterpartyInn!);
+      else params.append("hint", hint!);
+      params.append("direction", tx.direction);
+      params.append("excludeId", tx.id);
+
+      const res = await fetch(`/v2/api/transactions/by-counterparty?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const transactions: CounterpartyTx[] = data.transactions || [];
+      const categoryName = categories.find(c => c.id === categoryId)?.name || "";
+
+      setCounterpartyModal({
+        categoryId,
+        categoryName,
+        counterpartyInn: useInn ? tx.counterpartyInn : null,
+        counterpartyHint: hint,
+        transactions,
+      });
+      setSaveRule(true);
+      setCounterpartySelected(new Set(transactions.filter(t => t.selectable).map(t => t.id)));
+    } catch {
+      // Non-critical — if the lookup fails, the transaction is still categorized,
+      // the user just doesn't get the bulk-clarification modal this time.
+    }
+  };
+
   const handleCategoryChange = async (tx: Transaction, categoryId: string) => {
     if (!categoryId) return;
     setUpdatingTxId(tx.id);
@@ -354,9 +407,8 @@ export default function TransactionsClient() {
         body: JSON.stringify({ documentTypeId: categoryId, createRule: false }),
       });
       if (res.ok) {
-        setRulePromptTx(tx);
-        setRulePromptCategory(categoryId);
         loadTransactions();
+        await openCounterpartyModal(tx, categoryId);
       } else {
         const data = await res.json();
         setActionError(`Ошибка при смене категории: ${data.error}`);
@@ -368,84 +420,52 @@ export default function TransactionsClient() {
     }
   };
 
-  const handleConfirmRule = async (saveRule: boolean) => {
-    if (!rulePromptTx) return;
-    if (saveRule) {
-      // INN is reliable only if it's not a transit account.
-      // Fall back to counterpartyHint (company name) — never use the full description
-      // because it contains dates/amounts that won't match future transactions.
-      const isTransit = rulePromptTx.counterpartyInn ? TRANSIT_INNS.has(rulePromptTx.counterpartyInn) : false;
-      const matchType = (rulePromptTx.counterpartyInn && !isTransit) ? "INN" : "KEYWORD";
-      const matchValue = (rulePromptTx.counterpartyInn && !isTransit)
-        ? rulePromptTx.counterpartyInn
-        : (rulePromptTx.counterpartyHint?.trim() || null);
-
-      // Skip rule creation if there's no reliable match signal
-      if (!matchValue) {
-        setRulePromptTx(null);
-        setRulePromptCategory("");
-        return;
-      }
-
-      try {
-        const res = await fetch("/v2/api/rules", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            matchType,
-            matchValue,
-            categoryId: rulePromptCategory,
-            direction: rulePromptTx.direction,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          // Clear any existing toast first
-          if (undoToast) clearTimeout(undoToast.timeoutId);
-          const timeoutId = setTimeout(() => setUndoToast(null), 15000);
-          setUndoToast({ ruleId: data.id, matchValue: matchValue || "", timeoutId });
-
-          // Check for similar unclassified transactions to bulk-apply this rule
-          try {
-            const previewRes = await fetch(
-              `/v2/api/rules/preview?matchType=${encodeURIComponent(matchType)}&matchValue=${encodeURIComponent(matchValue || "")}&direction=${encodeURIComponent(rulePromptTx.direction)}`
-            );
-            if (previewRes.ok) {
-              const previewData = await previewRes.json();
-              // Exclude the transaction the user just classified
-              const others = (previewData.transactions || []).filter((t: any) => t.id !== rulePromptTx.id);
-              if (others.length > 0) {
-                setBulkApply({ ruleId: data.id, matchType, matchValue: matchValue || "", transactions: others });
-                setBulkSelected(new Set(others.map((t: any) => t.id)));
-              }
-            }
-          } catch {
-            // preview failure is non-critical
-          }
-        }
-      } catch (err) {
-        console.error("Failed to save auto-classification rule:", err);
-      }
-    }
-    setRulePromptTx(null);
-    setRulePromptCategory("");
+  const closeCounterpartyModal = () => {
+    setCounterpartyModal(null);
+    setCounterpartySelected(new Set());
   };
 
-  const handleBulkApply = async () => {
-    if (!bulkApply || bulkSelected.size === 0) return;
-    setBulkApplying(true);
+  const handleConfirmCounterpartyModal = async () => {
+    if (!counterpartyModal) return;
+
+    const ruleMatchType = counterpartyModal.counterpartyInn ? "INN" : "KEYWORD";
+    const ruleMatchValue = counterpartyModal.counterpartyInn || counterpartyModal.counterpartyHint;
+    const wantsRule = saveRule && !!ruleMatchValue;
+
+    if (counterpartySelected.size === 0 && !wantsRule) {
+      closeCounterpartyModal();
+      return;
+    }
+
+    setCounterpartySubmitting(true);
     try {
-      await fetch(`/v2/api/rules/${bulkApply.ruleId}/apply`, {
+      const res = await fetch("/v2/api/clarification/answer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionIds: Array.from(bulkSelected) }),
+        body: JSON.stringify({
+          transactionIds: Array.from(counterpartySelected),
+          documentTypeId: counterpartyModal.categoryId,
+          createRule: wantsRule,
+          ruleMatchType: wantsRule ? ruleMatchType : undefined,
+          ruleMatchValue: wantsRule ? ruleMatchValue : undefined,
+        }),
       });
-    } catch (err) {
-      console.error("Bulk apply failed:", err);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ruleCreated && data.ruleId) {
+          if (undoToast) clearTimeout(undoToast.timeoutId);
+          const timeoutId = setTimeout(() => setUndoToast(null), 15000);
+          setUndoToast({ ruleId: data.ruleId, matchValue: ruleMatchValue || "", timeoutId });
+        }
+      } else {
+        const data = await res.json();
+        setActionError(`Ошибка при уточнении операций: ${data.error}`);
+      }
+    } catch {
+      setActionError("Ошибка сети при уточнении операций");
     } finally {
-      setBulkApplying(false);
-      setBulkApply(null);
-      setBulkSelected(new Set());
+      setCounterpartySubmitting(false);
+      closeCounterpartyModal();
       loadTransactions();
     }
   };
@@ -880,119 +900,126 @@ export default function TransactionsClient() {
         </div>
       )}
 
-      {/* Rule Recommendation Modal */}
-      {rulePromptTx && (
+      {/* Counterparty clarification modal: appears right after a category is chosen.
+          Lists every other transaction from the same counterparty (unclassified ones
+          first) so several can be clarified in one go, plus a checkbox to save a rule. */}
+      {counterpartyModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-gray-200 shadow-sm w-full max-w-md p-6 space-y-4">
-            <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest text-center">
-              Создать правило автоклассификации?
-            </h3>
-            <p className="text-xs text-gray-500 text-center leading-relaxed">
-              Вы выбрали категорию для контрагента{" "}
-              <strong className="text-gray-800">
-                {rulePromptTx.counterpartyHint || "этого плательщика"}
-              </strong>
-              . Запомнить этот выбор для всех будущих операций?
-            </p>
-
-            <div className="flex justify-center gap-3 pt-2">
-              <button
-                onClick={() => handleConfirmRule(false)}
-                className="border border-gray-200 text-gray-700 text-xs font-medium py-2 px-4 hover:bg-gray-50 transition-colors"
-              >
-                Только для этой
-              </button>
-              <button
-                onClick={() => handleConfirmRule(true)}
-                className="bg-black text-white text-xs font-bold py-2 px-5 hover:opacity-80 transition-opacity"
-              >
-                Да, запомнить выбор
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk-apply modal: apply saved rule to other similar unclassified transactions */}
-      {bulkApply && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-gray-200 shadow-xl w-full max-w-lg rounded p-6 space-y-4">
+          <div className="bg-white border border-gray-200 shadow-xl w-full max-w-2xl rounded p-6 space-y-4">
             <div className="flex items-start justify-between">
-              <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest">
-                Применить правило к похожим операциям?
-              </h3>
-              <button onClick={() => { setBulkApply(null); setBulkSelected(new Set()); }} className="text-gray-400 hover:text-gray-600 p-1">
+              <div>
+                <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest">
+                  Другие операции контрагента
+                </h3>
+                <p className="text-xs text-gray-500 leading-relaxed mt-1">
+                  Категория «<strong className="text-gray-800">{counterpartyModal.categoryName}</strong>» применена для{" "}
+                  <strong className="text-gray-800">{counterpartyModal.counterpartyHint || "этого контрагента"}</strong>.
+                  {" "}Отметьте операции без категории, к которым применить её же.
+                </p>
+              </div>
+              <button onClick={closeCounterpartyModal} className="text-gray-400 hover:text-gray-600 p-1 shrink-0">
                 <X size={14} />
               </button>
             </div>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Найдено <strong className="text-gray-800">{bulkApply.transactions.length}</strong> операций с тем же{" "}
-              {bulkApply.matchType === "INN" ? "ИНН" : `словом «${bulkApply.matchValue}»`}.
-              Отметьте те, к которым нужно применить это правило прямо сейчас.
-            </p>
 
-            <div className="border border-gray-200 rounded overflow-hidden max-h-56 overflow-y-auto">
-              <table className="w-full text-left text-[11px]">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-gray-400 font-bold">
-                    <th className="p-2 w-8">
-                      <input
-                        type="checkbox"
-                        checked={bulkSelected.size === bulkApply.transactions.length}
-                        onChange={e => {
-                          if (e.target.checked) setBulkSelected(new Set(bulkApply.transactions.map(t => t.id)));
-                          else setBulkSelected(new Set());
-                        }}
-                        className="rounded"
-                      />
-                    </th>
-                    <th className="p-2">Дата</th>
-                    <th className="p-2">Сумма</th>
-                    <th className="p-2">Описание</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {bulkApply.transactions.map(tx => (
-                    <tr key={tx.id} className="hover:bg-gray-50/50">
-                      <td className="p-2">
+            {counterpartyModal.transactions.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-xs italic bg-gray-50 border border-gray-100">
+                Других операций этого контрагента не найдено.
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded overflow-hidden max-h-80 overflow-y-auto">
+                <table className="w-full text-left text-[11px]">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200 text-gray-400 font-bold sticky top-0">
+                      <th className="p-2 w-8">
                         <input
                           type="checkbox"
-                          checked={bulkSelected.has(tx.id)}
+                          checked={
+                            counterpartySelected.size > 0 &&
+                            counterpartySelected.size === counterpartyModal.transactions.filter(t => t.selectable).length
+                          }
                           onChange={e => {
-                            const next = new Set(bulkSelected);
-                            e.target.checked ? next.add(tx.id) : next.delete(tx.id);
-                            setBulkSelected(next);
+                            if (e.target.checked) {
+                              setCounterpartySelected(new Set(counterpartyModal.transactions.filter(t => t.selectable).map(t => t.id)));
+                            } else {
+                              setCounterpartySelected(new Set());
+                            }
                           }}
                           className="rounded"
                         />
-                      </td>
-                      <td className="p-2 text-gray-500 whitespace-nowrap">{tx.date}</td>
-                      <td className={`p-2 font-mono whitespace-nowrap ${tx.direction === "CREDIT" ? "text-green-700" : "text-rose-700"}`}>
-                        {tx.direction === "CREDIT" ? "+" : "−"}{Number(tx.amount).toLocaleString("ru")}
-                      </td>
-                      <td className="p-2 text-gray-600 max-w-[200px] truncate" title={tx.description}>
-                        {tx.counterpartyHint || tx.description}
-                      </td>
+                      </th>
+                      <th className="p-2">Дата</th>
+                      <th className="p-2">Сумма</th>
+                      <th className="p-2">Описание</th>
+                      <th className="p-2">Категория</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {counterpartyModal.transactions.map(tx => (
+                      <tr key={tx.id} className={`hover:bg-gray-50/50 ${!tx.selectable ? "opacity-50" : ""}`}>
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            disabled={!tx.selectable}
+                            checked={counterpartySelected.has(tx.id)}
+                            onChange={e => {
+                              const next = new Set(counterpartySelected);
+                              if (e.target.checked) next.add(tx.id);
+                              else next.delete(tx.id);
+                              setCounterpartySelected(next);
+                            }}
+                            className="rounded"
+                          />
+                        </td>
+                        <td className="p-2 text-gray-500 whitespace-nowrap">{tx.date}</td>
+                        <td className={`p-2 font-mono whitespace-nowrap ${tx.direction === "CREDIT" ? "text-green-700" : "text-rose-700"}`}>
+                          {tx.direction === "CREDIT" ? "+" : "−"}{tx.amount.toLocaleString("ru")}
+                        </td>
+                        <td className="p-2 text-gray-600 max-w-[220px] truncate" title={tx.description}>
+                          {tx.description}
+                        </td>
+                        <td className="p-2 whitespace-nowrap">
+                          {tx.categoryName ? (
+                            <span className="bg-gray-100 text-gray-500 text-[10px] px-1.5 py-0.5">{tx.categoryName}</span>
+                          ) : (
+                            <span className="text-gray-400 italic">без категории</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <label className="flex items-center gap-2 text-xs text-gray-700 font-medium cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={saveRule}
+                onChange={e => setSaveRule(e.target.checked)}
+                className="rounded"
+              />
+              Сохранить правило автоклассификации для будущих операций этого контрагента
+            </label>
 
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => { setBulkApply(null); setBulkSelected(new Set()); }}
-                disabled={bulkApplying}
+                onClick={closeCounterpartyModal}
+                disabled={counterpartySubmitting}
                 className="text-xs border border-gray-200 text-gray-700 font-medium py-2 px-4 rounded hover:bg-gray-50 transition"
               >
-                Пропустить
+                Закрыть
               </button>
               <button
-                onClick={handleBulkApply}
-                disabled={bulkApplying || bulkSelected.size === 0}
+                onClick={handleConfirmCounterpartyModal}
+                disabled={counterpartySubmitting}
                 className="text-xs bg-black text-white font-bold py-2 px-5 rounded hover:opacity-80 transition disabled:opacity-40"
               >
-                {bulkApplying ? "Применяем..." : `Применить к ${bulkSelected.size} операциям`}
+                {counterpartySubmitting
+                  ? "Применяем..."
+                  : counterpartySelected.size > 0
+                    ? `Применить к ${counterpartySelected.size} операциям`
+                    : "Сохранить"}
               </button>
             </div>
           </div>

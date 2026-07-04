@@ -33,6 +33,9 @@ model Organization {
   settings                  Json?
   activityCustom            String?
   activityGroup             String?
+  charterCapitalAmount      Decimal?                   @db.Decimal(18, 2)
+  charterCapitalDeclaredAt  DateTime?
+  charterCapitalFundingType CharterCapitalFundingType?
   auditLogs                 AuditLog[]
   bankAccounts              BankAccount[]
   classificationJobs        ClassificationJob[]
@@ -176,7 +179,7 @@ model Document {
   date                  DateTime
   status                DocumentStatus      @default(POSTED)
   payload               Json
-  sourceTransactionId   String?
+  sourceTransactionId   String?             @unique
   correctionForPeriodId String?
   taxCalendarSyncStatus String?             /// PENDING | OK | FAILED — статус синхронизации налогового календаря
   taxCalendarSyncError  String?             /// Сообщение об ошибке синхронизации (если FAILED)
@@ -352,6 +355,13 @@ enum OrgRole {
   OWNER
   ACCOUNTANT
   ADMIN
+}
+
+enum CharterCapitalFundingType {
+  FULLY_PAID_CASH
+  PARTIALLY_PAID
+  PAID_IN_KIND
+  NOT_PAID
 }
 
 enum PeriodMode {

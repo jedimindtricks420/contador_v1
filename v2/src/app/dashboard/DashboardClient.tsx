@@ -1,7 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Sparkles, Check } from "lucide-react";
+import { Sparkles, Check, AlertTriangle } from "lucide-react";
 import { formatSum, periodLabel } from "@/lib/format";
+import CharterCapitalModal from "@/components/CharterCapitalModal";
+
+const CHARTER_DISMISS_KEY = "charterCapitalDismissedUntil";
+const CHARTER_DISMISS_DAYS = 7;
 
 interface DashboardData {
   period: { id: string; year: number; month: number; status: string } | null;
@@ -56,6 +60,30 @@ export default function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [selectedDashboardPeriodId, setSelectedDashboardPeriodId] = useState<string>("");
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+
+  // Charter capital warning card — hidden while charterCapitalDeclaredAt is null.
+  const [charterDeclared, setCharterDeclared] = useState<boolean | null>(null);
+  const [charterDismissed, setCharterDismissed] = useState(false);
+  const [charterModalOpen, setCharterModalOpen] = useState(false);
+
+  const loadCharterCapital = () => {
+    fetch("/v2/api/settings/charter-capital")
+      .then((res) => res.json())
+      .then((d) => { if (!d.error) setCharterDeclared(!!d.declaredAt); })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadCharterCapital();
+    const dismissedUntil = Number(localStorage.getItem(CHARTER_DISMISS_KEY) || 0);
+    setCharterDismissed(dismissedUntil > Date.now());
+  }, []);
+
+  const handleCharterRemindLater = () => {
+    const until = Date.now() + CHARTER_DISMISS_DAYS * 24 * 60 * 60 * 1000;
+    localStorage.setItem(CHARTER_DISMISS_KEY, String(until));
+    setCharterDismissed(true);
+  };
 
   const loadDashboard = async (periodId?: string) => {
     try {
@@ -153,6 +181,35 @@ export default function DashboardClient() {
           </a>
         )}
       </div>
+
+      {/* Charter capital warning card — only for non-empty orgs that haven't declared it */}
+      {charterDeclared === false && !charterDismissed && data.stats.totalImported > 0 && (
+        <div className="bg-amber-50 border border-amber-200 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <div className="text-sm font-bold text-amber-900">Уставный капитал не указан</div>
+              <p className="text-xs text-amber-700 max-w-md">
+                Это влияет на корректность Формы №1 и на то, как система классифицирует переводы от учредителей.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleCharterRemindLater}
+              className="text-xs text-amber-700 font-medium py-2 px-3 hover:bg-amber-100 transition-colors"
+            >
+              Напомнить позже
+            </button>
+            <button
+              onClick={() => setCharterModalOpen(true)}
+              className="text-xs bg-amber-900 text-white font-bold py-2 px-4 hover:opacity-80 transition-opacity"
+            >
+              Указать сейчас →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Onboarding empty state */}
       {!period && (
@@ -305,6 +362,13 @@ export default function DashboardClient() {
           </div>
         </div>
       </div>
+
+      <CharterCapitalModal
+        open={charterModalOpen}
+        onClose={() => setCharterModalOpen(false)}
+        onSaved={() => { loadCharterCapital(); setCharterDismissed(false); }}
+        currentAmount={null}
+      />
     </div>
   );
 }
