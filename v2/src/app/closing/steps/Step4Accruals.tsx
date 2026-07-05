@@ -1,9 +1,16 @@
 "use client";
 import { useState, useEffect } from "react";
 import { formatSum } from "@/lib/format";
-import { TAX_RATES } from "@/lib/constants";
+import { TAX_RATES, ACCOUNTS } from "@/lib/constants";
 import { Info } from "lucide-react";
 import { RotateCcw, CheckCircle2, AlertTriangle, X, Zap } from "lucide-react";
+
+const EXPENSE_FUNCTION_OPTIONS = [
+  { code: ACCOUNTS.COGS_PRODUCTION, label: "Производство (себестоимость)" },
+  { code: ACCOUNTS.EXPENSE_SALES, label: "Продажи" },
+  { code: ACCOUNTS.EXPENSE_ADMIN, label: "Администрация" },
+  { code: ACCOUNTS.EXPENSE_OTHER, label: "Прочее" },
+] as const;
 
 interface Step4AccrualsProps {
   periodId: string;
@@ -13,6 +20,7 @@ interface Step4AccrualsProps {
     salaryAmount: number;
     depreciationAmount: number;
     rentAmount: number;
+    expenseAccountCode?: string;
   };
 }
 
@@ -20,12 +28,13 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
   const [salaryAmount, setSalaryAmount] = useState(String(initialAccruals.salaryAmount || 0));
   const [depreciationAmount, setDepreciationAmount] = useState(String(initialAccruals.depreciationAmount || 0));
   const [rentAmount, setRentAmount] = useState(String(initialAccruals.rentAmount || 0));
+  const [expenseAccountCode, setExpenseAccountCode] = useState(initialAccruals.expenseAccountCode || "");
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [postedHint, setPostedHint] = useState<{ salary: number; dep: number; rent: number } | null>(null);
+  const [postedHint, setPostedHint] = useState<{ salary: number; dep: number; rent: number; expenseAccountCode: string | null } | null>(null);
 
   useEffect(() => {
     // Fetch already-posted accrual docs so we can show a prefill hint
@@ -34,7 +43,7 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data && data.hasPostedDocs) {
-            setPostedHint({ salary: data.postedSalaryAmount, dep: data.postedDepreciationAmount, rent: data.postedRentAmount });
+            setPostedHint({ salary: data.postedSalaryAmount, dep: data.postedDepreciationAmount, rent: data.postedRentAmount, expenseAccountCode: data.postedExpenseAccountCode });
           }
         })
         .catch(() => {});
@@ -65,6 +74,7 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
         setSalaryAmount("0");
         setDepreciationAmount("0");
         setRentAmount("0");
+        setExpenseAccountCode("");
       } else {
         const err = await res.json();
         setResetError(`Ошибка сброса: ${err.error}`);
@@ -84,10 +94,14 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
       setSaveError("Суммы начислений не могут быть отрицательными");
       return;
     }
+    if (sal > 0 && !expenseAccountCode) {
+      setSaveError("Укажите функцию сотрудника для начисления ЗП");
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = { salaryAmount: sal, depreciationAmount: dep, rentAmount: ren };
+      const payload = { salaryAmount: sal, depreciationAmount: dep, rentAmount: ren, expenseAccountCode };
 
       const res = await fetch(`/v2/api/closing/${periodId}/step/4/complete`, {
         method: "POST",
@@ -151,6 +165,7 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
               if (postedHint.salary > 0) setSalaryAmount(String(postedHint.salary));
               if (postedHint.dep > 0) setDepreciationAmount(String(postedHint.dep));
               if (postedHint.rent > 0) setRentAmount(String(postedHint.rent));
+              if (postedHint.expenseAccountCode) setExpenseAccountCode(postedHint.expenseAccountCode);
               setPostedHint(null);
             }}
             className="ml-4 shrink-0 text-xs bg-blue-700 hover:bg-blue-800 text-white font-bold py-1 px-3 rounded transition"
@@ -215,6 +230,31 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
             )}
           </div>
         </div>
+
+        {salVal > 0 && (
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-2">
+              Функция сотрудника <span className="text-rose-500">*</span>
+            </label>
+            <div className="flex flex-wrap gap-3">
+              {EXPENSE_FUNCTION_OPTIONS.map((opt) => (
+                <label key={opt.code} className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="expenseAccountCode"
+                    checked={expenseAccountCode === opt.code}
+                    onChange={() => setExpenseAccountCode(opt.code)}
+                    className="text-black focus:ring-black"
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1.5">
+              Определяет строку расходов, в которую попадёт брутто ЗП и соцналог: производство (себестоимость), продажи, администрация или прочее.
+            </p>
+          </div>
+        )}
 
         <hr className="border-gray-150" />
 

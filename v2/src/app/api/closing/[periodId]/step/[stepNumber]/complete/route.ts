@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveClosingState, getClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
-import { ACCOUNTS, IMPORT } from "@/lib/constants";
+import { ACCOUNTS, IMPORT, SALARY_EXPENSE_ACCOUNT_CODES } from "@/lib/constants";
 
 export async function POST(
   req: NextRequest,
@@ -27,11 +27,25 @@ export async function POST(
     const body = await req.json();
 
     if (stepNum === 4) {
+      const salaryAmount = parseFloat(body.salaryAmount) || 0;
+      const expenseAccountCode = body.expenseAccountCode || "";
+
+      // Only required/validated when there's actually a salary to accrue — no
+      // point rejecting a request that's just saving 0/depreciation/rent. Must be
+      // explicitly chosen by the user, not silently defaulted to EXPENSE_ADMIN.
+      if (salaryAmount > 0 && !SALARY_EXPENSE_ACCOUNT_CODES.includes(expenseAccountCode)) {
+        return NextResponse.json(
+          { error: `Укажите функцию сотрудника для начисления ЗП. Допустимые счета: ${SALARY_EXPENSE_ACCOUNT_CODES.join(", ")}` },
+          { status: 400 }
+        );
+      }
+
       await saveClosingState(periodId, {
         accruals: {
-          salaryAmount: parseFloat(body.salaryAmount) || 0,
+          salaryAmount,
           depreciationAmount: parseFloat(body.depreciationAmount) || 0,
-          rentAmount: parseFloat(body.rentAmount) || 0
+          rentAmount: parseFloat(body.rentAmount) || 0,
+          expenseAccountCode
         }
       }, orgId);
     } else if (stepNum === 5) {

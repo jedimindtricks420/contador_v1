@@ -81,6 +81,15 @@ export const EXPENSE_ACCOUNT_CODES = [
   ACCOUNTS.EXPENSE_OTHER,
 ];
 
+// Valid targets for SALARY_ACCRUAL's payload.expenseAccountCode — which P&L line an
+// employee's gross salary + employer social tax belongs to, based on their function.
+export const SALARY_EXPENSE_ACCOUNT_CODES = [
+  ACCOUNTS.COGS_PRODUCTION,
+  ACCOUNTS.EXPENSE_SALES,
+  ACCOUNTS.EXPENSE_ADMIN,
+  ACCOUNTS.EXPENSE_OTHER,
+];
+
 // Open-item risk deadlines (days).
 // Single source of truth for default risk windows per buffer account — consumed by
 // getRiskDeadline() (lib/openItems.ts), the settings API (api/settings/open-item-deadlines)

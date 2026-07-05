@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
+import { ACCOUNTS, REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES } from "@/lib/constants";
 import Decimal from "decimal.js";
 
 type AggRow = { code: string; sumDebit: string; sumCredit: string };
@@ -66,15 +67,18 @@ export async function GET(req: NextRequest) {
     const tcMany = (...codes: string[]) => codes.reduce((s, c) => s.plus(tc(c)), new Decimal(0));
     const tdMany = (...codes: string[]) => codes.reduce((s, c) => s.plus(td(c)), new Decimal(0));
 
-    // Форма №2 строки
-    const line010 = tcMany("9010","9020","9030").minus(tdMany("9040","9050"));
-    const line020 = tdMany("9110","9120","9130");
+    // Форма №2 строки — счета берутся из тех же констант, что использует расчёт
+    // налога в closing.ts (REVENUE_ACCOUNT_CODES/COGS_ACCOUNT_CODES/ACCOUNTS.*),
+    // а не из отдельно переписанного списка — см. balance-sheet-completeness.test.ts
+    // и pnl-shared-constants.test.ts для регрессии на рассинхронизацию.
+    const line010 = tcMany(...REVENUE_ACCOUNT_CODES).minus(tdMany("9040","9050"));
+    const line020 = tdMany(...COGS_ACCOUNT_CODES);
     const line030 = line010.minus(line020);
 
-    const line050 = td("9410");
-    const line060 = td("9420");
-    const line070 = td("9430");
-    const line080 = td("9440");
+    const line050 = td(ACCOUNTS.EXPENSE_SALES);
+    const line060 = td(ACCOUNTS.EXPENSE_ADMIN);
+    const line070 = td(ACCOUNTS.EXPENSE_OTHER);
+    const line080 = td("9440"); // счёт 9440 не заведён в плане счетов — строка всегда 0, оставлено для формы
     const line040 = line050.plus(line060).plus(line070).plus(line080);
 
     // 9310/9330-9390 — доходы (кредитовые); 9320 — убыток от выбытия ОС (дебетовый, вычитается)
@@ -175,16 +179,16 @@ export async function GET(req: NextRequest) {
     const mtd = (month: string, code: string) => mMap.get(`${month}|${code}` as MonthCodeKey)?.debit  ?? new Decimal(0);
     const mtc = (month: string, code: string) => mMap.get(`${month}|${code}` as MonthCodeKey)?.credit ?? new Decimal(0);
 
-    const monthlyRevenue = months.map(m =>
-      mtc(m,"9010").plus(mtc(m,"9020")).plus(mtc(m,"9030"))
-        .minus(mtd(m,"9040")).minus(mtd(m,"9050")).toNumber()
-    );
+    const monthlyRevenueOf = (m: string) =>
+      REVENUE_ACCOUNT_CODES.reduce((s, c) => s.plus(mtc(m, c)), new Decimal(0))
+        .minus(mtd(m,"9040")).minus(mtd(m,"9050"));
+
+    const monthlyRevenue = months.map(m => monthlyRevenueOf(m).toNumber());
 
     const monthlyNetProfit  = months.map(m => {
-      const r = mtc(m,"9010").plus(mtc(m,"9020")).plus(mtc(m,"9030"))
-                  .minus(mtd(m,"9040")).minus(mtd(m,"9050"));
-      const cogs = mtd(m,"9110").plus(mtd(m,"9120")).plus(mtd(m,"9130"));
-      const exp  = mtd(m,"9410").plus(mtd(m,"9420")).plus(mtd(m,"9430")).plus(mtd(m,"9440"));
+      const r = monthlyRevenueOf(m);
+      const cogs = COGS_ACCOUNT_CODES.reduce((s, c) => s.plus(mtd(m, c)), new Decimal(0));
+      const exp  = mtd(m, ACCOUNTS.EXPENSE_SALES).plus(mtd(m, ACCOUNTS.EXPENSE_ADMIN)).plus(mtd(m, ACCOUNTS.EXPENSE_OTHER)).plus(mtd(m,"9440"));
       const oi   = ["9310","9330","9340","9350","9360","9370","9380","9390"]
                      .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0))
                      .minus(mtd(m,"9320"));

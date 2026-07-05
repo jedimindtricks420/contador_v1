@@ -3,7 +3,7 @@ import Decimal from "decimal.js";
 import { postDocument } from "./posting/postingEngine";
 import {
   TAX_RATES, ACCOUNTS,
-  REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, EXPENSE_ACCOUNT_CODES, CLOSING
+  REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, EXPENSE_ACCOUNT_CODES, SALARY_EXPENSE_ACCOUNT_CODES, CLOSING
 } from "./constants";
 
 // Net salary multiplier: employee receives gross minus NDFL_BUDGET (11.9%) minus INPS (0.1%)
@@ -14,7 +14,9 @@ const NET_SALARY_RATE = 1 - TAX_RATES.NDFL_BUDGET - TAX_RATES.INPS; // 0.88
 function defaultState() {
   return {
     currentStep: 1,
-    accruals: { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 },
+    // expenseAccountCode defaults to EXPENSE_ADMIN for backward compatibility with
+    // closing sessions started before the per-function salary split existed.
+    accruals: { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0, expenseAccountCode: ACCOUNTS.EXPENSE_ADMIN },
     fxDiff: { exchangeRate: 0, difference: 0 },
     soliqMatched: { matched: 0, unmatched: 0 }
   };
@@ -70,7 +72,7 @@ export async function finalizePeriod(
   periodId: string,
   orgId: string,
   userId: string,
-  overrideAccruals?: { salaryAmount?: number; depreciationAmount?: number; rentAmount?: number }
+  overrideAccruals?: { salaryAmount?: number; depreciationAmount?: number; rentAmount?: number; expenseAccountCode?: string }
 ) {
   const period = await prisma.period.findUnique({
     where: { id: periodId },
@@ -116,12 +118,13 @@ export async function finalizePeriod(
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const baseAccruals = state.accruals || { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 };
+      const baseAccruals = state.accruals || { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0, expenseAccountCode: ACCOUNTS.EXPENSE_ADMIN };
       const accruals = overrideAccruals
         ? {
             salaryAmount: overrideAccruals.salaryAmount ?? baseAccruals.salaryAmount,
             depreciationAmount: overrideAccruals.depreciationAmount ?? baseAccruals.depreciationAmount,
-            rentAmount: overrideAccruals.rentAmount ?? baseAccruals.rentAmount
+            rentAmount: overrideAccruals.rentAmount ?? baseAccruals.rentAmount,
+            expenseAccountCode: overrideAccruals.expenseAccountCode ?? baseAccruals.expenseAccountCode ?? ACCOUNTS.EXPENSE_ADMIN
           }
         : baseAccruals;
       const accrualDate = new Date(period.year, period.month - 1, CLOSING.ACCRUAL_DAY);
@@ -131,11 +134,20 @@ export async function finalizePeriod(
       where: { orgId, periodId, type: { code: "SALARY_ACCRUAL" }, status: "POSTED" }
     });
     if (!existingSalary && Number(accruals.salaryAmount) > 0) {
+      // Defense in depth: the step-4 API route already rejects an invalid
+      // expenseAccountCode at input time, but ClosingState is a loosely-typed JSON
+      // blob (could pre-date this field, or be edited directly) — never let a bad
+      // value silently fall through to a POSTED document.
+      const expenseAccountCode = accruals.expenseAccountCode ?? ACCOUNTS.EXPENSE_ADMIN;
+      if (!SALARY_EXPENSE_ACCOUNT_CODES.includes(expenseAccountCode as any)) {
+        throw new Error(`Некорректный счёт расхода для начисления ЗП: ${expenseAccountCode}. Допустимые: ${SALARY_EXPENSE_ACCOUNT_CODES.join(", ")}`);
+      }
+
       const salaryType = await tx.documentType.findUniqueOrThrow({ where: { code: "SALARY_ACCRUAL" } });
       const salaryDoc = await tx.document.create({
         data: {
           orgId, periodId, typeId: salaryType.id, date: accrualDate, status: "POSTED",
-          payload: { salaryAmount: Number(accruals.salaryAmount) } as any
+          payload: { salaryAmount: Number(accruals.salaryAmount), expenseAccountCode } as any
         }
       });
       await postDocument(salaryDoc.id, tx, userId);

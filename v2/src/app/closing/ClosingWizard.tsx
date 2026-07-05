@@ -234,7 +234,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
             periodId={period.id}
             onNext={handleNextStep}
             onPrev={handlePrevStep}
-            initialAccruals={wizardState?.accruals ?? { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 }}
+            initialAccruals={wizardState?.accruals ?? { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0, expenseAccountCode: "" }}
           />
         )}
         {activeStep === 5 && (

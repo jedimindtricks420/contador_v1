@@ -5,6 +5,54 @@ import Decimal from "decimal.js";
 
 type AggRow = { code: string; sumDebit: string; sumCredit: string };
 
+// ─── Asset-side line codes (everything except the 5xxx cash group, lines 320-380) ──
+// Single source of truth for both the Форма №1 asset lines below AND
+// balance-sheet-completeness.test.ts, which checks that every ASSET/CONTRA_ASSET
+// account in the chart of accounts (excluding 5xxx, tracked separately) appears
+// somewhere in this list — so a newly added account code can't silently fall off
+// the balance sheet the way it could before this was a single exported array.
+export const LINE010_CODES = ["0100","0110","0111","0112","0120","0130","0140","0150","0160","0170","0180","0190","0199"];
+export const LINE011_CODES = ["0200","0211","0212","0220","0230","0240","0250","0260","0270","0280","0290","0299"];
+export const LINE020_CODES = ["0410","0420","0430","0440","0460","0470","0480","0490"];
+export const LINE021_CODES = ["0510","0520","0530","0540","0560","0570","0590"];
+export const LINE040_CODES = ["0610"];
+export const LINE050_CODES = ["0620"];
+export const LINE060_CODES = ["0630"];
+export const LINE070_CODES = ["0640"];
+export const LINE080_CODES = ["0690"];
+export const LINE090_CODES = ["0310","0710","0720"];
+export const LINE100_CODES = ["0810","0820","0830","0840","0850","0860","0870","0890"];
+export const LINE110_CODES = ["0910","0920","0930","0940"];
+export const LINE120_CODES = ["0950","0960","0990"];
+export const LINE150_CODES = ["1010","1020","1030","1040","1050","1060","1070","1080","1090","1110","1120","1510","1610"];
+export const LINE160_CODES = ["2010","2110","2310","2510","2610","2710"];
+export const LINE170_CODES = ["2810","2820","2830"];
+export const LINE180_DEBIT_CODES = ["2910","2920","2930","2940","2950","2960","2970","2990"];
+export const LINE180_CREDIT_CODES = ["2980"];
+export const LINE190_CODES = ["3110","3120","3190"];
+export const LINE200_CODES = ["3210","3220","3290"];
+export const LINE220_DEBIT_CODES = ["4010","4020"];
+export const LINE220_CREDIT_CODES = ["4910"];
+export const LINE230_CODES = ["4110"];
+export const LINE240_CODES = ["4120"];
+export const LINE250_CODES = ["4210","4220","4230","4290"];
+export const LINE260_CODES = ["4310","4320","4330"];
+export const LINE270_CODES = ["4410"];
+export const LINE280_CODES = ["4510","4520"];
+export const LINE290_CODES = ["4610"];
+export const LINE300_CODES = ["4710","4720","4730","4790"];
+export const LINE310_CODES = ["4810","4820","4830","4840","4850","4860","4890"];
+
+export const BALANCE_NON_CASH_ASSET_CODES = [
+  ...LINE010_CODES, ...LINE011_CODES, ...LINE020_CODES, ...LINE021_CODES,
+  ...LINE040_CODES, ...LINE050_CODES, ...LINE060_CODES, ...LINE070_CODES, ...LINE080_CODES,
+  ...LINE090_CODES, ...LINE100_CODES, ...LINE110_CODES, ...LINE120_CODES,
+  ...LINE150_CODES, ...LINE160_CODES, ...LINE170_CODES, ...LINE180_DEBIT_CODES, ...LINE180_CREDIT_CODES,
+  ...LINE190_CODES, ...LINE200_CODES,
+  ...LINE220_DEBIT_CODES, ...LINE220_CREDIT_CODES, ...LINE230_CODES, ...LINE240_CODES, ...LINE250_CODES,
+  ...LINE260_CODES, ...LINE270_CODES, ...LINE280_CODES, ...LINE290_CODES, ...LINE300_CODES, ...LINE310_CODES,
+];
+
 export async function GET(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
@@ -81,52 +129,51 @@ export async function GET(req: NextRequest) {
 
     // Раздел I. Долгосрочные активы
     // Все субсчета ОС (0100 родительский + 0110-0190 субсчета)
-    const line010 = balDebit("0100","0110","0111","0112","0120","0130","0140","0150","0160","0170","0180","0190","0199");
-    const line011 = balCredit("0200","0211","0212","0220","0230","0240","0250","0260","0270","0280","0290","0299");
+    const line010 = balDebit(...LINE010_CODES);
+    const line011 = balCredit(...LINE011_CODES);
     const line012 = line010.minus(line011);
 
-    const line020 = balDebit("0410","0420","0430","0440","0460","0470","0480","0490");
-    const line021 = balCredit("0510","0520","0530","0540","0560","0570","0590");
+    const line020 = balDebit(...LINE020_CODES);
+    const line021 = balCredit(...LINE021_CODES);
     const line022 = line020.minus(line021);
 
-    const line040 = balDebit("0610");
-    const line050 = balDebit("0620");
-    const line060 = balDebit("0630");
-    const line070 = balDebit("0640");
-    const line080 = balDebit("0690");
+    const line040 = balDebit(...LINE040_CODES);
+    const line050 = balDebit(...LINE050_CODES);
+    const line060 = balDebit(...LINE060_CODES);
+    const line070 = balDebit(...LINE070_CODES);
+    const line080 = balDebit(...LINE080_CODES);
     const line030 = line040.plus(line050).plus(line060).plus(line070).plus(line080);
 
     // 0310 = капзатраты на арендованное имущество → долгосрочные арендованные активы
-    const line090 = balDebit("0310","0710","0720");
-    const line100 = balDebit("0810","0820","0830","0840","0850","0860","0870","0890");
-    const line110 = balDebit("0910","0920","0930","0940");
-    const line120 = balDebit("0950","0960","0990");
+    const line090 = balDebit(...LINE090_CODES);
+    const line100 = balDebit(...LINE100_CODES);
+    const line110 = balDebit(...LINE110_CODES);
+    const line120 = balDebit(...LINE120_CODES);
 
     const line130 = line012.plus(line022).plus(line030).plus(line090)
                           .plus(line100).plus(line110).plus(line120);
 
     // Раздел II. Текущие активы
-    const line150 = balDebit("1010","1020","1030","1040","1050","1060","1070","1080","1090",
-                              "1110","1120","1510","1610");
-    const line160 = balDebit("2010","2110","2310","2510","2610","2710");
-    const line170 = balDebit("2810","2820","2830");
-    const line180 = balDebit("2910","2920","2930","2940","2950","2960","2970","2990")
-                      .minus(balCredit("2980"));
+    const line150 = balDebit(...LINE150_CODES);
+    const line160 = balDebit(...LINE160_CODES);
+    const line170 = balDebit(...LINE170_CODES);
+    const line180 = balDebit(...LINE180_DEBIT_CODES)
+                      .minus(balCredit(...LINE180_CREDIT_CODES));
     const line140 = line150.plus(line160).plus(line170).plus(line180);
 
-    const line190 = balDebit("3110","3120","3190");
-    const line200 = balDebit("3210","3220","3290");
+    const line190 = balDebit(...LINE190_CODES);
+    const line200 = balDebit(...LINE200_CODES);
 
-    const line220 = balDebit("4010","4020").minus(balCredit("4910"));
-    const line230 = balDebit("4110");
-    const line240 = balDebit("4120");
-    const line250 = balDebit("4210","4220","4230","4290");
-    const line260 = balDebit("4310","4320","4330");
-    const line270 = balDebit("4410");
-    const line280 = balDebit("4510","4520");
-    const line290 = balDebit("4610");
-    const line300 = balDebit("4710","4720","4730","4790");
-    const line310 = balDebit("4810","4820","4830","4840","4850","4860","4890");
+    const line220 = balDebit(...LINE220_DEBIT_CODES).minus(balCredit(...LINE220_CREDIT_CODES));
+    const line230 = balDebit(...LINE230_CODES);
+    const line240 = balDebit(...LINE240_CODES);
+    const line250 = balDebit(...LINE250_CODES);
+    const line260 = balDebit(...LINE260_CODES);
+    const line270 = balDebit(...LINE270_CODES);
+    const line280 = balDebit(...LINE280_CODES);
+    const line290 = balDebit(...LINE290_CODES);
+    const line300 = balDebit(...LINE300_CODES);
+    const line310 = balDebit(...LINE310_CODES);
     const line210 = line220.plus(line230).plus(line240).plus(line250)
                           .plus(line260).plus(line270).plus(line280)
                           .plus(line290).plus(line300).plus(line310);

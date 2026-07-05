@@ -42,8 +42,11 @@ export default function NewDocumentPage() {
       fetch("/v2/api/document-types").then(r => r.json()),
       fetch("/v2/api/periods").then(r => r.json())
     ]).then(([types, perds]) => {
-      // Show all types (including manual) for manual document creation
-      setDocTypes(Array.isArray(types) ? types : []);
+      // Show all types (including manual) for manual document creation, except
+      // OPENING_CAPITAL_DECLARATION — it has its own guarded flow in Настройки →
+      // Уставный капитал (POST /api/documents rejects it for the same reason).
+      const allTypes: DocumentType[] = Array.isArray(types) ? types : [];
+      setDocTypes(allTypes.filter(t => t.code !== "OPENING_CAPITAL_DECLARATION"));
       const openPerds = Array.isArray(perds) ? perds.filter((p: Period) => p.status !== "CLOSED") : [];
       setPeriods(openPerds);
       if (openPerds.length > 0) setSelectedPeriodId(openPerds[0].id);

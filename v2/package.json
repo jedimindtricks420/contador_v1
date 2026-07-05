@@ -13,7 +13,8 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "docs:types": "tsx scripts/generate-document-types-doc.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.2.1",

@@ -72,6 +72,20 @@ export async function POST(req: NextRequest) {
     const docType = await prisma.documentType.findUnique({ where: { id: typeId } });
     if (!docType) return NextResponse.json({ error: "Тип документа не найден" }, { status: 404 });
 
+    // OPENING_CAPITAL_DECLARATION has stateful business rules (once-only first
+    // declaration, no decrease, registration confirmation for increases) and must
+    // keep Organization.charterCapitalAmount/DeclaredAt in sync — all of that lives
+    // in POST /api/settings/charter-capital, not here. Creating it through this
+    // generic endpoint would post real 4610/8330 entries while leaving the org's
+    // charterCapitalDeclaredAt null, permanently blocking the CAPITAL_CONTRIBUTION
+    // guard from ever recognizing the debt it just created.
+    if (docType.code === "OPENING_CAPITAL_DECLARATION") {
+      return NextResponse.json(
+        { error: "Декларация уставного капитала оформляется через Настройки → Уставный капитал, не через этот эндпоинт." },
+        { status: 400 }
+      );
+    }
+
     const doc = await prisma.$transaction(async (tx) => {
       const created = await tx.document.create({
         data: {

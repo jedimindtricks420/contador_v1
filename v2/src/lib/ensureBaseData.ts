@@ -284,13 +284,18 @@ export const baseDocumentTypes = [
     }
   },
   {
+    // Расходная часть (брутто ЗП + соцналог) идёт на счёт, соответствующий функции
+    // сотрудника — не всегда 9420. payload.expenseAccountCode обязателен (см. валидацию
+    // в API-роуте, создающем документ) и должен быть одним из COGS_PRODUCTION (9110,
+    // производство) / EXPENSE_SALES (9410, продажи) / EXPENSE_ADMIN (9420, админ) /
+    // EXPENSE_OTHER (9430, прочее). ИНПС/НДФЛ — удержания из зарплаты самого
+    // работника, они всегда через 6710 независимо от функции.
     code: "SALARY_ACCRUAL",
     name: "Начисление заработной платы и налогов ФОТ",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        // Брутто ЗП: Дт 9420 — Кт 6710
-        { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: "salaryAmount" },
+        { accountCode: "$expenseAccountCode", side: "debit", expression: "salaryAmount" },
         { accountCode: ACCOUNTS.PAYROLL, side: "credit", expression: "salaryAmount" },
         // ИНПС 0.1% (из зарплаты работника): Дт 6710 — Кт 6530
         { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.INPS}` },
@@ -298,8 +303,8 @@ export const baseDocumentTypes = [
         // НДФЛ в бюджет 11.9% (из зарплаты работника): Дт 6710 — Кт 6410
         { accountCode: ACCOUNTS.PAYROLL, side: "debit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
         { accountCode: ACCOUNTS.TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.NDFL_BUDGET}` },
-        // Соцналог 12% (расход работодателя): Дт 9420 — Кт 6520
-        { accountCode: ACCOUNTS.EXPENSE_ADMIN, side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
+        // Соцналог 12% (расход работодателя, та же функция, что и брутто ЗП)
+        { accountCode: "$expenseAccountCode", side: "debit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` },
         { accountCode: ACCOUNTS.SOCIAL_TAX_PAYABLE, side: "credit", expression: `salaryAmount * ${TAX_RATES.SOCIAL_TAX}` }
       ],
       opensItem: false,
@@ -1024,6 +1029,7 @@ export const baseDocumentTypes = [
         { accountCode: "4410", side: "credit", expression: "vatAmount" }
       ],
       opensItem: false,
+      closesOpenItemByAccount: "4410",
       requiresCounterparty: false
     }
   },

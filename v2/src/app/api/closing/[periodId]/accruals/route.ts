@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClosingState, saveClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
+import { ACCOUNTS } from "@/lib/constants";
 
 export async function GET(
   req: NextRequest,
@@ -34,6 +35,7 @@ export async function GET(
       postedSalaryAmount: sumPayload(salaryDocs, "salaryAmount"),
       postedDepreciationAmount: sumPayload(depDocs, "depreciationAmount"),
       postedRentAmount: sumPayload(rentDocs, "rentAmount"),
+      postedExpenseAccountCode: (salaryDocs[0]?.payload as any)?.expenseAccountCode || null,
       hasPostedDocs: salaryDocs.length + depDocs.length + rentDocs.length > 0
     });
   } catch (err: any) {
@@ -59,7 +61,7 @@ export async function DELETE(
     }
 
     await saveClosingState(periodId, {
-      accruals: { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 }
+      accruals: { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0, expenseAccountCode: ACCOUNTS.EXPENSE_ADMIN }
     }, orgId);
 
     return NextResponse.json({ reset: true });

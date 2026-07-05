@@ -2,7 +2,7 @@ import prisma from "../prisma";
 import { evaluate } from "./expressionEval";
 import Decimal from "decimal.js";
 import { getRiskDeadline } from "../openItems";
-import { TAX_RATES } from "../constants";
+import { TAX_RATES, SALARY_EXPENSE_ACCOUNT_CODES } from "../constants";
 
 /**
  * Posts a document by resolving its templates, evaluating mathematical expressions,
@@ -102,6 +102,54 @@ export async function postDocument(
     if (contributionAmount.gt(debt)) {
       throw new Error(
         `Сумма операции (${contributionAmount.toString()}) превышает остаток долга по уставному капиталу на счёте 4610 (${debt.toString()}). Разделите операцию: часть в пределах остатка — «Оплата доли в уставном капитале», остальное — «Довзнос учредителя сверх устава» (CAPITAL_INCREASE_PENDING).`
+      );
+    }
+  }
+
+  // Guard: VAT_OFFSET (4410 → 6410) must never exceed the input VAT actually
+  // confirmed by the Soliq reconciliation (SOLIQ_IMPORT.payload.taxSummary.inputVat,
+  // saved permanently at Step 6 of period closing — no separate ЭСФ model needed,
+  // a signed ЭСФ with a wrong amount can't exist in either party's registry).
+  // Same rollback behaviour as the CAPITAL_CONTRIBUTION guard above.
+  if (doc.type.code === "VAT_OFFSET") {
+    const soliqDoc = await tx.document.findFirst({
+      where: { periodId: doc.periodId, type: { code: "SOLIQ_IMPORT" }, status: "POSTED" }
+    });
+    if (!soliqDoc) {
+      throw new Error("Зачёт НДС невозможен: для этого периода ещё не загружен отчёт Soliq (Шаг 6 закрытия).");
+    }
+
+    const inputVat = new Decimal((soliqDoc.payload as any)?.taxSummary?.inputVat ?? 0);
+
+    const alreadyOffset = await tx.journalEntry.aggregate({
+      where: {
+        document: { periodId: doc.periodId, orgId: doc.orgId, type: { code: "VAT_OFFSET" }, status: "POSTED" },
+        account: { code: "4410" }
+      },
+      _sum: { credit: true }
+    });
+    const usedSoFar = new Decimal(alreadyOffset._sum.credit?.toString() ?? 0);
+
+    const vatAmount = new Decimal(payload.vatAmount ?? 0);
+    if (usedSoFar.plus(vatAmount).gt(inputVat)) {
+      throw new Error(
+        `Сумма зачёта (${vatAmount.toString()}) превышает входящий НДС по отчёту Soliq за период (${inputVat.toString()} сум, уже зачтено ${usedSoFar.toString()} сум).`
+      );
+    }
+  }
+
+  // Guard: SALARY_ACCRUAL's gross-salary/social-tax lines resolve $expenseAccountCode
+  // dynamically (see step 6 below) — that mechanism accepts ANY existing account code,
+  // so without this check a document created outside the closing wizard's own
+  // validated step-4 flow (e.g. via the generic POST /api/documents used by
+  // /documents/new) could post payroll expense to an arbitrary account (even a
+  // bank or liability account). closing.ts's finalizePeriod already validates this
+  // for the normal wizard flow — this is the same check enforced universally.
+  if (doc.type.code === "SALARY_ACCRUAL") {
+    const expenseAccountCode = payload.expenseAccountCode;
+    if (!SALARY_EXPENSE_ACCOUNT_CODES.includes(expenseAccountCode)) {
+      throw new Error(
+        `Некорректный счёт расхода для начисления ЗП: "${expenseAccountCode ?? ""}". Допустимые: ${SALARY_EXPENSE_ACCOUNT_CODES.join(", ")}.`
       );
     }
   }
