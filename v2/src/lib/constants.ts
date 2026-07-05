@@ -46,6 +46,7 @@ export const ACCOUNTS = {
   INPS_PAYABLE: "6530",
   FINAL_RESULT: "9910",
   PROFIT_TAX_EXPENSE: "9810",    // Расходы по налогу на прибыль
+  TURNOVER_TAX_EXPENSE: "9820",  // Расходы по прочим налогам от прибыли (налог с оборота)
   RETAINED_EARNINGS: "8710",     // Нераспределённая прибыль (непокрытый убыток)
   OPENING_BALANCE_EQUITY: "8890", // Сальдо при открытии / балансирующий счёт
   ASSET_DISPOSAL: "9210",        // Выбытие основных средств
@@ -101,7 +102,7 @@ export const RISK_DAYS_BY_ACCOUNT: Record<string, number> = {
   [ACCOUNTS.ADVANCE_PAID_TRAVEL]: 10,   // 4220 — командировочные подотчётные
   [ACCOUNTS.ADVANCE_PAID_GENERAL]: 10,  // 4230 — общехозяйственные подотчётные
   [ACCOUNTS.DEPOSIT]: 365,              // 4890 — депозиты / расчёты с агрегаторами
-  [ACCOUNTS.FOUNDER_LOAN]: 365,         // 6820 — займы от учредителей
+  [ACCOUNTS.FOUNDER_LOAN]: 365,         // 6820 — краткосрочные займы (от учредителей и от партнёрских компаний)
   [ACCOUNTS.DIVIDENDS_PAYABLE]: 365,    // 6610 — дивиденды к оплате
 };
 

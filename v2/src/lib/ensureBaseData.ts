@@ -7,7 +7,7 @@ const vatDivisor = 1 + TAX_RATES.VAT; // 1.12
 export const baseDocumentTypes = [
   {
     code: "REVENUE_VAT",
-    name: "Поступление от покупателя (с НДС)",
+    name: "Продажа с документами (с НДС)",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -21,7 +21,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "REVENUE_NO_VAT",
-    name: "Поступление от покупателя (без НДС)",
+    name: "Продажа с документами (без НДС)",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -34,7 +34,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ADVANCE_RECEIVED",
-    name: "Аванс полученный",
+    name: "Предоплата от клиента (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -48,7 +48,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "REVENUE_COLLECTION",
-    name: "Поступление оплаты за отгруженные товары/услуги (постоплата)",
+    name: "Оплата от клиента — постоплата (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -81,7 +81,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SUPPLIER_PAYMENT_GOODS",
-    name: "Закупка товаров (погашение долга)",
+    name: "Оплата поставщику за товары (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -95,7 +95,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SUPPLIER_PAYMENT_SERVICES",
-    name: "Оплата за услуги (погашение долга)",
+    name: "Оплата поставщику за услуги (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -109,7 +109,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SUPPLIER_PAYMENT_OTHER",
-    name: "Прочая закупка (погашение долга)",
+    name: "Оплата поставщику — прочее (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -123,7 +123,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SUPPLIER_PAYMENT_VAT",
-    name: "Оплата поставщику (погашение долга)",
+    name: "Оплата поставщику — НДС (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -137,7 +137,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ADVANCE_PAID",
-    name: "Аванс выданный",
+    name: "Предоплата поставщику (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -151,7 +151,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SALARY",
-    name: "Выплата зарплаты",
+    name: "Выплата зарплаты сотрудникам (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -164,7 +164,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "TAX_PAYMENT",
-    name: "Уплата налога",
+    name: "Оплата налога (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -177,7 +177,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "RENT",
-    name: "Аренда",
+    name: "Аренда — прямая оплата (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -190,7 +190,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ADVERTISING",
-    name: "Реклама / маркетинг",
+    name: "Реклама и маркетинг (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -203,7 +203,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "OTHER_EXPENSE",
-    name: "Прочий расход",
+    name: "Прочий расход (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -216,7 +216,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ACCOUNTABLE",
-    name: "Подотчётные суммы",
+    name: "Деньги под отчёт — командировка (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -230,7 +230,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "FOUNDER_LOAN",
-    name: "Займ от учредителя",
+    name: "Займ от учредителя (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -244,7 +244,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "INTERNAL_TRANSFER",
-    name: "Внутренний перевод (исходящий)",
+    name: "Перевод на другой свой счёт (Перевод)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -258,7 +258,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "REFUND",
-    name: "Возврат / корректировка",
+    name: "Возврат денег клиенту (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -271,7 +271,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "DEPOSIT",
-    name: "Гарантийный депозит",
+    name: "Гарантийный депозит выдан (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -291,7 +291,7 @@ export const baseDocumentTypes = [
     // EXPENSE_OTHER (9430, прочее). ИНПС/НДФЛ — удержания из зарплаты самого
     // работника, они всегда через 6710 независимо от функции.
     code: "SALARY_ACCRUAL",
-    name: "Начисление заработной платы и налогов ФОТ",
+    name: "Начисление зарплаты и налогов ФОТ",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -313,7 +313,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "DEPRECIATION_ACCRUAL",
-    name: "Начисление амортизации основных средств",
+    name: "Начисление амортизации ОС",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -326,7 +326,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "RENT_ACCRUAL",
-    name: "Начисление аренды (неденежное)",
+    name: "Начисление аренды (без оплаты)",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -360,7 +360,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SOCIAL_TAX_PAYMENT",
-    name: "Уплата социального налога",
+    name: "Социальный налог с ФОТ (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -373,7 +373,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "INPS_PAYMENT",
-    name: "Уплата ИНПС (накопительная пенсия)",
+    name: "Накопительная пенсия — ИНПС (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -399,7 +399,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "FOUNDER_LOAN_REPAYMENT",
-    name: "Возврат займа учредителю",
+    name: "Возврат займа учредителю (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -440,7 +440,7 @@ export const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9810", side: "debit", expression: "taxAmount" },
+        { accountCode: "9820", side: "debit", expression: "taxAmount" },
         { accountCode: "6410", side: "credit", expression: "taxAmount" }
       ],
       opensItem: false,
@@ -453,7 +453,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "GOODS_RECEIVED",
-    name: "Поступление товаров (начисление постоплаты)",
+    name: "Поступление товаров — в долг",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -468,7 +468,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "GOODS_RECEIVED_PREPAID",
-    name: "Поступление товаров (зачет аванса)",
+    name: "Поступление товаров — в счёт аванса",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -483,7 +483,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SERVICE_RECEIVED",
-    name: "Получение услуги (начисление постоплаты)",
+    name: "Получение услуги — в долг",
     mode: "MANUAL_ONLY",
     template: {
       // 9130 — себестоимость услуг, ПРОДАВАЕМЫХ клиентам, а не купленных у поставщика.
@@ -500,7 +500,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SERVICE_RECEIVED_PREPAID",
-    name: "Получение услуги (зачет аванса)",
+    name: "Получение услуги — в счёт аванса",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -515,7 +515,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "INVOICE_CONFIRMED",
-    name: "Подтверждение ЭСФ покупателем (начисление постоплаты)",
+    name: "ЭСФ подтверждён — постоплата",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -530,7 +530,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "INVOICE_CONFIRMED_PREPAID",
-    name: "Подтверждение ЭСФ покупателем (зачет аванса)",
+    name: "ЭСФ подтверждён — зачёт аванса",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -548,7 +548,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "FIXED_ASSET_PURCHASE",
-    name: "Приобретение основного средства",
+    name: "Покупка оборудования (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -561,7 +561,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "BANK_COMMISSION",
-    name: "Комиссия банка",
+    name: "Комиссия банка (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -574,7 +574,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SUPPLIER_REFUND",
-    name: "Возврат от поставщика",
+    name: "Возврат денег от поставщика (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -589,7 +589,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ADVANCE_RETURN_SENT",
-    name: "Возврат ошибочно полученного аванса покупателю",
+    name: "Возврат предоплаты клиенту (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -604,7 +604,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "BANK_LOAN_RECEIVED",
-    name: "Получение банковского кредита",
+    name: "Кредит от банка получен (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -618,7 +618,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "BANK_LOAN_REPAYMENT",
-    name: "Погашение банковского кредита",
+    name: "Погашение кредита банку (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -632,7 +632,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "EMPLOYEE_LOAN",
-    name: "Займ сотруднику",
+    name: "Займ сотруднику (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -646,7 +646,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "EMPLOYEE_LOAN_REPAYMENT",
-    name: "Возврат займа сотрудником",
+    name: "Сотрудник вернул займ (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -662,7 +662,7 @@ export const baseDocumentTypes = [
     // (см. OPENING_CAPITAL_DECLARATION), а фактическая оплата гасит долг учредителя
     // на счёте 4610 — она НЕ создаёт капитал напрямую.
     code: "CAPITAL_CONTRIBUTION",
-    name: "Оплата доли в уставном капитале",
+    name: "Взнос учредителя в уставный капитал (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -680,7 +680,7 @@ export const baseDocumentTypes = [
     // а не капитал. Реклассифицируется в 8330 вручную через
     // CAPITAL_INCREASE_REGISTERED после регистрации изменений.
     code: "CAPITAL_INCREASE_PENDING",
-    name: "Довзнос учредителя сверх устава (до регистрации изменений)",
+    name: "Довзнос учредителя сверх устава (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -694,7 +694,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "CAPITAL_INCREASE_REGISTERED",
-    name: "Реклассификация довзноса в уставный капитал (после регистрации устава)",
+    name: "Реклассификация довзноса в УК",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -735,7 +735,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "MARKETPLACE_INCOME",
-    name: "Поступление от маркетплейса (расчёты с агрегатором)",
+    name: "Поступление от маркетплейса (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -752,7 +752,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "FIXED_ASSET_DISPOSAL",
-    name: "Выбытие (списание) основного средства",
+    name: "Выбытие (списание) ОС",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -773,7 +773,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "FIXED_ASSET_SALE",
-    name: "Поступление от продажи основного средства",
+    name: "Продажа оборудования (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -795,7 +795,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "INTEREST_PAYMENT",
-    name: "Выплата процентов по кредиту / займу",
+    name: "Проценты по кредиту/займу (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -812,7 +812,7 @@ export const baseDocumentTypes = [
     // промежуточное обязательство перед учредителем на счёте 6610.
     // При выплате удерживается налог 5% (DIVIDEND_TAX) в бюджет.
     code: "DIVIDEND_PAYMENT",
-    name: "Выплата дивидендов учредителям",
+    name: "Дивиденды учредителям (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -848,7 +848,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "FINE_PENALTY",
-    name: "Штраф, пеня, неустойка (уплата)",
+    name: "Штраф/пеня уплачена (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -861,7 +861,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "INSURANCE_PAYMENT",
-    name: "Страховой взнос (предоплата)",
+    name: "Страховой взнос (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -874,7 +874,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "UTILITY_PAYMENT",
-    name: "Коммунальные услуги (электроэнергия, вода, газ, тепло)",
+    name: "Коммунальные услуги (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -887,7 +887,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "SUBSCRIPTION",
-    name: "Подписка, лицензия, SaaS-сервис",
+    name: "Подписка/лицензия (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -916,7 +916,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "CUSTOMS_DUTY",
-    name: "Таможенные платежи и пошлины",
+    name: "Таможенные платежи (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -935,7 +935,7 @@ export const baseDocumentTypes = [
 
   {
     code: "RENT_PAYMENT",
-    name: "Оплата аренды (после начисления)",
+    name: "Аренда — оплата по начислению (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -948,7 +948,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ACCOUNTABLE_GENERAL",
-    name: "Подотчётные суммы (общехозяйственные расходы)",
+    name: "Деньги под отчёт — офис (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -982,7 +982,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "FIXED_ASSET_COMMISSIONING",
-    name: "Ввод основного средства в эксплуатацию",
+    name: "Ввод ОС в эксплуатацию",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1000,7 +1000,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "FIXED_ASSET_DISPOSAL_RESULT",
-    name: "Признание прибыли/убытка от выбытия ОС (закрытие 9210)",
+    name: "Итог от выбытия ОС",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1059,7 +1059,7 @@ export const baseDocumentTypes = [
     // Инвариант баланса проводки: netAmount + commissionAmount == amount
     // (иначе postDocument выбросит ошибку "Несбалансированная проводка").
     code: "MARKETPLACE_REVENUE",
-    name: "Выручка маркетплейса (зачет расчётов с агрегатором и комиссия)",
+    name: "Выручка маркетплейса (с комиссией)",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1078,7 +1078,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "ACCOUNTABLE_WRITEOFF",
-    name: "Списание подотчётных сумм (командировочные, авансовый отчёт)",
+    name: "Списание подотчётных — командировка",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1092,7 +1092,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ACCOUNTABLE_RETURN",
-    name: "Возврат неизрасходованного остатка подотчётных сумм (командировочные)",
+    name: "Сотрудник вернул остаток — командировка (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1106,7 +1106,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ACCOUNTABLE_GENERAL_WRITEOFF",
-    name: "Списание подотчётных сумм (общехозяйственные расходы)",
+    name: "Списание подотчётных — офис",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1120,7 +1120,7 @@ export const baseDocumentTypes = [
   },
   {
     code: "ACCOUNTABLE_GENERAL_RETURN",
-    name: "Возврат неизрасходованного остатка подотчётных сумм (общехозяйственные)",
+    name: "Сотрудник вернул остаток — офис (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1138,7 +1138,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "DEPOSIT_RETURN",
-    name: "Возврат гарантийного депозита",
+    name: "Возврат гарантийного депозита (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1159,7 +1159,7 @@ export const baseDocumentTypes = [
     // стороной перевода (см. INTERNAL_TRANSFER: Дт 5710 — Кт 5110). Счёт назначения
     // параметризуется через payload.destinationAccountCode (по умолчанию 5210).
     code: "INTERNAL_TRANSFER_RECEIVED",
-    name: "Внутренний перевод (поступление)",
+    name: "Поступление с другого своего счёта (Перевод)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1177,7 +1177,7 @@ export const baseDocumentTypes = [
   // ────────────────────────────────────────────────────────────────
   {
     code: "INTANGIBLE_ASSET_PURCHASE",
-    name: "Приобретение нематериального актива",
+    name: "Покупка ПО/лицензии/бренда (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1192,7 +1192,7 @@ export const baseDocumentTypes = [
     // $assetAccountCode из payload: 0410 (патенты/лицензии/ноу-хау), 0420 (товарные знаки),
     // 0430 (программное обеспечение) и т.д.
     code: "INTANGIBLE_ASSET_COMMISSIONING",
-    name: "Ввод нематериального актива в эксплуатацию",
+    name: "Ввод НМА в эксплуатацию",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1224,7 +1224,7 @@ export const baseDocumentTypes = [
   // NEW-02: Снятие наличных с расчётного счёта
   {
     code: "CASH_WITHDRAWAL",
-    name: "Снятие наличных с расчётного счёта",
+    name: "Снятие наличных в кассу (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1239,7 +1239,7 @@ export const baseDocumentTypes = [
   // NEW-03: Взнос наличных на расчётный счёт
   {
     code: "CASH_DEPOSIT",
-    name: "Взнос наличных на расчётный счёт",
+    name: "Внесение наличных на счёт (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1254,7 +1254,7 @@ export const baseDocumentTypes = [
   // NEW-04: Уплата импортного НДС
   {
     code: "IMPORT_VAT_PAYMENT",
-    name: "Уплата импортного НДС",
+    name: "НДС на импорт (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1269,7 +1269,7 @@ export const baseDocumentTypes = [
   // NEW-05: Предоплата аренды
   {
     code: "PREPAID_RENT_PAYMENT",
-    name: "Предоплата аренды",
+    name: "Предоплата за аренду (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1284,7 +1284,7 @@ export const baseDocumentTypes = [
   // NEW-06: Признание предоплаченной аренды (ежемесячное списание)
   {
     code: "PREPAID_RENT_RECOGNITION",
-    name: "Признание предоплаченной аренды",
+    name: "Списание предоплаты аренды по периодам",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1299,7 +1299,7 @@ export const baseDocumentTypes = [
   // NEW-07: Возврат товара от покупателя
   {
     code: "GOODS_RETURNED_FROM_CUSTOMER",
-    name: "Возврат товара от покупателя",
+    name: "Клиент вернул товар",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1336,7 +1336,7 @@ export const baseDocumentTypes = [
   // NEW-09: Возврат НДС из бюджета
   {
     code: "VAT_REFUND_FROM_BUDGET",
-    name: "Возврат НДС из бюджета",
+    name: "Возврат НДС из бюджета (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1351,7 +1351,7 @@ export const baseDocumentTypes = [
   // NEW-10: Оприходование годных остатков после выбытия ОС
   {
     code: "FIXED_ASSET_SALVAGE",
-    name: "Оприходование годных остатков после выбытия ОС",
+    name: "Оприходование остатков от ОС",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1419,7 +1419,7 @@ export const baseDocumentTypes = [
   // NEW-14: Доход от аренды
   {
     code: "RENTAL_INCOME_RECEIVED",
-    name: "Доход от аренды",
+    name: "Доход от сдачи в аренду (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1434,7 +1434,7 @@ export const baseDocumentTypes = [
   // NEW-15: Процентный доход полученный
   {
     code: "INTEREST_INCOME_RECEIVED",
-    name: "Процентный доход полученный",
+    name: "Проценты по депозиту получены (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1449,7 +1449,7 @@ export const baseDocumentTypes = [
   // NEW-16: Аванс по зарплате
   {
     code: "SALARY_ADVANCE",
-    name: "Аванс по заработной плате",
+    name: "Аванс по зарплате (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1499,7 +1499,7 @@ export const baseDocumentTypes = [
   // NEW-19: Товары в пути
   {
     code: "GOODS_IN_TRANSIT",
-    name: "Товары в пути",
+    name: "Товар оплачен, в пути (Перевод)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1530,7 +1530,7 @@ export const baseDocumentTypes = [
   // NEW-21: Переоценка основных средств
   {
     code: "FIXED_ASSET_REVALUATION",
-    name: "Переоценка основных средств",
+    name: "Переоценка ОС",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1552,7 +1552,7 @@ export const baseDocumentTypes = [
   // NEW-22: Получение долгосрочного займа
   {
     code: "LONG_TERM_LOAN_RECEIVED",
-    name: "Получение долгосрочного займа",
+    name: "Долгосрочный займ получен (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1568,7 +1568,7 @@ export const baseDocumentTypes = [
   // NEW-23: Погашение долгосрочного займа
   {
     code: "LONG_TERM_LOAN_REPAYMENT",
-    name: "Погашение долгосрочного займа",
+    name: "Погашение долгосрочного займа (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1584,7 +1584,7 @@ export const baseDocumentTypes = [
   // NEW-24: Дивидендный доход полученный
   {
     code: "DIVIDEND_INCOME_RECEIVED",
-    name: "Дивидендный доход полученный",
+    name: "Дивиденды от других компаний (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1679,7 +1679,7 @@ export const baseDocumentTypes = [
   // NEW-30: Оприходование излишков при инвентаризации (НСБУ-21, п. 241, 419, 509, 731, 813, 827, 867, 1029)
   {
     code: "INVENTORY_SURPLUS",
-    name: "Оприходование излишков, выявленных при инвентаризации",
+    name: "Излишки при инвентаризации",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1694,7 +1694,7 @@ export const baseDocumentTypes = [
   // NEW-31: Выявление недостачи при инвентаризации (НСБУ-21, п. 246-247, 1549)
   {
     code: "INVENTORY_SHORTAGE",
-    name: "Недостачи, выявленные при инвентаризации",
+    name: "Недостача при инвентаризации",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1709,7 +1709,7 @@ export const baseDocumentTypes = [
   // NEW-32: Отнесение недостачи — на виновного или в убыток (НСБУ-21, п. 247, 1549)
   {
     code: "INVENTORY_SHORTAGE_RESOLUTION",
-    name: "Отнесение недостачи (на виновного / в убыток)",
+    name: "Списание недостачи",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1742,7 +1742,7 @@ export const baseDocumentTypes = [
   // NEW-34: Создание резерва предстоящих расходов и платежей (НСБУ-21, п. 375-376, 2229)
   {
     code: "PROVISION_FUTURE_EXPENSES",
-    name: "Создание резерва предстоящих расходов и платежей",
+    name: "Резерв предстоящих расходов",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1757,7 +1757,7 @@ export const baseDocumentTypes = [
   // NEW-35: Использование резерва предстоящих расходов (НСБУ-21, п. 376, 2229)
   {
     code: "PROVISION_FUTURE_EXPENSES_USE",
-    name: "Использование резерва предстоящих расходов",
+    name: "Использование резерва расходов",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1772,7 +1772,7 @@ export const baseDocumentTypes = [
   // NEW-36: Восстановление неиспользованного резерва в доход (НСБУ-21, п. 376, 2229)
   {
     code: "PROVISION_UNUSED_TO_INCOME",
-    name: "Восстановление неиспользованного резерва в доход",
+    name: "Восстановление резерва в доход",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1787,7 +1787,7 @@ export const baseDocumentTypes = [
   // NEW-37: Признание гранта — уведомление получено (НСБУ-21, п. 369, 2213)
   {
     code: "GRANT_RECEIVABLE",
-    name: "Признание гранта (получено уведомление)",
+    name: "Грант признан (документы получены)",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1803,7 +1803,7 @@ export const baseDocumentTypes = [
   // NEW-38: Получение гранта (деньги / имущество) (НСБУ-21, п. 369, 2213)
   {
     code: "GRANT_RECEIVED",
-    name: "Получение гранта",
+    name: "Грант получен (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1819,7 +1819,7 @@ export const baseDocumentTypes = [
   // NEW-39: Признание субсидии — уведомление получено (НСБУ-21, п. 370, 2213)
   {
     code: "SUBSIDY_RECEIVABLE",
-    name: "Признание субсидии (получено уведомление)",
+    name: "Субсидия признана (документы)",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1835,7 +1835,7 @@ export const baseDocumentTypes = [
   // NEW-40: Получение субсидии (НСБУ-21, п. 370, 2213)
   {
     code: "SUBSIDY_RECEIVED",
-    name: "Получение субсидии",
+    name: "Субсидия получена (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1851,7 +1851,7 @@ export const baseDocumentTypes = [
   // NEW-41: Целевые поступления — членские взносы / прочие (НСБУ-21, п. 373, 2213)
   {
     code: "TARGET_RECEIPTS",
-    name: "Целевые поступления (членские взносы / прочие)",
+    name: "Целевые взносы получены (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -1901,7 +1901,7 @@ export const baseDocumentTypes = [
   // NEW-44: Оприходование товаров в пути на склад (НСБУ-21, п. 1001; закрывает NEW-19 GOODS_IN_TRANSIT)
   {
     code: "GOODS_IN_TRANSIT_RECEIVED",
-    name: "Оприходование товаров в пути на склад",
+    name: "Товар в пути оприходован на склад",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -1998,7 +1998,7 @@ export const baseDocumentTypes = [
   // NEW-50: Получение ОС по финансовой аренде (лизинг) (НСБУ-6)
   {
     code: "FINANCE_LEASE_ASSET_RECEIVED",
-    name: "Получение основных средств по финансовой аренде",
+    name: "ОС получено в лизинг",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -2014,7 +2014,7 @@ export const baseDocumentTypes = [
   // NEW-51: Начисление амортизации по лизинговому имуществу
   {
     code: "FINANCE_LEASE_DEPRECIATION",
-    name: "Амортизация имущества по финансовой аренде",
+    name: "Амортизация лизингового ОС",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -2029,7 +2029,7 @@ export const baseDocumentTypes = [
   // NEW-52: Лизинговый платёж (погашение основной суммы)
   {
     code: "FINANCE_LEASE_PAYMENT",
-    name: "Платёж по финансовой аренде (основная сумма)",
+    name: "Платёж по лизингу — тело (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -2045,7 +2045,7 @@ export const baseDocumentTypes = [
   // NEW-53: Проценты по финансовой аренде
   {
     code: "FINANCE_LEASE_INTEREST",
-    name: "Проценты по финансовой аренде",
+    name: "Проценты по лизингу (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -2060,7 +2060,7 @@ export const baseDocumentTypes = [
   // NEW-54: Доход от роялти получен
   {
     code: "ROYALTY_INCOME",
-    name: "Доход от роялти получен",
+    name: "Роялти получены (Доход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -2075,7 +2075,7 @@ export const baseDocumentTypes = [
   // NEW-55: Выплата роялти
   {
     code: "ROYALTY_PAYMENT",
-    name: "Выплата роялти",
+    name: "Выплата роялти (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -2090,7 +2090,7 @@ export const baseDocumentTypes = [
   // NEW-56: Открытие аккредитива
   {
     code: "LETTER_OF_CREDIT_OPEN",
-    name: "Открытие аккредитива",
+    name: "Открытие аккредитива (Перевод)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -2138,7 +2138,7 @@ export const baseDocumentTypes = [
   // NEW-59: Выплата депонированной заработной платы
   {
     code: "SALARY_DEPOSIT_PAYMENT",
-    name: "Выплата депонированной заработной платы",
+    name: "Выплата задержанной зарплаты (Расход)",
     mode: "BANK_AUTO",
     template: {
       lines: [
@@ -2184,7 +2184,7 @@ export const baseDocumentTypes = [
   // NEW-62: Перевод долгосрочной задолженности в краткосрочную часть
   {
     code: "LONG_TERM_TO_CURRENT_RECLASS",
-    name: "Перевод долгосрочной задолженности в краткосрочную часть",
+    name: "Перевод долга в краткосрочный",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -2199,7 +2199,7 @@ export const baseDocumentTypes = [
   // NEW-63: Чрезвычайные доходы/расходы (форс-мажор)
   {
     code: "EXTRAORDINARY_GAIN_LOSS",
-    name: "Чрезвычайные доходы/расходы",
+    name: "Чрезвычайный доход/расход",
     mode: "MANUAL_ONLY",
     template: {
       lines: [
@@ -2209,6 +2209,506 @@ export const baseDocumentTypes = [
         // Чрезвычайный убыток: Дт 9720 — Кт $accountCode
         { accountCode: "9720", side: "debit", expression: "lossAmount", condition: "lossAmount > 0" },
         { accountCode: "$accountCode", side: "credit", expression: "lossAmount", condition: "lossAmount > 0" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+
+  // ─── STAGE 6: новые категории транзакций (банковские и не банковские) ──────────
+  // Субсчета для новых операций созданы в системе заранее (см. seed-coa.ts) —
+  // организации сами их не создают, только выбирают при классификации транзакции.
+  // ────────────────────────────────────────────────────────────────
+
+  // ── ПОСТУПЛЕНИЯ (Доход) ──────────────────────────────────────────────────────
+  {
+    code: "PENALTY_INCOME",
+    name: "Неустойка от партнёра получена (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "9330", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "INSURANCE_CLAIM_RECEIVED",
+    name: "Страховое возмещение получено (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "9390", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "TAX_REFUND_OTHER",
+    name: "Возврат переплаты налога — не НДС (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "6410", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "FACTORING_RECEIVED",
+    name: "Деньги по факторингу получены (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4010", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    // 6820 — краткосрочные займы от небанковских кредиторов (учредители И партнёрские
+    // компании, см. НСБУ-21). closesOpenItemByAccount/OpenItem matching в postingEngine
+    // всегда учитывает counterpartyId — займы разных контрагентов на одном счёте
+    // не пересекаются между собой.
+    code: "PARTNER_LOAN_RECEIVED",
+    name: "Займ от другой компании получен (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "6820", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "6820",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PARTNER_LOAN_RETURNED",
+    name: "Другая компания вернула займ (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "4890", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "4890",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "TENANT_UTILITIES_RECEIVED",
+    name: "Коммунальные от арендатора — возмещение (Доход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "6310", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // ── РАСХОДЫ (Расход) ─────────────────────────────────────────────────────────
+  {
+    code: "STATE_DUTY",
+    name: "Оплата госпошлины (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "EMPLOYEE_TRAINING",
+    name: "Обучение сотрудников (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "MEMBERSHIP_FEE",
+    name: "Членский взнос в организацию (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "CHARITY_PAYMENT",
+    name: "Благотворительный взнос (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "SELF_EMPLOYED_PAYMENT",
+    name: "Оплата самозанятому (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "CIVIL_CONTRACT_PAYMENT",
+    name: "Оплата по договору ГПХ (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "6710", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PROFESSIONAL_SERVICES",
+    name: "Профессиональные услуги — юрист/аудит/консультант (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "FUEL_PURCHASE",
+    name: "Закупка топлива — ГСМ (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "1030", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "TAXI_BUSINESS",
+    name: "Такси/транспорт для бизнеса (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "TRANSLATION_SERVICES",
+    name: "Перевод документов (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "WARRANTY_REPAIR",
+    name: "Гарантийный ремонт клиенту (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PARTNER_LOAN_ISSUED",
+    name: "Займ выдан другой компании (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "4890", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: true,
+      itemAccountCode: "4890",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PARTNER_LOAN_REPAID",
+    name: "Возврат займа другой компании (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "6820", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      closesOpenItemByAccount: "6820",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "ACQUIRING_COMMISSION",
+    name: "Комиссия эквайринга (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "DELIVERY_TO_CUSTOMER",
+    name: "Доставка товара покупателю (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9410", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PACKAGING_COST",
+    name: "Упаковка и тара (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9410", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "CUSTOMS_BROKER",
+    name: "Оплата таможенному брокеру (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "2910", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PRODUCT_CERTIFICATION",
+    name: "Сертификация товара/продукции (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "CASH_COLLECTION_SERVICE",
+    name: "Инкассация (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "SECURITY_SERVICES",
+    name: "Охрана / ЧОП (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "MARKETPLACE_PROMOTION",
+    name: "Продвижение на маркетплейсе (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9410", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "REFERRAL_COMMISSION",
+    name: "Реферальная комиссия партнёру (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9410", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "MOBILE_COMMUNICATION",
+    name: "Мобильная связь сотрудников (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "CONFERENCE_FEE",
+    name: "Участие в конференции/мероприятии (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9420", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "RAW_MATERIALS_PURCHASE",
+    name: "Прямая закупка сырья (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "1010", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "PERMITS_APPROVALS",
+    name: "Разрешения и согласования (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "MUSIC_LICENSE",
+    name: "Лицензия на публичное воспроизведение музыки (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "ROAD_TOLLS",
+    name: "Платные дороги и парковки (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
+    code: "MEDICAL_LICENSE",
+    name: "Медицинская лицензия (Расход)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "9430", side: "debit", expression: "amount" },
+        { accountCode: "5110", side: "credit", expression: "amount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+
+  // ── ПЕРЕВОД ───────────────────────────────────────────────────────────────────
+  {
+    code: "CURRENCY_EXCHANGE",
+    name: "Обмен валюты (Перевод)",
+    mode: "BANK_AUTO",
+    template: {
+      lines: [
+        { accountCode: "5110", side: "debit", expression: "amount" },
+        { accountCode: "5210", side: "credit", expression: "amount" }
       ],
       opensItem: false,
       requiresCounterparty: false

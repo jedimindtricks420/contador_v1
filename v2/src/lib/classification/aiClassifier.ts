@@ -32,6 +32,21 @@ const CREDIT_ONLY_CODES = new Set([
   "INTEREST_INCOME_RECEIVED",   // 5110 Дт — 9530 Кт, процентный доход
   "LONG_TERM_LOAN_RECEIVED",    // 5110 Дт — 7810/7820 Кт, получение займа
   "DIVIDEND_INCOME_RECEIVED",   // 5110 Дт — 9520 Кт, дивидендный доход
+  // Ранее существовавшие BANK_AUTO типы, отсутствовавшие в этом Set (пробел обнаружен
+  // при апдейте v2 FINAL — до этого момента дирекционный guard их не покрывал):
+  "CAPITAL_INCREASE_PENDING", // 5110 Дт — 6630 Кт, довзнос учредителя сверх устава
+  "GRANT_RECEIVED",           // 5110 Дт — 4890 Кт, получение гранта
+  "SUBSIDY_RECEIVED",         // 5110 Дт — 4890 Кт, получение субсидии
+  "TARGET_RECEIPTS",          // 5110 Дт — 8830/8890 Кт, целевые поступления
+  "ROYALTY_INCOME",           // 5110 Дт — 9510 Кт, роялти получены
+  // NEW types v2 FINAL — CREDIT only (входящие операции)
+  "PENALTY_INCOME",            // 5110 Дт — 9330 Кт, неустойка от партнёра получена
+  "INSURANCE_CLAIM_RECEIVED",  // 5110 Дт — 9390 Кт, страховое возмещение получено
+  "TAX_REFUND_OTHER",          // 5110 Дт — 6410 Кт, возврат переплаты налога (не НДС)
+  "FACTORING_RECEIVED",        // 5110 Дт — 4010 Кт, деньги по факторингу получены
+  "PARTNER_LOAN_RECEIVED",     // 5110 Дт — 6820 Кт, займ от другой компании получен
+  "PARTNER_LOAN_RETURNED",     // 5110 Дт — 4890 Кт, другая компания вернула займ
+  "TENANT_UTILITIES_RECEIVED", // 5110 Дт — 6310 Кт, коммунальные от арендатора
 ]);
 
 const DEBIT_ONLY_CODES = new Set([
@@ -57,6 +72,45 @@ const DEBIT_ONLY_CODES = new Set([
   "SALARY_ADVANCE",           // 4210 Дт — 5110 Кт, аванс по зарплате
   "GOODS_IN_TRANSIT",         // 2970 Дт — 5110/4310 Кт, товары в пути
   "LONG_TERM_LOAN_REPAYMENT", // 7810/7820 Дт — 5110 Кт, погашение займа
+  // Ранее существовавшие BANK_AUTO типы, отсутствовавшие в этом Set (пробел обнаружен
+  // при апдейте v2 FINAL — до этого момента дирекционный guard их не покрывал):
+  "ROYALTY_PAYMENT",          // 9430 Дт — 5110 Кт, выплата роялти
+  "FINANCE_LEASE_PAYMENT",    // 7910 Дт — 5110 Кт, платёж по лизингу (тело)
+  "FINANCE_LEASE_INTEREST",   // 9610 Дт — 5110 Кт, проценты по лизингу
+  "LETTER_OF_CREDIT_OPEN",    // 5510 Дт — 5110 Кт, открытие аккредитива
+  "SALARY_DEPOSIT_PAYMENT",   // 6720 Дт — 5110 Кт, выплата депонированной ЗП
+  // NEW types v2 FINAL — DEBIT only (исходящие операции)
+  "STATE_DUTY",               // 9430 Дт — 5110 Кт, оплата госпошлины
+  "EMPLOYEE_TRAINING",        // 9420 Дт — 5110 Кт, обучение сотрудников
+  "MEMBERSHIP_FEE",           // 9430 Дт — 5110 Кт, членский взнос
+  "CHARITY_PAYMENT",          // 9430 Дт — 5110 Кт, благотворительный взнос
+  "SELF_EMPLOYED_PAYMENT",    // 9420 Дт — 5110 Кт, оплата самозанятому
+  "CIVIL_CONTRACT_PAYMENT",   // 6710 Дт — 5110 Кт, оплата по договору ГПХ
+  "PROFESSIONAL_SERVICES",    // 9420 Дт — 5110 Кт, юрист/аудит/консультант
+  "FUEL_PURCHASE",            // 1030 Дт — 5110 Кт, закупка ГСМ
+  "TAXI_BUSINESS",            // 9420 Дт — 5110 Кт, такси/транспорт для бизнеса
+  "TRANSLATION_SERVICES",     // 9420 Дт — 5110 Кт, перевод документов
+  "WARRANTY_REPAIR",          // 9430 Дт — 5110 Кт, гарантийный ремонт клиенту
+  "PARTNER_LOAN_ISSUED",      // 4890 Дт — 5110 Кт, займ выдан другой компании
+  "PARTNER_LOAN_REPAID",      // 6820 Дт — 5110 Кт, возврат займа другой компании
+  "ACQUIRING_COMMISSION",     // 9430 Дт — 5110 Кт, комиссия эквайринга
+  "DELIVERY_TO_CUSTOMER",     // 9410 Дт — 5110 Кт, доставка товара покупателю
+  "PACKAGING_COST",           // 9410 Дт — 5110 Кт, упаковка и тара
+  "CUSTOMS_BROKER",           // 2910 Дт — 5110 Кт, оплата таможенному брокеру
+  "PRODUCT_CERTIFICATION",    // 9430 Дт — 5110 Кт, сертификация товара/продукции
+  "CASH_COLLECTION_SERVICE",  // 9430 Дт — 5110 Кт, инкассация
+  "SECURITY_SERVICES",        // 9420 Дт — 5110 Кт, охрана / ЧОП
+  "MARKETPLACE_PROMOTION",    // 9410 Дт — 5110 Кт, продвижение на маркетплейсе
+  "REFERRAL_COMMISSION",      // 9410 Дт — 5110 Кт, реферальная комиссия партнёру
+  "MOBILE_COMMUNICATION",     // 9420 Дт — 5110 Кт, мобильная связь сотрудников
+  "CONFERENCE_FEE",           // 9420 Дт — 5110 Кт, участие в конференции
+  "RAW_MATERIALS_PURCHASE",   // 1010 Дт — 5110 Кт, прямая закупка сырья
+  "PERMITS_APPROVALS",        // 9430 Дт — 5110 Кт, разрешения и согласования
+  "MUSIC_LICENSE",            // 9430 Дт — 5110 Кт, лицензия на музыку
+  "ROAD_TOLLS",               // 9430 Дт — 5110 Кт, платные дороги и парковки
+  "MEDICAL_LICENSE",          // 9430 Дт — 5110 Кт, медицинская лицензия
+  // CURRENCY_EXCHANGE не входит ни в один Set — это Перевод (5110↔5210), нет
+  // однозначного "уходят/приходят" направления относительно основного счёта.
 ]);
 
 
@@ -65,7 +119,7 @@ const ACCOUNT_LABELS: Record<string, string> = {
   "6310": "Авансы ПОЛУЧЕННЫЕ от клиентов (нам должны отгрузить/выставить ЭСФ)",
   "4310": "Авансы ВЫДАННЫЕ поставщикам (они должны поставить товар/услугу)",
   "6810": "Банковские кредиты (остаток долга перед банком)",
-  "6820": "Займы от учредителей",
+  "6820": "Краткосрочные займы (от учредителей и от других компаний-партнёров)",
   "4720": "Займы сотрудникам",
   "4890": "Задолженность прочих дебиторов (депозиты, расчёты с агрегаторами)",
   "6990": "Неидентифицированные поступления",
@@ -322,10 +376,10 @@ ${activityLabel !== "Не указано" ? `Вид деятельности: ${
 ━━━ ЗАКОН НАПРАВЛЕНИЯ — АБСОЛЮТНЫЙ ЗАПРЕТ ━━━
 Каждая транзакция имеет поле directionLabel. Читай его ДО выбора категории.
 direction="CREDIT" (деньги ПРИХОДЯТ, ВХОДЯЩИЙ ПЛАТЁЖ, 5110 Дт) → только:
-  ADVANCE_RECEIVED, REVENUE_COLLECTION, MARKETPLACE_INCOME, FOUNDER_LOAN, CAPITAL_CONTRIBUTION, BANK_LOAN_RECEIVED, EMPLOYEE_LOAN_REPAYMENT, FIXED_ASSET_SALE, SUPPLIER_REFUND, REVENUE_VAT, REVENUE_NO_VAT, DEPOSIT_RETURN, ACCOUNTABLE_RETURN, ACCOUNTABLE_GENERAL_RETURN, INTERNAL_TRANSFER_RECEIVED
+  ${Array.from(CREDIT_ONLY_CODES).join(", ")}
 
 direction="DEBIT" (деньги УХОДЯТ, ИСХОДЯЩИЙ ПЛАТЁЖ, 5110 Кт) → только:
-  SUPPLIER_PAYMENT_GOODS/_SERVICES/_OTHER/_VAT, ADVANCE_PAID, SALARY, TAX_PAYMENT, SOCIAL_TAX_PAYMENT, INPS_PAYMENT, RENT, ADVERTISING, OTHER_EXPENSE, ACCOUNTABLE, ACCOUNTABLE_GENERAL, FIXED_ASSET_PURCHASE, INTANGIBLE_ASSET_PURCHASE, BANK_COMMISSION, BANK_LOAN_REPAYMENT, FOUNDER_LOAN_REPAYMENT, EMPLOYEE_LOAN, INTEREST_PAYMENT, DIVIDEND_PAYMENT, FINE_PENALTY, INSURANCE_PAYMENT, UTILITY_PAYMENT, SUBSCRIPTION, CUSTOMS_DUTY, DEPOSIT, REFUND, ADVANCE_RETURN_SENT, INTERNAL_TRANSFER
+  ${Array.from(DEBIT_ONLY_CODES).join(", ")}
 
 Запрещённый пример: directionLabel="ВХОДЯЩИЙ ПЛАТЁЖ +2 200 000 сум" → ADVANCE_PAID. ADVANCE_PAID — расход (DEBIT). Правильно: ADVANCE_RECEIVED.
 
@@ -394,6 +448,43 @@ ${JSON.stringify(catalog, null, 2)}
 18. Мы возвращаем деньги КЛИЕНТУ (DEBIT, закрываем 6310) → ADVANCE_RETURN_SENT
 19. Возврат/корректировка покупателю (уменьшает выручку, DEBIT — деньги уходят обратно клиенту) → REFUND
 20. При неуверенности — выбирай ближайшее, но снижай confidence < ${confidenceThreshold}
+21. Неустойка, штраф, пеня, полученная от партнёра (CREDIT) → PENALTY_INCOME
+22. Страховое возмещение, страховая выплата (CREDIT) → INSURANCE_CLAIM_RECEIVED
+23. Возврат переплаты налога не НДС (CREDIT от Казначейства, описание содержит "возврат", "переплата") → TAX_REFUND_OTHER
+24. Факторинг, выкуп дебиторки банком (CREDIT) → FACTORING_RECEIVED
+25. Займ от другой компании (не банк, не учредитель) (CREDIT) → PARTNER_LOAN_RECEIVED
+26. Возврат займа, выданного другой компании (CREDIT) → PARTNER_LOAN_RETURNED
+27. Госпошлина, государственная пошлина (DEBIT) → STATE_DUTY
+28. Обучение, курсы, тренинг сотрудников (DEBIT) → EMPLOYEE_TRAINING
+29. Членский взнос, вступительный взнос в ассоциацию/СРО (DEBIT) → MEMBERSHIP_FEE
+30. Благотворительность, пожертвование (DEBIT) → CHARITY_PAYMENT
+31. Самозанятый, гражданин ФЛ без ГПХ (DEBIT) → SELF_EMPLOYED_PAYMENT
+32. ГПХ, договор подряда, гражданско-правовой договор (DEBIT) → CIVIL_CONTRACT_PAYMENT
+33. Юрист, адвокат, нотариус, аудит, консультант (DEBIT) → PROFESSIONAL_SERVICES
+34. ГСМ, топливо, бензин, дизель (DEBIT) → FUEL_PURCHASE
+35. Такси, Яндекс.Такси, каршеринг для бизнеса (DEBIT) → TAXI_BUSINESS
+36. Перевод документов, бюро переводов (DEBIT) → TRANSLATION_SERVICES
+37. Гарантийный ремонт, сервисное обслуживание клиента (DEBIT) → WARRANTY_REPAIR
+38. Займ выдан другой компании-партнёру (DEBIT) → PARTNER_LOAN_ISSUED
+39. Возврат займа другой компании (DEBIT) → PARTNER_LOAN_REPAID
+40. Эквайринг, комиссия платёжной системы, процессинг (DEBIT) → ACQUIRING_COMMISSION
+41. Доставка, курьер, транспорт для клиента (DEBIT) → DELIVERY_TO_CUSTOMER
+42. Упаковка, тара, упаковочные материалы (DEBIT) → PACKAGING_COST
+43. Таможенный брокер, декларант, таможенное оформление (DEBIT) → CUSTOMS_BROKER
+44. Сертификация, декларация соответствия товара/продукции (DEBIT) → PRODUCT_CERTIFICATION
+45. Инкассация, инкассаторы (DEBIT) → CASH_COLLECTION_SERVICE
+46. ЧОП, охрана, охранные услуги (DEBIT) → SECURITY_SERVICES
+47. Реклама на маркетплейсе, продвижение карточки (DEBIT) → MARKETPLACE_PROMOTION
+48. Реферальное, агентское вознаграждение партнёру (DEBIT) → REFERRAL_COMMISSION
+49. Мобильная связь, корпоративные симки (DEBIT) → MOBILE_COMMUNICATION
+50. Конференция, форум, семинар, участие в мероприятии (DEBIT) → CONFERENCE_FEE
+51. Сырьё, закупка материалов напрямую (DEBIT) → RAW_MATERIALS_PURCHASE
+52. Разрешение, согласование, стройнадзор (DEBIT) → PERMITS_APPROVALS
+53. Обмен валюты, конвертация, продажа/покупка USD (DEBIT или CREDIT) → CURRENCY_EXCHANGE
+54. Лицензия на публичное воспроизведение музыки (DEBIT) → MUSIC_LICENSE
+55. Платные дороги, парковки (DEBIT) → ROAD_TOLLS
+56. Медицинская лицензия (DEBIT) → MEDICAL_LICENSE
+57. Тенант/арендатор возмещает коммунальные (CREDIT) → TENANT_UTILITIES_RECEIVED
 
 В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на directionLabel, историю или открытые позиции.
 
