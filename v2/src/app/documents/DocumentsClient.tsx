@@ -115,7 +115,7 @@ export default function DocumentsClient() {
           <p className="text-xs text-gray-400 mt-0.5">Все проведённые бухгалтерские документы</p>
         </div>
         <Link
-          href="/v2/documents/new"
+          href="/documents/new"
           className="inline-flex items-center gap-1.5 text-xs bg-black hover:opacity-80 text-white font-bold py-2.5 px-5 rounded transition"
         >
           <Plus size={13} /> Создать вручную

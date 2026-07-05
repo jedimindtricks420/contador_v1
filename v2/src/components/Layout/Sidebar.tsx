@@ -11,6 +11,7 @@ import {
   ListTree,
   Clock,
   CalendarCheck,
+  Files,
   Settings2,
   LogOut,
   FileText,
@@ -34,6 +35,7 @@ const NAV = [
   { href: "/accounts", label: "Счета", icon: ListTree },
   { href: "/open-positions", label: "Открытые позиции", icon: Clock },
   { href: "/closing", label: "Закрытие месяца", icon: CalendarCheck },
+  { href: "/documents", label: "Документы", icon: Files },
   { href: "/settings/rules", label: "Настройки", icon: Settings2 },
 ];
 
