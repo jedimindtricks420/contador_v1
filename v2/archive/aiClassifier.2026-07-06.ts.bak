@@ -13,11 +13,8 @@ import { getCharterCapitalDebt } from "../charterCapital";
 const CHARTER_CAPITAL_MENTION_RE = /устав/i;
 
 // ─── Direction guards ──────────────────────────────────────────────────────────
-// Ground truth for two purposes: (1) filtering the catalog/schema offered to the AI
-// per direction (см. classifyAllWithAI — creditCatalog/debitCatalog), and (2) a
-// defense-in-depth post-hoc check below, kept in case a code ever slips through
-// outside its enum (SDK/model edge case) — a CREDIT tx (money in, 5110 Дт) can
-// never be categorised as a DEBIT-only type, and vice versa.
+// These sets are the ground truth — overrides whatever the AI returns.
+// A CREDIT tx (money in, 5110 Дт) can never be categorised as a DEBIT-only type.
 
 const CREDIT_ONLY_CODES = new Set([
   "ADVANCE_RECEIVED", "REVENUE_COLLECTION", "MARKETPLACE_INCOME",
@@ -28,17 +25,21 @@ const CREDIT_ONLY_CODES = new Set([
   "ACCOUNTABLE_RETURN",         // 5110 Дт — 4220 Кт, остаток подотчётных сумм возвращён
   "ACCOUNTABLE_GENERAL_RETURN", // 5110 Дт — 4230 Кт, остаток подотчётных сумм возвращён
   "INTERNAL_TRANSFER_RECEIVED", // $destinationAccountCode Дт — 5710 Кт, приёмная сторона (счёт параметризуемый)
+  // NEW types — CREDIT only (входящие операции)
   "CASH_DEPOSIT",               // 5110 Дт — 5010 Кт, взнос наличных
   "VAT_REFUND_FROM_BUDGET",     // 5110 Дт — 4410 Кт, возврат НДС
   "RENTAL_INCOME_RECEIVED",     // 5110 Дт — 9350 Кт, доход от аренды
   "INTEREST_INCOME_RECEIVED",   // 5110 Дт — 9530 Кт, процентный доход
   "LONG_TERM_LOAN_RECEIVED",    // 5110 Дт — 7810/7820 Кт, получение займа
   "DIVIDEND_INCOME_RECEIVED",   // 5110 Дт — 9520 Кт, дивидендный доход
+  // Ранее существовавшие BANK_AUTO типы, отсутствовавшие в этом Set (пробел обнаружен
+  // при апдейте v2 FINAL — до этого момента дирекционный guard их не покрывал):
   "CAPITAL_INCREASE_PENDING", // 5110 Дт — 6630 Кт, довзнос учредителя сверх устава
   "GRANT_RECEIVED",           // 5110 Дт — 4890 Кт, получение гранта
   "SUBSIDY_RECEIVED",         // 5110 Дт — 4890 Кт, получение субсидии
   "TARGET_RECEIPTS",          // 5110 Дт — 8830/8890 Кт, целевые поступления
   "ROYALTY_INCOME",           // 5110 Дт — 9510 Кт, роялти получены
+  // NEW types v2 FINAL — CREDIT only (входящие операции)
   "PENALTY_INCOME",            // 5110 Дт — 9330 Кт, неустойка от партнёра получена
   "INSURANCE_CLAIM_RECEIVED",  // 5110 Дт — 9390 Кт, страховое возмещение получено
   "TAX_REFUND_OTHER",          // 5110 Дт — 6410 Кт, возврат переплаты налога (не НДС)
@@ -46,8 +47,6 @@ const CREDIT_ONLY_CODES = new Set([
   "PARTNER_LOAN_RECEIVED",     // 5110 Дт — 6820 Кт, займ от другой компании получен
   "PARTNER_LOAN_RETURNED",     // 5110 Дт — 4890 Кт, другая компания вернула займ
   "TENANT_UTILITIES_RECEIVED", // 5110 Дт — 6310 Кт, коммунальные от арендатора
-  // CURRENCY_EXCHANGE намеренно НЕ включён ни в один из двух Set — система пока
-  // работает в одной валюте, поддержка обмена валют отложена на будущую итерацию.
 ]);
 
 const DEBIT_ONLY_CODES = new Set([
@@ -66,17 +65,21 @@ const DEBIT_ONLY_CODES = new Set([
   "ACCOUNTABLE_GENERAL", // 4230 Дт — 5110 Кт, подотчётные (общехозяйственные)
   "INTANGIBLE_ASSET_PURCHASE", // 0830 Дт — 5110 Кт, покупка НМА (лицензии, ПО, товарный знак)
   // SUPPLIER_PAYMENT — устаревший тип, mode=MANUAL_ONLY, AI больше его не предлагает.
+  // NEW types — DEBIT only (исходящие операции)
   "CASH_WITHDRAWAL",          // 5010 Дт — 5110 Кт, снятие наличных
   "IMPORT_VAT_PAYMENT",       // 4410 Дт — 5110 Кт, уплата импортного НДС
   "PREPAID_RENT_PAYMENT",     // 3110 Дт — 5110 Кт, предоплата аренды
   "SALARY_ADVANCE",           // 4210 Дт — 5110 Кт, аванс по зарплате
   "GOODS_IN_TRANSIT",         // 2970 Дт — 5110/4310 Кт, товары в пути
   "LONG_TERM_LOAN_REPAYMENT", // 7810/7820 Дт — 5110 Кт, погашение займа
+  // Ранее существовавшие BANK_AUTO типы, отсутствовавшие в этом Set (пробел обнаружен
+  // при апдейте v2 FINAL — до этого момента дирекционный guard их не покрывал):
   "ROYALTY_PAYMENT",          // 9430 Дт — 5110 Кт, выплата роялти
   "FINANCE_LEASE_PAYMENT",    // 7910 Дт — 5110 Кт, платёж по лизингу (тело)
   "FINANCE_LEASE_INTEREST",   // 9610 Дт — 5110 Кт, проценты по лизингу
   "LETTER_OF_CREDIT_OPEN",    // 5510 Дт — 5110 Кт, открытие аккредитива
   "SALARY_DEPOSIT_PAYMENT",   // 6720 Дт — 5110 Кт, выплата депонированной ЗП
+  // NEW types v2 FINAL — DEBIT only (исходящие операции)
   "STATE_DUTY",               // 9430 Дт — 5110 Кт, оплата госпошлины
   "EMPLOYEE_TRAINING",        // 9420 Дт — 5110 Кт, обучение сотрудников
   "MEMBERSHIP_FEE",           // 9430 Дт — 5110 Кт, членский взнос
@@ -106,7 +109,10 @@ const DEBIT_ONLY_CODES = new Set([
   "MUSIC_LICENSE",            // 9430 Дт — 5110 Кт, лицензия на музыку
   "ROAD_TOLLS",               // 9430 Дт — 5110 Кт, платные дороги и парковки
   "MEDICAL_LICENSE",          // 9430 Дт — 5110 Кт, медицинская лицензия
+  // CURRENCY_EXCHANGE не входит ни в один Set — это Перевод (5110↔5210), нет
+  // однозначного "уходят/приходят" направления относительно основного счёта.
 ]);
+
 
 // ─── Account helpers ───────────────────────────────────────────────────────────
 const ACCOUNT_LABELS: Record<string, string> = {
@@ -265,260 +271,6 @@ async function buildContext(orgId: string): Promise<ClassificationContext> {
   return { openItemsText, counterpartyHistoryText, rulesText, taxCalendarText };
 }
 
-// ─── Prompt builder (direction-scoped) ──────────────────────────────────────────
-// Один шаблон, параметризованный направлением — вместо одного общего промпта с
-// плоским каталогом всех категорий и текстовым "ЗАКОНОМ НАПРАВЛЕНИЯ", каждая
-// пачка транзакций одного направления получает СВОЙ промпт с уже отфильтрованным
-// каталогом (см. classifyAllWithAI). Модель физически не видит категорий чужого
-// направления, поэтому объяснять ей текстом, что можно/нельзя брать, больше не нужно.
-
-type CatalogEntry = { id: string; code: string; name: string };
-type Direction = "CREDIT" | "DEBIT";
-
-const CREDIT_OPEN_ITEMS_HINTS = `Как использовать открытые позиции (для входящих платежей):
-• Видишь платёж от контрагента из "Авансы ПОЛУЧЕННЫЕ" → он платит ещё раз (ADVANCE_RECEIVED) или дублирует
-• Видишь платёж от контрагента из "Авансы ВЫДАННЫЕ" → он возвращает наш аванс (SUPPLIER_REFUND)
-• Видишь платёж от контрагента с открытым депозитом (4890, DEPOSIT) → вероятно DEPOSIT_RETURN
-• Видишь платёж от сотрудника с открытыми подотчётными (4220/4230) → вероятно ACCOUNTABLE_RETURN/ACCOUNTABLE_GENERAL_RETURN
-• Видишь платёж от учредителя с открытым 6610 (DIVIDEND_ACCRUAL) → вероятно ошибка/не дивиденды; выплата дивидендов — это исходящий платёж, в эту пачку не попадает`;
-
-const DEBIT_OPEN_ITEMS_HINTS = `Как использовать открытые позиции (для исходящих платежей):
-• Видишь платёж контрагенту из "Авансы ВЫДАННЫЕ" → мы гасим долг (SUPPLIER_PAYMENT_SERVICES/_GOODS/_OTHER/_VAT), а не выдаём новый аванс
-• Видишь платёж контрагенту из "Авансы ПОЛУЧЕННЫЕ" → мы возвращаем аванс клиенту (ADVANCE_RETURN_SENT)
-• Видишь платёж на сумму ≈ остатку по банковскому кредиту → вероятно BANK_LOAN_REPAYMENT или INTEREST_PAYMENT`;
-
-function creditRulesText(confidenceThreshold: number, remainingCharterDebt: Decimal | null): string {
-  return `1.  Поступление от клиентов до выставления ЭСФ → ADVANCE_RECEIVED; после ЭСФ/акта → REVENUE_COLLECTION
-2.  Поступление от маркетплейса (Payme, Click, Uzum, Ozon) → MARKETPLACE_INCOME
-3.  Поступление от продажи основного средства → FIXED_ASSET_SALE
-4.  Поступление от учредителя, назначение платежа упоминает "заём"/"займ" → FOUNDER_LOAN.
-    Назначение платежа упоминает "уставный капитал"/"уставный фонд" — остаток долга по счёту 4610 передан как remainingCharterDebt = ${remainingCharterDebt !== null ? remainingCharterDebt.toNumber().toLocaleString("ru") + " сум" : "НЕ ОПРЕДЕЛЁН (устав не задекларирован)"}:
-      а) remainingCharterDebt определён И сумма операции ≤ remainingCharterDebt → CAPITAL_CONTRIBUTION;
-      б) remainingCharterDebt НЕ определён (устав не задекларирован) → НИКОГДА не бери CAPITAL_CONTRIBUTION и НИКОГДА не ставь confidence ≥ ${confidenceThreshold}. Выбери наиболее вероятный вариант из FOUNDER_LOAN / CAPITAL_INCREASE_PENDING, но confidence должен быть низким (< ${confidenceThreshold}), чтобы операция ушла на уточнение пользователю;
-      в) remainingCharterDebt определён, но сумма операции > remainingCharterDebt → сумма превышает остаток долга, разделить одной проводкой нельзя: выбери CAPITAL_INCREASE_PENDING и снизь confidence < ${confidenceThreshold} — пользователь должен уточнить вручную, как разделить сумму между оплатой УК и довзносом сверх устава.
-5.  Получение банковского кредита → BANK_LOAN_RECEIVED
-6.  Возврат займа сотрудником → EMPLOYEE_LOAN_REPAYMENT
-7.  Поступление от своего другого счёта (обычно на валютный, 5210) → INTERNAL_TRANSFER_RECEIVED
-8.  Депозит возвращён → DEPOSIT_RETURN; остаток подотчётных сумм возвращён → ACCOUNTABLE_RETURN/ACCOUNTABLE_GENERAL_RETURN
-9.  Поставщик возвращает НАШИ деньги → SUPPLIER_REFUND
-10. Неустойка, штраф, пеня, полученная от партнёра → PENALTY_INCOME
-11. Страховое возмещение, страховая выплата → INSURANCE_CLAIM_RECEIVED
-12. Возврат переплаты налога не НДС (получатель Казначейство, описание содержит "возврат", "переплата") → TAX_REFUND_OTHER
-13. Факторинг, выкуп дебиторки банком → FACTORING_RECEIVED
-14. Займ от другой компании (не банк, не учредитель) → PARTNER_LOAN_RECEIVED
-15. Возврат займа, выданного другой компании → PARTNER_LOAN_RETURNED
-16. Тенант/арендатор возмещает коммунальные → TENANT_UTILITIES_RECEIVED
-17. При неуверенности — выбирай ближайшее, но снижай confidence < ${confidenceThreshold}`;
-}
-
-function debitRulesText(confidenceThreshold: number): string {
-  return `1.  Выплаты сотрудникам (зарплата, оклад, аванс по ЗП) → SALARY
-2.  НДФЛ в бюджет (содержит "НДФЛ", "NDFL", получатель Казначейство) → TAX_PAYMENT
-2a. ИНПС / накопительная пенсия (содержит "ИНПС", "INPS", получатель Народный банк) → INPS_PAYMENT
-3.  Социальный налог → SOCIAL_TAX_PAYMENT
-4.  Оплата поставщику по существующему долгу → SUPPLIER_PAYMENT_SERVICES (услуги, по умолчанию) / _GOODS (товары) / _VAT (с НДС) / _OTHER; предоплата без акта → ADVANCE_PAID
-5.  Комиссия банка, РКО → BANK_COMMISSION
-6.  Покупка основного средства → FIXED_ASSET_PURCHASE; покупка НМА (лицензия/ПО/товарный знак/патент) → INTANGIBLE_ASSET_PURCHASE
-7.  Возврат займа учредителю → FOUNDER_LOAN_REPAYMENT
-8.  Погашение банковского кредита → BANK_LOAN_REPAYMENT
-9.  Займ сотруднику → EMPLOYEE_LOAN
-10. Перевод на свой другой счёт (деньги уходят) → INTERNAL_TRANSFER
-11. Аренда → RENT; реклама/маркетинг → ADVERTISING; проценты по кредиту → INTEREST_PAYMENT
-12. Дивиденды (выплата) → DIVIDEND_PAYMENT; штрафы/пени → FINE_PENALTY; страховка → INSURANCE_PAYMENT
-13. Коммунальные → UTILITY_PAYMENT; подписки/SaaS/домен → SUBSCRIPTION; таможня → CUSTOMS_DUTY
-14. Гарантийный депозит выдан → DEPOSIT; подотчётные суммы выданы → ACCOUNTABLE/ACCOUNTABLE_GENERAL
-15. Мы возвращаем деньги КЛИЕНТУ (закрываем 6310) → ADVANCE_RETURN_SENT
-16. Возврат/корректировка покупателю (уменьшает выручку) → REFUND
-17. Госпошлина, государственная пошлина → STATE_DUTY
-18. Обучение, курсы, тренинг сотрудников → EMPLOYEE_TRAINING
-19. Членский взнос, вступительный взнос в ассоциацию/СРО → MEMBERSHIP_FEE
-20. Благотворительность, пожертвование → CHARITY_PAYMENT
-21. Самозанятый, гражданин ФЛ без ГПХ → SELF_EMPLOYED_PAYMENT
-22. ГПХ, договор подряда, гражданско-правовой договор → CIVIL_CONTRACT_PAYMENT
-23. Юрист, адвокат, нотариус, аудит, консультант → PROFESSIONAL_SERVICES
-24. ГСМ, топливо, бензин, дизель → FUEL_PURCHASE
-25. Такси, Яндекс.Такси, каршеринг для бизнеса → TAXI_BUSINESS
-26. Перевод документов, бюро переводов → TRANSLATION_SERVICES
-27. Гарантийный ремонт, сервисное обслуживание клиента → WARRANTY_REPAIR
-28. Займ выдан другой компании-партнёру → PARTNER_LOAN_ISSUED
-29. Возврат займа другой компании → PARTNER_LOAN_REPAID
-30. Эквайринг, комиссия платёжной системы, процессинг → ACQUIRING_COMMISSION
-31. Доставка, курьер, транспорт для клиента → DELIVERY_TO_CUSTOMER
-32. Упаковка, тара, упаковочные материалы → PACKAGING_COST
-33. Таможенный брокер, декларант, таможенное оформление → CUSTOMS_BROKER
-34. Сертификация, декларация соответствия товара/продукции → PRODUCT_CERTIFICATION
-35. Инкассация, инкассаторы → CASH_COLLECTION_SERVICE
-36. ЧОП, охрана, охранные услуги → SECURITY_SERVICES
-37. Реклама на маркетплейсе, продвижение карточки → MARKETPLACE_PROMOTION
-38. Реферальное, агентское вознаграждение партнёру → REFERRAL_COMMISSION
-39. Мобильная связь, корпоративные симки → MOBILE_COMMUNICATION
-40. Конференция, форум, семинар, участие в мероприятии → CONFERENCE_FEE
-41. Сырьё, закупка материалов напрямую → RAW_MATERIALS_PURCHASE
-42. Разрешение, согласование, стройнадзор → PERMITS_APPROVALS
-43. Лицензия на публичное воспроизведение музыки → MUSIC_LICENSE
-44. Платные дороги, парковки → ROAD_TOLLS
-45. Медицинская лицензия → MEDICAL_LICENSE
-46. При неуверенности — выбирай ближайшее, но снижай confidence < ${confidenceThreshold}`;
-}
-
-interface PromptParams {
-  direction: Direction;
-  catalog: CatalogEntry[];
-  org: { name: string; taxRegime: string; isVatPayer: boolean };
-  activityLabel: string;
-  confidenceThreshold: number;
-  remainingCharterDebt: Decimal | null;
-  ctx: ClassificationContext;
-}
-
-function buildSystemPrompt(p: PromptParams): string {
-  const { direction, catalog, org, activityLabel, confidenceThreshold, remainingCharterDebt, ctx } = p;
-  const isCredit = direction === "CREDIT";
-  const directionRu = isCredit ? "ВХОДЯЩИЕ (деньги приходят на счёт, 5110 Дт)" : "ИСХОДЯЩИЕ (деньги уходят со счёта, 5110 Кт)";
-
-  const extraFieldsBlock = isCredit
-    ? `━━━ ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ-РАЗВИЛКИ (receiptType) ━━━
-customsType и subscriptionPeriod для входящих операций не применяются — всегда null.
-У одного типа документа проводка зависит от подтипа операции. Заполняй поле receiptType
-ТОЛЬКО когда categoryCode совпадает; для всех остальных categoryCode — null.
-
-• categoryCode = "TARGET_RECEIPTS" → receiptType:
-    "membership" — членский/вступительный взнос;
-    "other" — прочие целевые поступления;
-    null — если не ясно.`
-    : `━━━ ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ-РАЗВИЛКИ (customsType / subscriptionPeriod) ━━━
-receiptType для исходящих операций не применяется — всегда null.
-У двух типов документов проводка зависит от подтипа операции. Заполняй соответствующее поле
-ТОЛЬКО когда categoryCode совпадает; для всех остальных categoryCode — null во всех полях.
-
-• categoryCode = "CUSTOMS_DUTY" → customsType:
-    "import_goods" — пошлина/сбор при ввозе ТМЗ, сырья, товаров для перепродажи;
-    "import_asset" — пошлина/сбор при ввозе основных средств, оборудования;
-    null — если из описания не ясно (пойдёт в прочие расходы по умолчанию).
-• categoryCode = "SUBSCRIPTION" → subscriptionPeriod:
-    "monthly" — явно ежемесячная подписка/оплата;
-    "other" — годовая, полугодовая или иная не-ежемесячная предоплата;
-    null — если период не ясен из описания.`;
-
-  const taxCalendarBlock = isCredit ? "" : `
-━━━ БЛИЖАЙШИЕ НАЛОГОВЫЕ ОБЯЗАТЕЛЬСТВА ━━━
-${ctx.taxCalendarText}
-Если видишь платёж на сумму близкую к налоговому обязательству и дата ≈ 20-е число:
-  • PERSONAL_INCOME_TAX → TAX_PAYMENT (получатель Казначейство, описание содержит "НДФЛ" или "NDFL")
-  • INPS → INPS_PAYMENT (получатель Народный банк или описание содержит "ИНПС"/"INPS")
-  • SOCIAL_TAX → SOCIAL_TAX_PAYMENT (получатель Казначейство, описание содержит "соц" или "Социальный налог")
-  • VAT/TURNOVER_TAX/PROFIT_TAX → TAX_PAYMENT (прочие налоги в бюджет)
-`;
-
-  return `Ты — эксперт по бухгалтерскому учёту в Узбекистане (НСБУ №21). Классифицируй банковские транзакции.
-Эта пачка содержит ТОЛЬКО ${directionRu} транзакции — другого направления здесь нет и быть не может.
-confidence — целое число от 0 до 100 (процент уверенности в классификации). Порог авто-проводки: ${confidenceThreshold}.
-
-━━━ ОРГАНИЗАЦИЯ ━━━
-Название: ${org.name}
-${activityLabel !== "Не указано" ? `Вид деятельности: ${activityLabel}` : ""}
-Налоговый режим: ${org.taxRegime === "VAT" ? "НДС + налог на прибыль" : "Налог с оборота (УСН)"}
-Плательщик НДС: ${org.isVatPayer ? "Да" : "Нет"}
-
-━━━ КАТАЛОГ ТИПОВ ДОКУМЕНТОВ — единственные возможные категории для этого направления ━━━
-Каталог ниже уже отфильтрован под ${directionRu.toLowerCase()} операции. Категорий другого
-направления среди них нет и предлагать их не нужно — categoryCode обязан быть строго из
-этого списка (${catalog.length} категорий).
-${JSON.stringify(catalog, null, 2)}
-
-В поле categoryCode всегда возвращай значение code из каталога выше.
-
-━━━ ОТКРЫТЫЕ ПОЗИЦИИ (что сейчас висит на счетах) ━━━
-${ctx.openItemsText}
-
-${isCredit ? CREDIT_OPEN_ITEMS_HINTS : DEBIT_OPEN_ITEMS_HINTS}
-
-━━━ ИСТОРИЯ КОНТРАГЕНТОВ (последние 3 месяца) ━━━
-${ctx.counterpartyHistoryText}
-
-Используй историю как сильную подсказку. Если контрагент почти всегда получает одну и ту же категорию — почти наверняка она подойдёт снова.
-
-━━━ ПРАВИЛА ОРГАНИЗАЦИИ ━━━
-${ctx.rulesText}
-${taxCalendarBlock}
-━━━ ТРАНЗИТНЫЕ СЧЕТА УЗБЕКИСТАНА ━━━
-Если isTransit=true — контрагент (Казначейство, НБУ, биржа) является транзитным посредником.
-Реальный плательщик/получатель ТОЛЬКО в поле description. Ищи там ИНН или название.
-
-━━━ ПРАВИЛА КЛАССИФИКАЦИИ ━━━
-${isCredit ? creditRulesText(confidenceThreshold, remainingCharterDebt) : debitRulesText(confidenceThreshold)}
-
-В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на историю или открытые позиции.
-
-${extraFieldsBlock}
-
-━━━ ПРАВИЛО ДЛЯ АВТОМАТИЗАЦИИ (suggestedRuleType / suggestedRuleValue) ━━━
-Выбери ЛУЧШИЙ признак для автоматической классификации похожих операций в будущем.
-
-suggestedRuleType:
-• "KEYWORD" — ПРИОРИТЕТ: используй, когда description содержит характерное ключевое слово (название компании, тип услуги, вид платежа). ОБЯЗАТЕЛЬНО для isTransit=true — ИНН транзитного счёта не характеризует реальный платёж.
-• "INN"     — только если extractedInn принадлежит РЕАЛЬНОМУ (не транзитному) контрагенту, AND этот контрагент делает ОДИН тип операции с данной организацией. Не используй INN если тот же контрагент может делать разные типы операций.
-• "NONE"    — если нет надёжного признака для автоматизации.
-
-suggestedRuleValue:
-• Для "KEYWORD": КОРОТКАЯ характерная фраза из description (3–40 символов). Выбирай название компании, вид услуги или тип платежа. Примеры: "Tashkent Plaza", "аренда офиса", "ИНПС", "Payme", "электроэнергия", "таможенный сбор".
-• Для "INN": значение из extractedInn.
-• Для "NONE": пустая строка "".
-
-ВАЖНО: isTransit=true → ВСЕГДА "KEYWORD", НИКОГДА не "INN".`;
-}
-
-// ─── JSON schema builder (direction-scoped) ─────────────────────────────────────
-// categoryCode получает настоящий enum, собранный из отфильтрованного каталога —
-// раньше это было просто { type: "string" }, ограниченное только текстом промпта.
-// Теперь модель физически не может сгенерировать код вне списка для этого направления.
-function buildResponseSchema(catalog: CatalogEntry[]) {
-  return {
-    type: "json_schema" as const,
-    json_schema: {
-      name: "classification_response",
-      schema: {
-        type: "object" as const,
-        properties: {
-          results: {
-            type: "array" as const,
-            items: {
-              type: "object" as const,
-              properties: {
-                transactionId:         { type: "string" as const },
-                categoryCode:          { type: "string" as const, enum: catalog.map(c => c.code) },
-                confidence:            { type: "integer" as const },
-                extractedCounterparty: { type: "string" as const },
-                extractedInn:          { type: "string" as const },
-                vatApplicable:         { type: "boolean" as const },
-                reasoning:             { type: "string" as const },
-                suggestedRuleType:     { type: "string" as const },
-                suggestedRuleValue:    { type: "string" as const },
-                customsType:           { type: ["string", "null"] as any, enum: ["import_goods", "import_asset", null] },
-                subscriptionPeriod:    { type: ["string", "null"] as any, enum: ["monthly", "other", null] },
-                receiptType:           { type: ["string", "null"] as any, enum: ["membership", "other", null] },
-              },
-              required: ["transactionId", "categoryCode", "confidence", "extractedCounterparty", "extractedInn", "vatApplicable", "reasoning", "suggestedRuleType", "suggestedRuleValue", "customsType", "subscriptionPeriod", "receiptType"],
-              additionalProperties: false,
-            }
-          }
-        },
-        required: ["results"],
-        additionalProperties: false,
-      },
-      strict: true,
-    }
-  };
-}
-
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
-
 // ─── Main export ───────────────────────────────────────────────────────────────
 
 interface ClassificationResult {
@@ -539,25 +291,10 @@ interface ClassificationResult {
   receiptType: "membership" | "other" | null;
 }
 
-// Одно задание на классификацию — пачка транзакций ОДНОГО направления вместе со
-// своим (уже отфильтрованным) каталогом, промптом и схемой ответа. CREDIT- и
-// DEBIT-пачки собираются в один плоский список заданий и обрабатываются одним
-// циклом ниже — тело цикла не знает и не должно знать, из какой ветки пришло
-// задание, поэтому логика обработки результата существует в коде только один раз.
-interface ClassificationJob {
-  direction: Direction;
-  chunk: StagedTransaction[];
-  responseFormatSchema: ReturnType<typeof buildResponseSchema>;
-  systemPrompt: string;
-}
-
 /**
  * Classifies all provided transactions with full business context.
- * Transactions are split by direction (CREDIT/DEBIT) before chunking — each
- * direction gets its own catalog/prompt/schema containing ONLY categories valid
- * for that direction, so the model cannot select a category of the wrong
- * direction (previously caught only after the fact by CREDIT_ONLY_CODES/
- * DEBIT_ONLY_CODES, which are now also the source of the per-direction filter).
+ * Processes in chunks of AI.BATCH_SIZE but each chunk receives the
+ * complete open-items / history / rules / tax context.
  */
 export async function classifyAllWithAI(
   orgId: string,
@@ -573,26 +310,23 @@ export async function classifyAllWithAI(
 
   const openai = new OpenAI({ apiKey: azureApiKey, baseURL: azureEndpoint });
 
-  // Load everything in parallel: catalog, org, full context.
-  // mode: "BANK_AUTO" — явный allow-list, а не (mode !== "MANUAL_ONLY"). Раньше
-  // deny-list пропускал в каталог ИИ служебные типы вроде SOLIQ_IMPORT (протухшая
-  // запись в БД с mode=BANK_AUTO, хотя код, который её создаёт, ставит MANUAL_ONLY) —
-  // allow-list структурно закрывает этот случай независимо от состояния конкретных строк.
+  // Load everything in parallel: catalog, org, full context
   const [catalogRaw, org, ctx] = await Promise.all([
-    prisma.documentType.findMany({ where: { mode: "BANK_AUTO" }, select: { id: true, code: true, name: true } }),
+    prisma.documentType.findMany({ select: { id: true, code: true, name: true, mode: true } }),
     prisma.organization.findUnique({ where: { id: orgId } }),
     buildContext(orgId),
   ]);
 
   if (!org) throw new Error("Организация не найдена");
 
-  const creditCatalog = catalogRaw.filter(dt => CREDIT_ONLY_CODES.has(dt.code));
-  const debitCatalog = catalogRaw.filter(dt => DEBIT_ONLY_CODES.has(dt.code));
+  const catalog = catalogRaw
+    .filter(dt => dt.mode !== "MANUAL_ONLY")
+    .map(({ id, code, name }) => ({ id, code, name }));
 
   const activityLabel = getActivityLabel(org.activityGroup, org.activityDescription, org.activityCustom);
   const confidenceThreshold = org.aiConfidenceThreshold ?? AI.CONFIDENCE_THRESHOLD;
-  // Only codes that were actually offered to the AI (either catalog) are safe to auto-create
-  const codeToId = new Map(catalogRaw.map(dt => [dt.code, dt.id]));
+  // Only codes that were actually offered to the AI are safe to auto-create
+  const codeToId = new Map(catalog.map(dt => [dt.code, dt.id]));
 
   // Outstanding founders' debt on 4610 — null when the charter capital was never
   // declared. Passed into the prompt AND used as a hard guardrail below: CAPITAL_
@@ -629,33 +363,212 @@ export async function classifyAllWithAI(
     };
   });
 
-  // ── Build one prompt/schema per direction (shared context, different catalog) ──
-  const creditPrompt = buildSystemPrompt({ direction: "CREDIT", catalog: creditCatalog, org, activityLabel, confidenceThreshold, remainingCharterDebt, ctx });
-  const debitPrompt = buildSystemPrompt({ direction: "DEBIT", catalog: debitCatalog, org, activityLabel, confidenceThreshold, remainingCharterDebt, ctx });
-  const creditSchema = buildResponseSchema(creditCatalog);
-  const debitSchema = buildResponseSchema(debitCatalog);
+  // ── Build system prompt (built once, shared across all chunks) ──────────────
+  const systemPrompt = `Ты — эксперт по бухгалтерскому учёту в Узбекистане (НСБУ №21). Классифицируй банковские транзакции.
+confidence — целое число от 0 до 100 (процент уверенности в классификации). Порог авто-проводки: ${confidenceThreshold}.
 
-  // ── Split transactions by direction, chunk each group, collect into one flat job list ──
-  const creditTxs = transactions.filter(tx => tx.direction === "CREDIT");
-  const debitTxs = transactions.filter(tx => tx.direction === "DEBIT");
+━━━ ОРГАНИЗАЦИЯ ━━━
+Название: ${org.name}
+${activityLabel !== "Не указано" ? `Вид деятельности: ${activityLabel}` : ""}
+Налоговый режим: ${org.taxRegime === "VAT" ? "НДС + налог на прибыль" : "Налог с оборота (УСН)"}
+Плательщик НДС: ${org.isVatPayer ? "Да" : "Нет"}
 
-  const jobs: ClassificationJob[] = [
-    ...chunkArray(creditTxs, AI.BATCH_SIZE).map((chunk): ClassificationJob => ({
-      direction: "CREDIT", chunk, systemPrompt: creditPrompt, responseFormatSchema: creditSchema,
-    })),
-    ...chunkArray(debitTxs, AI.BATCH_SIZE).map((chunk): ClassificationJob => ({
-      direction: "DEBIT", chunk, systemPrompt: debitPrompt, responseFormatSchema: debitSchema,
-    })),
-  ];
+━━━ ЗАКОН НАПРАВЛЕНИЯ — АБСОЛЮТНЫЙ ЗАПРЕТ ━━━
+Каждая транзакция имеет поле directionLabel. Читай его ДО выбора категории.
+direction="CREDIT" (деньги ПРИХОДЯТ, ВХОДЯЩИЙ ПЛАТЁЖ, 5110 Дт) → только:
+  ${Array.from(CREDIT_ONLY_CODES).join(", ")}
 
-  // ── Process every job with the same single loop — body doesn't need to know ──
-  // ── which direction a job came from, so there is only one copy of this logic ──
+direction="DEBIT" (деньги УХОДЯТ, ИСХОДЯЩИЙ ПЛАТЁЖ, 5110 Кт) → только:
+  ${Array.from(DEBIT_ONLY_CODES).join(", ")}
+
+Запрещённый пример: directionLabel="ВХОДЯЩИЙ ПЛАТЁЖ +2 200 000 сум" → ADVANCE_PAID. ADVANCE_PAID — расход (DEBIT). Правильно: ADVANCE_RECEIVED.
+
+━━━ ОТКРЫТЫЕ ПОЗИЦИИ (что сейчас висит на счетах) ━━━
+${ctx.openItemsText}
+
+Как использовать открытые позиции:
+• Видишь CREDIT от контрагента из "Авансы ПОЛУЧЕННЫЕ" → он платит ещё раз (ADVANCE_RECEIVED) или дублирует
+• Видишь DEBIT контрагенту из "Авансы ВЫДАННЫЕ" → мы гасим долг (SUPPLIER_PAYMENT_SERVICES/_GOODS/_OTHER/_VAT), а не выдаём новый аванс
+• Видишь CREDIT от контрагента из "Авансы ВЫДАННЫЕ" → он возвращает наш аванс (SUPPLIER_REFUND)
+• Видишь DEBIT контрагенту из "Авансы ПОЛУЧЕННЫЕ" → мы возвращаем аванс клиенту (ADVANCE_RETURN_SENT)
+• Видишь DEBIT с суммой ≈ остатку по банковскому кредиту → вероятно BANK_LOAN_REPAYMENT или INTEREST_PAYMENT
+• Видишь CREDIT от контрагента с открытым депозитом (4890, DEPOSIT) → вероятно DEPOSIT_RETURN
+• Видишь CREDIT от сотрудника с открытыми подотчётными (4220/4230) → вероятно ACCOUNTABLE_RETURN/ACCOUNTABLE_GENERAL_RETURN
+• Видишь CREDIT от учредителя с открытым 6610 (DIVIDEND_ACCRUAL) → вероятно ошибка/не дивиденды; выплата дивидендов — DEBIT (DIVIDEND_PAYMENT)
+
+━━━ ИСТОРИЯ КОНТРАГЕНТОВ (последние 3 месяца) ━━━
+${ctx.counterpartyHistoryText}
+
+Используй историю как сильную подсказку. Если контрагент всегда был ADVANCE_PAID — почти наверняка снова ADVANCE_PAID.
+
+━━━ ПРАВИЛА ОРГАНИЗАЦИИ ━━━
+${ctx.rulesText}
+
+━━━ БЛИЖАЙШИЕ НАЛОГОВЫЕ ОБЯЗАТЕЛЬСТВА ━━━
+${ctx.taxCalendarText}
+Если видишь DEBIT на сумму близкую к налоговому обязательству и дата ≈ 20-е число:
+  • PERSONAL_INCOME_TAX → TAX_PAYMENT (получатель Казначейство, описание содержит "НДФЛ" или "NDFL")
+  • INPS → INPS_PAYMENT (получатель Народный банк или описание содержит "ИНПС"/"INPS")
+  • SOCIAL_TAX → SOCIAL_TAX_PAYMENT (получатель Казначейство, описание содержит "соц" или "Социальный налог")
+  • VAT/TURNOVER_TAX/PROFIT_TAX → TAX_PAYMENT (прочие налоги в бюджет)
+
+━━━ ТРАНЗИТНЫЕ СЧЕТА УЗБЕКИСТАНА ━━━
+Если isTransit=true — контрагент (Казначейство, НБУ, биржа) является транзитным посредником.
+Реальный плательщик/получатель ТОЛЬКО в поле description. Ищи там ИНН или название.
+
+━━━ КАТАЛОГ ТИПОВ ДОКУМЕНТОВ ━━━
+${JSON.stringify(catalog, null, 2)}
+
+В поле categoryCode всегда возвращай значение code из каталога выше.
+
+━━━ ПРАВИЛА КЛАССИФИКАЦИИ ━━━
+1.  Выплаты сотрудникам (зарплата, оклад, аванс по ЗП) → SALARY
+2.  НДФЛ в бюджет (содержит "НДФЛ", "NDFL", получатель Казначейство) → TAX_PAYMENT
+2a. ИНПС / накопительная пенсия (содержит "ИНПС", "INPS", получатель Народный банк) → INPS_PAYMENT
+3.  Социальный налог → SOCIAL_TAX_PAYMENT
+4.  Поступление от клиентов до выставления ЭСФ → ADVANCE_RECEIVED; после ЭСФ/акта → REVENUE_COLLECTION
+5.  Поступление от маркетплейса (Payme, Click, Uzum, Ozon) → MARKETPLACE_INCOME
+6.  Оплата поставщику по существующему долгу → SUPPLIER_PAYMENT_SERVICES (услуги, по умолчанию) / _GOODS (товары) / _VAT (с НДС) / _OTHER; предоплата без акта → ADVANCE_PAID
+7.  Комиссия банка, РКО → BANK_COMMISSION
+8.  Покупка основного средства → FIXED_ASSET_PURCHASE; поступление от продажи ОС → FIXED_ASSET_SALE; покупка НМА (лицензия/ПО/товарный знак/патент) → INTANGIBLE_ASSET_PURCHASE
+9.  Поступление от учредителя (CREDIT), назначение платежа упоминает "заём"/"займ" → FOUNDER_LOAN.
+    Назначение платежа упоминает "уставный капитал"/"уставный фонд" — остаток долга по счёту 4610 передан как remainingCharterDebt = ${remainingCharterDebt !== null ? remainingCharterDebt.toNumber().toLocaleString("ru") + " сум" : "НЕ ОПРЕДЕЛЁН (устав не задекларирован)"}:
+      а) remainingCharterDebt определён И сумма операции ≤ remainingCharterDebt → CAPITAL_CONTRIBUTION;
+      б) remainingCharterDebt НЕ определён (устав не задекларирован) → НИКОГДА не бери CAPITAL_CONTRIBUTION и НИКОГДА не ставь confidence ≥ ${confidenceThreshold}. Выбери наиболее вероятный вариант из FOUNDER_LOAN / CAPITAL_INCREASE_PENDING, но confidence должен быть низким (< ${confidenceThreshold}), чтобы операция ушла на уточнение пользователю;
+      в) remainingCharterDebt определён, но сумма операции > remainingCharterDebt → сумма превышает остаток долга, разделить одной проводкой нельзя: выбери CAPITAL_INCREASE_PENDING и снизь confidence < ${confidenceThreshold} — пользователь должен уточнить вручную, как разделить сумму между оплатой УК и довзносом сверх устава.
+    Возврат займа учредителю (DEBIT) → FOUNDER_LOAN_REPAYMENT.
+10. Получение банковского кредита → BANK_LOAN_RECEIVED; погашение кредита → BANK_LOAN_REPAYMENT
+11. Займ сотруднику → EMPLOYEE_LOAN; возврат займа сотрудником → EMPLOYEE_LOAN_REPAYMENT
+12. Перевод DEBIT (деньги уходят на свой другой счёт) → INTERNAL_TRANSFER. Входящий CREDIT от своего счёта на валютный счёт (обычно 5210) → INTERNAL_TRANSFER_RECEIVED
+13. Аренда → RENT; реклама/маркетинг → ADVERTISING; проценты по кредиту → INTEREST_PAYMENT
+14. Дивиденды (выплата, DEBIT) → DIVIDEND_PAYMENT; штрафы/пени → FINE_PENALTY; страховка → INSURANCE_PAYMENT
+15. Коммунальные → UTILITY_PAYMENT; подписки/SaaS/домен → SUBSCRIPTION; таможня → CUSTOMS_DUTY
+16. Гарантийный депозит (выдан, DEBIT) → DEPOSIT; депозит возвращён (CREDIT) → DEPOSIT_RETURN; подотчётные суммы (выданы, DEBIT) → ACCOUNTABLE/ACCOUNTABLE_GENERAL; остаток подотчётных возвращён (CREDIT) → ACCOUNTABLE_RETURN/ACCOUNTABLE_GENERAL_RETURN
+17. Поставщик возвращает НАШИ деньги (CREDIT) → SUPPLIER_REFUND
+18. Мы возвращаем деньги КЛИЕНТУ (DEBIT, закрываем 6310) → ADVANCE_RETURN_SENT
+19. Возврат/корректировка покупателю (уменьшает выручку, DEBIT — деньги уходят обратно клиенту) → REFUND
+20. При неуверенности — выбирай ближайшее, но снижай confidence < ${confidenceThreshold}
+21. Неустойка, штраф, пеня, полученная от партнёра (CREDIT) → PENALTY_INCOME
+22. Страховое возмещение, страховая выплата (CREDIT) → INSURANCE_CLAIM_RECEIVED
+23. Возврат переплаты налога не НДС (CREDIT от Казначейства, описание содержит "возврат", "переплата") → TAX_REFUND_OTHER
+24. Факторинг, выкуп дебиторки банком (CREDIT) → FACTORING_RECEIVED
+25. Займ от другой компании (не банк, не учредитель) (CREDIT) → PARTNER_LOAN_RECEIVED
+26. Возврат займа, выданного другой компании (CREDIT) → PARTNER_LOAN_RETURNED
+27. Госпошлина, государственная пошлина (DEBIT) → STATE_DUTY
+28. Обучение, курсы, тренинг сотрудников (DEBIT) → EMPLOYEE_TRAINING
+29. Членский взнос, вступительный взнос в ассоциацию/СРО (DEBIT) → MEMBERSHIP_FEE
+30. Благотворительность, пожертвование (DEBIT) → CHARITY_PAYMENT
+31. Самозанятый, гражданин ФЛ без ГПХ (DEBIT) → SELF_EMPLOYED_PAYMENT
+32. ГПХ, договор подряда, гражданско-правовой договор (DEBIT) → CIVIL_CONTRACT_PAYMENT
+33. Юрист, адвокат, нотариус, аудит, консультант (DEBIT) → PROFESSIONAL_SERVICES
+34. ГСМ, топливо, бензин, дизель (DEBIT) → FUEL_PURCHASE
+35. Такси, Яндекс.Такси, каршеринг для бизнеса (DEBIT) → TAXI_BUSINESS
+36. Перевод документов, бюро переводов (DEBIT) → TRANSLATION_SERVICES
+37. Гарантийный ремонт, сервисное обслуживание клиента (DEBIT) → WARRANTY_REPAIR
+38. Займ выдан другой компании-партнёру (DEBIT) → PARTNER_LOAN_ISSUED
+39. Возврат займа другой компании (DEBIT) → PARTNER_LOAN_REPAID
+40. Эквайринг, комиссия платёжной системы, процессинг (DEBIT) → ACQUIRING_COMMISSION
+41. Доставка, курьер, транспорт для клиента (DEBIT) → DELIVERY_TO_CUSTOMER
+42. Упаковка, тара, упаковочные материалы (DEBIT) → PACKAGING_COST
+43. Таможенный брокер, декларант, таможенное оформление (DEBIT) → CUSTOMS_BROKER
+44. Сертификация, декларация соответствия товара/продукции (DEBIT) → PRODUCT_CERTIFICATION
+45. Инкассация, инкассаторы (DEBIT) → CASH_COLLECTION_SERVICE
+46. ЧОП, охрана, охранные услуги (DEBIT) → SECURITY_SERVICES
+47. Реклама на маркетплейсе, продвижение карточки (DEBIT) → MARKETPLACE_PROMOTION
+48. Реферальное, агентское вознаграждение партнёру (DEBIT) → REFERRAL_COMMISSION
+49. Мобильная связь, корпоративные симки (DEBIT) → MOBILE_COMMUNICATION
+50. Конференция, форум, семинар, участие в мероприятии (DEBIT) → CONFERENCE_FEE
+51. Сырьё, закупка материалов напрямую (DEBIT) → RAW_MATERIALS_PURCHASE
+52. Разрешение, согласование, стройнадзор (DEBIT) → PERMITS_APPROVALS
+53. Обмен валюты, конвертация, продажа/покупка USD (DEBIT или CREDIT) → CURRENCY_EXCHANGE
+54. Лицензия на публичное воспроизведение музыки (DEBIT) → MUSIC_LICENSE
+55. Платные дороги, парковки (DEBIT) → ROAD_TOLLS
+56. Медицинская лицензия (DEBIT) → MEDICAL_LICENSE
+57. Тенант/арендатор возмещает коммунальные (CREDIT) → TENANT_UTILITIES_RECEIVED
+
+В поле reasoning коротко объясни ПОЧЕМУ выбрал эту категорию (1-2 предложения), ссылаясь на directionLabel, историю или открытые позиции.
+
+━━━ ДОПОЛНИТЕЛЬНЫЕ ПОЛЯ-РАЗВИЛКИ (customsType / subscriptionPeriod / receiptType) ━━━
+У трёх типов документов проводка зависит от подтипа операции. Заполняй соответствующее поле
+ТОЛЬКО когда categoryCode совпадает; для всех остальных categoryCode — null во всех трёх полях.
+
+• categoryCode = "CUSTOMS_DUTY" → customsType:
+    "import_goods" — пошлина/сбор при ввозе ТМЗ, сырья, товаров для перепродажи;
+    "import_asset" — пошлина/сбор при ввозе основных средств, оборудования;
+    null — если из описания не ясно (пойдёт в прочие расходы по умолчанию).
+• categoryCode = "SUBSCRIPTION" → subscriptionPeriod:
+    "monthly" — явно ежемесячная подписка/оплата;
+    "other" — годовая, полугодовая или иная не-ежемесячная предоплата;
+    null — если период не ясен из описания.
+• categoryCode = "TARGET_RECEIPTS" → receiptType:
+    "membership" — членский/вступительный взнос;
+    "other" — прочие целевые поступления;
+    null — если не ясно.
+
+━━━ ПРАВИЛО ДЛЯ АВТОМАТИЗАЦИИ (suggestedRuleType / suggestedRuleValue) ━━━
+Выбери ЛУЧШИЙ признак для автоматической классификации похожих операций в будущем.
+
+suggestedRuleType:
+• "KEYWORD" — ПРИОРИТЕТ: используй, когда description содержит характерное ключевое слово (название компании, тип услуги, вид платежа). ОБЯЗАТЕЛЬНО для isTransit=true — ИНН транзитного счёта не характеризует реальный платёж.
+• "INN"     — только если extractedInn принадлежит РЕАЛЬНОМУ (не транзитному) контрагенту, AND этот контрагент делает ОДИН тип операции с данной организацией. Не используй INN если тот же контрагент может делать разные типы операций.
+• "NONE"    — если нет надёжного признака для автоматизации.
+
+suggestedRuleValue:
+• Для "KEYWORD": КОРОТКАЯ характерная фраза из description (3–40 символов). Выбирай название компании, вид услуги или тип платежа. Примеры: "Tashkent Plaza", "аренда офиса", "ИНПС", "Payme", "электроэнергия", "таможенный сбор".
+• Для "INN": значение из extractedInn.
+• Для "NONE": пустая строка "".
+
+ВАЖНО: isTransit=true → ВСЕГДА "KEYWORD", НИКОГДА не "INN".`;
+
+  // ── JSON schema for AI response ─────────────────────────────────────────────
+  const responseFormatSchema = {
+    type: "json_schema" as const,
+    json_schema: {
+      name: "classification_response",
+      schema: {
+        type: "object" as const,
+        properties: {
+          results: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                transactionId:         { type: "string" as const },
+                categoryCode:          { type: "string" as const },
+                confidence:            { type: "integer" as const },
+                extractedCounterparty: { type: "string" as const },
+                extractedInn:          { type: "string" as const },
+                vatApplicable:         { type: "boolean" as const },
+                reasoning:             { type: "string" as const },
+                suggestedRuleType:     { type: "string" as const },
+                suggestedRuleValue:    { type: "string" as const },
+                customsType:           { type: ["string", "null"] as any, enum: ["import_goods", "import_asset", null] },
+                subscriptionPeriod:    { type: ["string", "null"] as any, enum: ["monthly", "other", null] },
+                receiptType:           { type: ["string", "null"] as any, enum: ["membership", "other", null] },
+              },
+              required: ["transactionId", "categoryCode", "confidence", "extractedCounterparty", "extractedInn", "vatApplicable", "reasoning", "suggestedRuleType", "suggestedRuleValue", "customsType", "subscriptionPeriod", "receiptType"],
+              additionalProperties: false,
+            }
+          }
+        },
+        required: ["results"],
+        additionalProperties: false,
+      },
+      strict: true,
+    }
+  };
+
+  // ── Process in chunks (each chunk gets the full context above) ───────────────
   let matched = 0;
   let needsClarification = 0;
   const processedTxIds = new Set<string>();
 
-  for (const job of jobs) {
-    const { chunk, systemPrompt, responseFormatSchema } = job;
+  const chunks: StagedTransaction[][] = [];
+  for (let i = 0; i < transactions.length; i += AI.BATCH_SIZE) {
+    chunks.push(transactions.slice(i, i + AI.BATCH_SIZE));
+  }
+
+  for (const chunk of chunks) {
     const chunkEnriched = enriched.filter(e => chunk.some(tx => tx.id === e.id));
 
     let results: ClassificationResult[] = [];
@@ -717,10 +630,7 @@ export async function classifyAllWithAI(
         continue;
       }
 
-      // Direction guard: reject physically impossible categorisations. With the
-      // per-direction enum (buildResponseSchema) this should be unreachable in
-      // practice — kept as defense-in-depth in case a code ever slips through
-      // outside its enum (SDK/model edge case).
+      // Direction guard: reject physically impossible categorisations
       const directionMismatch =
         (tx.direction === "DEBIT"   && CREDIT_ONLY_CODES.has(res.categoryCode)) ||
         (tx.direction === "CREDIT"  && DEBIT_ONLY_CODES.has(res.categoryCode));

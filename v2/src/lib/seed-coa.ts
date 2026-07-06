@@ -263,7 +263,7 @@ export const MASTER_COA: CoaEntry[] = [
   { code: "9020", name: "Доходы от реализации товаров", type: "TRANSIT", group: "Доходы от осн. деятельности", layer: "EXTENSION", isDeprecated: false },
   { code: "9030", name: "Доходы от выполнения работ и оказания услуг", type: "TRANSIT", group: "Доходы от осн. деятельности", layer: "CORE", isDeprecated: false },
   { code: "9040", name: "Возврат проданных товаров (продукции)", type: "TRANSIT", group: "Доходы от осн. деятельности", layer: "EXTENSION", isDeprecated: false },
-  { code: "9050", name: "Скидки, предоставленные покупателям", type: "CONTRA_LIABILITY", group: "Доходы от осн. деятельности", layer: "EXTENSION", isDeprecated: false },
+  { code: "9050", name: "Скидки, предоставленные покупателям", type: "TRANSIT", group: "Доходы от осн. деятельности", layer: "EXTENSION", isDeprecated: false },
   { code: "9110", name: "Себестоимость реализованной готовой продукции", type: "TRANSIT", group: "Себестоимость", layer: "INDUSTRY", isDeprecated: false },
   { code: "9120", name: "Себестоимость реализованных товаров", type: "TRANSIT", group: "Себестоимость", layer: "EXTENSION", isDeprecated: false },
   { code: "9130", name: "Себестоимость выполненных работ и услуг", type: "TRANSIT", group: "Себестоимость", layer: "CORE", isDeprecated: false },

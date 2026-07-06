@@ -440,7 +440,11 @@ export const baseDocumentTypes = [
     mode: "MANUAL_ONLY",
     template: {
       lines: [
-        { accountCode: "9820", side: "debit", expression: "taxAmount" },
+        // 9810 — строка 250 Формы №2 ("Налог на прибыль / налог с оборота") общая для
+        // обоих налоговых режимов; см. README.md, docs/update_v1.md,
+        // docs/contador_accounting_engine_spec.md, module_G_reports.md,
+        // module_H_posting_engine.md — все согласованно фиксируют 9810 для этого типа.
+        { accountCode: "9810", side: "debit", expression: "taxAmount" },
         { accountCode: "6410", side: "credit", expression: "taxAmount" }
       ],
       opensItem: false,

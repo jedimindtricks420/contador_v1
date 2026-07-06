@@ -53,6 +53,56 @@ export const BALANCE_NON_CASH_ASSET_CODES = [
   ...LINE260_CODES, ...LINE270_CODES, ...LINE280_CODES, ...LINE290_CODES, ...LINE300_CODES, ...LINE310_CODES,
 ];
 
+// ─── Passive-side line codes (собственный капитал + обязательства, строки 410-760) ──
+// Single source of truth for both the Форма №1 passive lines below AND
+// balance-sheet-liabilities-completeness.test.ts, which checks that every
+// LIABILITY/CONTRA_LIABILITY account in the chart of accounts appears somewhere
+// in BALANCE_PASSIVE_CODES — mirrors the BALANCE_NON_CASH_ASSET_CODES pattern above.
+export const LINE410_CODES = ["8310","8320","8330"];
+export const LINE420_CODES = ["8410","8420"];
+export const LINE430_CODES = ["8510","8520","8530"];
+export const LINE440_CODES = ["8610","8620"];
+export const LINE450_CODES = ["8710","8720"];
+export const LINE460_CODES = ["8810","8820","8830","8840","8890"];
+export const LINE470_CODES = ["8910"];
+export const LINE500_CODES = ["7010","7020"];
+export const LINE510_CODES = ["7110"];
+export const LINE520_CODES = ["7120"];
+export const LINE530_CODES = ["7210","7220","7230"];
+export const LINE540_CODES = ["7240"];
+export const LINE550_CODES = ["7250","7290"];
+export const LINE560_CODES = ["7310"];
+export const LINE570_CODES = ["7810"];
+export const LINE580_CODES = ["7820","7830","7840"];
+export const LINE590_CODES = ["7910","7920"];
+export const LINE610_CODES = ["6010","6020"];
+export const LINE620_CODES = ["6110"];
+export const LINE630_CODES = ["6120"];
+export const LINE640_CODES = ["6210","6220","6230"];
+export const LINE650_CODES = ["6240"];
+export const LINE660_CODES = ["6250","6290"];
+export const LINE670_CODES = ["6310","6320","6390"];
+export const LINE680_CODES = ["6410"];
+export const LINE690_CODES = ["6510"];
+export const LINE700_CODES = ["6520","6530"];
+export const LINE710_CODES = ["6610","6620","6630"];
+export const LINE720_CODES = ["6710","6720"];
+export const LINE730_CODES = ["6810"];
+export const LINE740_CODES = ["6820","6830","6840"];
+export const LINE750_CODES = ["6950"];
+export const LINE760_CODES = ["6910","6920","6930","6940","6960","6970","6990"];
+
+export const BALANCE_PASSIVE_CODES = [
+  ...LINE410_CODES, ...LINE420_CODES, ...LINE430_CODES, ...LINE440_CODES, ...LINE450_CODES,
+  ...LINE460_CODES, ...LINE470_CODES,
+  ...LINE500_CODES, ...LINE510_CODES, ...LINE520_CODES, ...LINE530_CODES, ...LINE540_CODES,
+  ...LINE550_CODES, ...LINE560_CODES, ...LINE570_CODES, ...LINE580_CODES, ...LINE590_CODES,
+  ...LINE610_CODES, ...LINE620_CODES, ...LINE630_CODES, ...LINE640_CODES, ...LINE650_CODES,
+  ...LINE660_CODES, ...LINE670_CODES, ...LINE680_CODES, ...LINE690_CODES, ...LINE700_CODES,
+  ...LINE710_CODES, ...LINE720_CODES, ...LINE730_CODES, ...LINE740_CODES, ...LINE750_CODES,
+  ...LINE760_CODES,
+];
+
 export async function GET(req: NextRequest) {
   try {
     const orgId = await getActiveOrgId();
@@ -194,50 +244,50 @@ export async function GET(req: NextRequest) {
     // ─── ПАССИВ ──────────────────────────────────────────────────────
 
     // Раздел I. Собственный капитал
-    const line410 = balCredit("8310","8320","8330");
-    const line420 = balCredit("8410","8420");
-    const line430 = balCredit("8510","8520","8530");
-    const line440 = balDebit("8610","8620");
+    const line410 = balCredit(...LINE410_CODES);
+    const line420 = balCredit(...LINE420_CODES);
+    const line430 = balCredit(...LINE430_CODES);
+    const line440 = balDebit(...LINE440_CODES);
     // balNet сохраняет отрицательное значение при дебетовом остатке 8710/8720 (непокрытый убыток)
     // 8720 "Накопленная прибыль (непокрытый убыток)" сейчас не используется ни одним типом документа,
     // но входит в состав того же раздела капитала — включаем на случай будущей реформации/переноса.
-    const line450 = balNet("8710", "8720").plus(transitNet);
-    const line460 = balCredit("8810","8820","8830","8840","8890");
-    const line470 = balCredit("8910");
+    const line450 = balNet(...LINE450_CODES).plus(transitNet);
+    const line460 = balCredit(...LINE460_CODES);
+    const line470 = balCredit(...LINE470_CODES);
     const line480 = line410.plus(line420).plus(line430).minus(line440)
                           .plus(line450).plus(line460).plus(line470);
 
     // Раздел II. Обязательства — долгосрочные
-    const line500 = balCredit("7010","7020");
-    const line510 = balCredit("7110");
-    const line520 = balCredit("7120");
-    const line530 = balCredit("7210","7220","7230");
-    const line540 = balCredit("7240");
-    const line550 = balCredit("7250","7290");
-    const line560 = balCredit("7310");
-    const line570 = balCredit("7810");
-    const line580 = balCredit("7820","7830","7840");
-    const line590 = balCredit("7910","7920");
+    const line500 = balCredit(...LINE500_CODES);
+    const line510 = balCredit(...LINE510_CODES);
+    const line520 = balCredit(...LINE520_CODES);
+    const line530 = balCredit(...LINE530_CODES);
+    const line540 = balCredit(...LINE540_CODES);
+    const line550 = balCredit(...LINE550_CODES);
+    const line560 = balCredit(...LINE560_CODES);
+    const line570 = balCredit(...LINE570_CODES);
+    const line580 = balCredit(...LINE580_CODES);
+    const line590 = balCredit(...LINE590_CODES);
     const line490 = line500.plus(line510).plus(line520).plus(line530).plus(line540)
                           .plus(line550).plus(line560).plus(line570).plus(line580).plus(line590);
 
     // Текущие обязательства
-    const line610 = balCredit("6010","6020");
-    const line620 = balCredit("6110");
-    const line630 = balCredit("6120");
-    const line640 = balCredit("6210","6220","6230");
-    const line650 = balCredit("6240");
-    const line660 = balCredit("6250","6290");
-    const line670 = balCredit("6310","6320","6390");
-    const line680 = balCredit("6410");
-    const line690 = balCredit("6510");
-    const line700 = balCredit("6520","6530");
-    const line710 = balCredit("6610","6620","6630");
-    const line720 = balCredit("6710","6720");
-    const line730 = balCredit("6810");
-    const line740 = balCredit("6820","6830","6840");
-    const line750 = balCredit("6950");
-    const line760 = balCredit("6910","6920","6930","6940","6960","6970","6990");
+    const line610 = balCredit(...LINE610_CODES);
+    const line620 = balCredit(...LINE620_CODES);
+    const line630 = balCredit(...LINE630_CODES);
+    const line640 = balCredit(...LINE640_CODES);
+    const line650 = balCredit(...LINE650_CODES);
+    const line660 = balCredit(...LINE660_CODES);
+    const line670 = balCredit(...LINE670_CODES);
+    const line680 = balCredit(...LINE680_CODES);
+    const line690 = balCredit(...LINE690_CODES);
+    const line700 = balCredit(...LINE700_CODES);
+    const line710 = balCredit(...LINE710_CODES);
+    const line720 = balCredit(...LINE720_CODES);
+    const line730 = balCredit(...LINE730_CODES);
+    const line740 = balCredit(...LINE740_CODES);
+    const line750 = balCredit(...LINE750_CODES);
+    const line760 = balCredit(...LINE760_CODES);
     const line600 = [line610,line620,line630,line640,line650,line660,line670,line680,
                      line690,line700,line710,line720,line730,line740,line750,line760]
                     .reduce((s,v) => s.plus(v), new Decimal(0));

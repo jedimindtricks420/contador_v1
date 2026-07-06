@@ -166,8 +166,12 @@ Body: { documentId, newTypeId }
 | `PERIOD_CLOSING` | 9xxx/9910 | 9910/9xxx | Реформация баланса; предупреждает, если 9210/9220 ненулевые (см. Модуль E) |
 | `YEAR_END_CLOSE` | 9910/8710 | 8710/9910 | Перенос в 8710. `net9910 = Σ(credit − debit)`, прибыль при `> 0` (см. Модуль E) |
 
-Полный и всегда актуальный список — `docs/modules/module_DOCUMENT_TYPES.md`
-(источник истины: `src/lib/ensureBaseData.ts`).
+Полный и всегда актуальный список (177 типов) — автогенерируемый `docs/DOCUMENT_TYPES.md`
+в корне репозитория (`npm run docs:types`, проверяется тестом `document-types-doc.test.ts`,
+источник истины: `src/lib/ensureBaseData.ts`). Тематический обзор с пояснениями —
+`docs/modules/module_DOCUMENT_TYPES.md`, но он поддерживается вручную и может отставать
+по названиям/полноте (см. предупреждение в начале того файла) — при расхождении
+доверять `docs/DOCUMENT_TYPES.md`.
 
 ---
 
