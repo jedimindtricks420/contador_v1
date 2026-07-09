@@ -35,14 +35,12 @@ export async function DELETE(req: NextRequest) {
 
     await prisma.stagedTransaction.deleteMany({ where: { importBatchId: batchId, orgId } });
 
-    // Reverse the balance update
-    const current = await prisma.bankAccount.findUnique({
-      where: { id: bankAccountId },
-      select: { lastBalance: true }
-    });
+    // Reverse the balance update atomically (decrement at the DB level, not a
+    // read-then-write in application code) — a concurrent import or rollback for
+    // the same bank account can no longer silently clobber this account's delta.
     await prisma.bankAccount.update({
       where: { id: bankAccountId },
-      data: { lastBalance: Number(current?.lastBalance ?? 0) - netDelta }
+      data: { lastBalance: { decrement: netDelta } }
     });
 
     return NextResponse.json({ deleted: transactions.length });

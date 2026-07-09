@@ -7,6 +7,7 @@ import { parse1CExchange } from "@/lib/parsers/parser1c";
 import { parseBankExcel } from "@/lib/parsers/parserBankExcel";
 import { ParsedTransaction } from "@/lib/parsers/types";
 import { Prisma } from "@prisma/client";
+import { AMOUNT_TOLERANCE } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
   try {
@@ -140,19 +141,23 @@ export async function POST(req: NextRequest) {
     // If the statement provides an opening balance AND the account has never been synced
     // (lastBalance === 0 and lastSyncedAt is null), seed lastBalance from the statement.
     // This ensures the first import correctly reflects the real bank opening position.
+    // Wrapped in a transaction with a row lock (FOR UPDATE) — without it, two
+    // concurrent imports for the same bank account both read the same lastBalance
+    // and the second write silently clobbers the first one's delta.
     if (imported > 0) {
-      const current = await prisma.bankAccount.findUnique({
-        where: { id: bankAccountId },
-        select: { lastBalance: true, lastSyncedAt: true }
-      });
-      const isFirstSync = !current?.lastSyncedAt && Number(current?.lastBalance ?? 0) === 0;
-      const baseBalance = (isFirstSync && statementOpeningBalance !== undefined)
-        ? statementOpeningBalance
-        : Number(current?.lastBalance ?? 0);
-      const newBalance = baseBalance + netDelta;
-      await prisma.bankAccount.update({
-        where: { id: bankAccountId },
-        data: { lastSyncedAt: new Date(), lastBalance: newBalance }
+      await prisma.$transaction(async (tx) => {
+        const [locked] = await tx.$queryRaw<{ lastBalance: string; lastSyncedAt: Date | null }[]>`
+          SELECT "lastBalance"::text, "lastSyncedAt" FROM "BankAccount" WHERE id = ${bankAccountId} FOR UPDATE
+        `;
+        const isFirstSync = !locked?.lastSyncedAt && Number(locked?.lastBalance ?? 0) === 0;
+        const baseBalance = (isFirstSync && statementOpeningBalance !== undefined)
+          ? statementOpeningBalance
+          : Number(locked?.lastBalance ?? 0);
+        const newBalance = baseBalance + netDelta;
+        await tx.bankAccount.update({
+          where: { id: bankAccountId },
+          data: { lastSyncedAt: new Date(), lastBalance: newBalance }
+        });
       });
     }
 
@@ -165,7 +170,7 @@ export async function POST(req: NextRequest) {
       });
       const computed = Number(finalAccount?.lastBalance ?? 0);
       const diff = Math.abs(computed - statementClosingBalance);
-      if (diff > 0.01) balanceDiscrepancy = diff;
+      if (diff > AMOUNT_TOLERANCE) balanceDiscrepancy = diff;
     }
 
     return NextResponse.json({

@@ -35,11 +35,17 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://contador.uz";
     const resetUrl = `${appUrl}/v2/reset-password?token=${token}`;
 
-    const mailSent = await sendPasswordResetEmail(user.email, resetUrl);
+    const mailSent = await sendPasswordResetEmail(user.email, resetUrl, TOKEN_TTL_HOURS);
 
     if (!mailSent) {
-      // SMTP не настроен — логируем только в консоль сервера, не возвращаем токен клиенту
-      console.log("[forgot-password] SMTP not configured. Reset URL (server-only):", resetUrl);
+      // SMTP не настроен — НЕ логируем токен/ссылку даже на сервер: лог-агрегаторы,
+      // выгрузки логов и т.п. могут сделать одноразовый токен сброса пароля доступным
+      // третьим лицам, что равносильно захвату любого аккаунта. Логируем только сам
+      // факт сбоя отправки, без секрета — восстановление пароля для этого пользователя
+      // не сработает, пока SMTP не будет настроен корректно (это должно быть заметно
+      // по общей ошибке isMailConfigured()/sendPasswordResetEmail в мониторинге, а не
+      // через plaintext-токен в логах).
+      console.error(`[forgot-password] SMTP не настроен — письмо со сбросом пароля не отправлено (userId=${user.id})`);
     }
 
     return NextResponse.json({ success: true });

@@ -37,6 +37,26 @@ function parseExcelAmount(val: any): number {
   return 0;
 }
 
+// Detects a negative amount for direction inference on single-amount-column
+// statements. Uses the SAME set of common accounting notations a real bank
+// export might use — plain leading/trailing minus, unicode minus variants
+// (−/‐/–/—, sometimes produced by Excel autocorrect or non-Latin locales), and
+// parenthesised negatives ("(1 234.56)", a standard accounting convention).
+// Previously this used a separate, weaker parseFloat() on a less-cleaned string
+// than parseExcelAmount() above — any of these notations would silently fail to
+// parse as negative and fall through to a DEBIT default regardless of the real sign.
+function isNegativeExcelAmount(val: any): boolean {
+  if (typeof val === "number") return val < 0;
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return false;
+    if (/^\(.*\)$/.test(trimmed)) return true;
+    const normalized = trimmed.replace(/[−‒–—]/g, "-");
+    return normalized.startsWith("-") || normalized.endsWith("-");
+  }
+  return false;
+}
+
 export function parseBankExcel(buffer: Buffer): ParsedBankStatement {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const sheetName = workbook.SheetNames[0];
@@ -176,9 +196,9 @@ export function parseBankExcel(buffer: Buffer): ParsedBankStatement {
       amount = parseExcelAmount(amtVal);
       if (amount === 0) continue;
 
-      // Detect direction by signs, or assume DEBIT if negative
-      const rawAmt = typeof amtVal === "number" ? amtVal : parseFloat(String(amtVal || "").replace(/\s/g, "").replace(/,/g, "."));
-      if (!isNaN(rawAmt) && rawAmt > 0) {
+      // Detect direction by sign — negative (including parentheses/unicode-minus
+      // notations) is DEBIT (money out), anything else is CREDIT (money in).
+      if (!isNegativeExcelAmount(amtVal)) {
         direction = "CREDIT";
       } else {
         direction = "DEBIT";

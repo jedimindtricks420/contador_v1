@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getSession } from "@/lib/context";
 import { createSession, COOKIE_NAME } from "@/lib/auth";
+import { SESSION_MAX_AGE_SECONDS } from "@/lib/constants";
 
 export async function DELETE(
   req: NextRequest,
@@ -68,7 +69,7 @@ export async function DELETE(
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 7,
+        maxAge: SESSION_MAX_AGE_SECONDS,
         path: "/",
       });
       return res;

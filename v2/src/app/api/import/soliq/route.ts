@@ -78,6 +78,14 @@ export async function POST(req: NextRequest) {
     const parsed = parseSoliqExcel(buffer);
 
     if (parsed.esfItems.length === 0 && parsed.taxSummary.vat === 0 && parsed.taxSummary.turnoverTax === 0) {
+      // Template recognized but no invoice rows carry amounts — an empty registry
+      // (no ЭСФ turnover in the period), not a broken file. Confirm it instead of erroring.
+      if (parsed.templateRecognized) {
+        return NextResponse.json({
+          empty: true,
+          message: "Файл распознан. Счета-фактуры с суммами за период отсутствуют — сверять нечего."
+        });
+      }
       return NextResponse.json({ error: "Не удалось распознать данные в файле" }, { status: 422 });
     }
 

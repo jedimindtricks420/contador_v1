@@ -3,7 +3,7 @@
 1.1.1 Account count: 269 (Expected: 214)
 1.1.2 Account 6010 type: ACTIVE_PASSIVE (Expected: ACTIVE_PASSIVE)
 
-1.2.1 DocumentTypes total: 138
+1.2.1 DocumentTypes total: 178
 1.2.2 Used modes: MANUAL_ONLY, BANK_AUTO
 1.2.3 Found GOODS_RECEIVED: true
 1.2.3 Found SERVICE_RECEIVED: true

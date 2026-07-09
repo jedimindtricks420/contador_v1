@@ -2,7 +2,7 @@ import prisma from "../prisma";
 import { evaluate } from "./expressionEval";
 import Decimal from "decimal.js";
 import { getRiskDeadline } from "../openItems";
-import { TAX_RATES, SALARY_EXPENSE_ACCOUNT_CODES } from "../constants";
+import { TAX_RATES, SALARY_EXPENSE_ACCOUNT_CODES, AMOUNT_TOLERANCE } from "../constants";
 
 /**
  * Posts a document by resolving its templates, evaluating mathematical expressions,
@@ -267,12 +267,20 @@ export async function postDocument(
       });
       // Prefer exact amount match, otherwise take the oldest open item
       const exactMatch = candidates.find((c: any) =>
-        new Decimal(c.amount.toString()).minus(docAmount).abs().lessThan("0.01")
+        new Decimal(c.amount.toString()).minus(docAmount).abs().lessThan(AMOUNT_TOLERANCE)
       );
       const toClose = exactMatch ?? candidates[0] ?? null;
       if (toClose) {
-        await tx.openItem.update({
-          where: { id: toClose.id },
+        // updateMany with status: "OPEN" in the WHERE (instead of update by id alone)
+        // makes this an optimistic-concurrency check: if two documents concurrently
+        // targeting the same counterparty+account both pick this same OpenItem as
+        // toClose, only the first one's write actually matches a row (count === 1);
+        // the second one's WHERE no longer matches (status is already "CLOSED") and
+        // silently updates zero rows instead of overwriting the first one's
+        // closingDocumentId — same "best-effort, skip if nothing to close" behaviour
+        // as when candidates is empty.
+        await tx.openItem.updateMany({
+          where: { id: toClose.id, status: "OPEN" },
           data: { status: "CLOSED", dateClosed: doc.date, closingDocumentId: doc.id }
         });
       }

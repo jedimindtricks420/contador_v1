@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getActiveOrgId, getActiveMembership } from "@/lib/context";
 import { prismaWithOrg } from "@/lib/prisma";
+import { TURNOVER_TAX_RATE_MIN, TURNOVER_TAX_RATE_MAX } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
   try {
@@ -47,7 +48,7 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json();
 
     const turnoverTaxRate = body.turnoverTaxRate !== undefined
-      ? Math.max(0.01, Math.min(0.04, Number(body.turnoverTaxRate)))
+      ? Math.max(TURNOVER_TAX_RATE_MIN, Math.min(TURNOVER_TAX_RATE_MAX, Number(body.turnoverTaxRate)))
       : undefined;
 
     const updatedOrg = await prismaWithOrg(orgId).organization.update({

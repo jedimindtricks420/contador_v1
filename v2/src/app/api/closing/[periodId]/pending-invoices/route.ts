@@ -5,6 +5,13 @@ import { postDocument } from "@/lib/posting/postingEngine";
 import { upsertTaxCalendarEventsForPeriod } from "@/lib/closing";
 import { TAX_RATES, ACCOUNTS } from "@/lib/constants";
 
+class OpenItemAlreadyClosedError extends Error {
+  constructor() {
+    super("Позиция уже закрыта");
+    this.name = "OpenItemAlreadyClosedError";
+  }
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ periodId: string }> }
@@ -95,6 +102,18 @@ export async function POST(
     const docDate = new Date(period.year, period.month, 0); // Last day of month
 
     const result = await prisma.$transaction(async (tx) => {
+      // Lock the row and re-check status so two concurrent "confirm invoice" clicks
+      // for the same openItemId can't both post a document and both try to close
+      // it — the second request blocks here, then sees status already CLOSED and
+      // aborts instead of creating a duplicate POSTED document (same pattern as
+      // transactions/[id]/category/route.ts).
+      const [lockedItem] = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM "OpenItem" WHERE id = ${openItemId} FOR UPDATE
+      `;
+      if (!lockedItem || lockedItem.status === "CLOSED") {
+        throw new OpenItemAlreadyClosedError();
+      }
+
       const doc = await tx.document.create({
         data: {
           orgId,
@@ -132,6 +151,9 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (err: any) {
+    if (err instanceof OpenItemAlreadyClosedError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("POST CONFIRM INVOICE ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
   }

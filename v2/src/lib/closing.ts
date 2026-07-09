@@ -477,6 +477,13 @@ export async function finalizePeriod(
         }
       }
 
+      // Advisory lock scoped to this period, auto-released on commit/rollback —
+      // serialises concurrent finalizePeriod() runs for the SAME December period
+      // (e.g. a retried "close period" request) so the existence check right below
+      // can't race and double-create YEAR_END_CLOSE (same fix as the explicit
+      // POST /api/closing/year-end endpoint, which shares this account pair).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('YEAR_END_CLOSE'), hashtext(${periodId}))`;
+
       const existingYE = await tx.document.findFirst({
         where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
       });

@@ -4,6 +4,13 @@ import { getActiveOrgId } from "@/lib/context";
 import { ACCOUNTS } from "@/lib/constants";
 import Decimal from "decimal.js";
 
+class YearEndAlreadyDoneError extends Error {
+  constructor() {
+    super("Годовое закрытие уже выполнено для этого периода");
+    this.name = "YearEndAlreadyDoneError";
+  }
+}
+
 // Перенос финансового результата (9910) в нераспределённую прибыль (8710) в конце года.
 // Дт 9910 — Кт 8710 (прибыль) / Дт 8710 — Кт 9910 (убыток)
 export async function POST(req: NextRequest) {
@@ -16,6 +23,9 @@ export async function POST(req: NextRequest) {
     if (period.month !== 12) return NextResponse.json({ error: "Годовое закрытие только в декабре" }, { status: 400 });
     if (period.status !== "CLOSED") return NextResponse.json({ error: "Период должен быть сначала закрыт" }, { status: 400 });
 
+    // Fast, non-authoritative check for early user feedback — the real guarantee
+    // against double-transfer is the advisory lock + re-check inside the
+    // transaction below (this one alone would be a TOCTOU race).
     const existing = await prisma.document.findFirst({
       where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
     });
@@ -67,6 +77,19 @@ export async function POST(req: NextRequest) {
     const amt = net9910.abs();
 
     await prisma.$transaction(async (tx) => {
+      // Advisory lock scoped to this period, auto-released on commit/rollback —
+      // serialises concurrent year-end-close submissions for the SAME period so
+      // the existence re-check right below can't race (see the analogous fix in
+      // closing/[periodId]/step/[stepNumber]/complete/route.ts for SOLIQ_IMPORT).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('YEAR_END_CLOSE'), hashtext(${periodId}))`;
+
+      const alreadyDone = await tx.document.findFirst({
+        where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
+      });
+      if (alreadyDone) {
+        throw new YearEndAlreadyDoneError();
+      }
+
       const doc = await tx.document.create({
         data: {
           orgId, periodId, typeId: yearEndType!.id,
@@ -107,6 +130,9 @@ export async function POST(req: NextRequest) {
       isProfit: net9910.gt(0)
     });
   } catch (err: any) {
+    if (err instanceof YearEndAlreadyDoneError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
     console.error("YEAR END CLOSE ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
   }

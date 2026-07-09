@@ -3,7 +3,7 @@ import { getActiveOrgId, getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { clearRulesCache } from "@/lib/classification/rulesEngine";
 import { postDocument } from "@/lib/posting/postingEngine";
-import { TRANSIT_INNS } from "@/lib/constants";
+import { TRANSIT_INNS, isDirectionCompatible } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,11 +36,18 @@ export async function POST(req: NextRequest) {
     if (!docType) {
       return NextResponse.json({ error: "Категория операции не найдена" }, { status: 404 });
     }
+    // StagedTransactions come from a bank statement — only BANK_AUTO categories make
+    // sense here. MANUAL_ONLY types (accruals, closing documents, etc.) are created
+    // through the closing wizard, never by manually confirming a bank transaction.
+    if (docType.mode === "MANUAL_ONLY") {
+      return NextResponse.json({ error: "Эта категория недоступна для банковских транзакций" }, { status: 400 });
+    }
 
     // Perform database operations inside a Prisma transaction
     const result = await prisma.$transaction(async (tx) => {
       let createdDocsCount = 0;
       const classifiedDirections: string[] = [];
+      const skippedDirectionMismatch: string[] = [];
 
       for (const txId of ids) {
         const stagedTx = await tx.stagedTransaction.findFirst({
@@ -56,6 +63,18 @@ export async function POST(req: NextRequest) {
           SELECT "documentId" FROM "StagedTransaction" WHERE id = ${txId} FOR UPDATE
         `;
         if (lockedTx?.documentId) continue;
+
+        // Direction guard: a CREDIT (money in) transaction can never be posted as a
+        // DEBIT-only category and vice versa. Without this, a group of transactions
+        // from the same counterparty that mixes both directions (common — e.g. a
+        // supplier who both bills us and occasionally refunds us) would silently let
+        // one bulk category choice post a backwards journal entry for the minority
+        // direction, since the clarification queue groups by counterparty only,
+        // never by direction (see app/api/clarification/queue/route.ts).
+        if (!isDirectionCompatible(docType.code, stagedTx.direction)) {
+          skippedDirectionMismatch.push(txId);
+          continue;
+        }
 
         classifiedDirections.push(stagedTx.direction);
 
@@ -133,11 +152,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      return { classified: createdDocsCount, ruleCreated, ruleId };
+      return { classified: createdDocsCount, ruleCreated, ruleId, skippedDirectionMismatch };
     });
 
     if (result.ruleCreated) {
       clearRulesCache(orgId);
+    }
+
+    if (result.skippedDirectionMismatch.length > 0) {
+      console.warn(
+        `Clarification answer: category "${docType.code}" is incompatible with the direction of ${result.skippedDirectionMismatch.length} transaction(s); left unclassified:`,
+        result.skippedDirectionMismatch
+      );
     }
 
     return NextResponse.json(result);

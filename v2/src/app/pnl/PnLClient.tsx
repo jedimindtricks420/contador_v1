@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { TAX_RATES } from "@/lib/constants";
 
 interface PnLLines {
   line010: number; line020: number; line030: number;
@@ -154,7 +155,7 @@ export default function PnLClient() {
   }
 
   const L = data?.lines;
-  const taxRatePct = data ? Math.round((data.turnoverTaxRate ?? 0.04) * 100) : 4;
+  const taxRatePct = data ? Math.round((data.turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX) * 100) : TAX_RATES.TURNOVER_TAX * 100;
   const taxLabel = data?.taxRegime === "VAT" ? "Налог на прибыль (15%)" : `Налог с оборота (${taxRatePct}%)`;
 
   return (

@@ -17,6 +17,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
   const [soliqFile, setSoliqFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [emptyRegistryNotice, setEmptyRegistryNotice] = useState<string | null>(null);
   const [reconciliation, setReconciliation] = useState<any | null>(null);
   const [reconciliationFileName, setReconciliationFileName] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -29,6 +30,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
     if (!soliqFile) return;
     setUploading(true);
     setUploadError(null);
+    setEmptyRegistryNotice(null);
     try {
       const fd = new FormData();
       fd.append("file", soliqFile);
@@ -40,9 +42,15 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
       });
       const data = await res.json();
       if (res.ok) {
-        setReconciliation(data);
-        setReconciliationFileName(soliqFile.name);
-        setSoliqFile(null);
+        if (data.empty) {
+          // Registry recognized but has no invoices with amounts — nothing to reconcile
+          setEmptyRegistryNotice(data.message);
+          setSoliqFile(null);
+        } else {
+          setReconciliation(data);
+          setReconciliationFileName(soliqFile.name);
+          setSoliqFile(null);
+        }
       } else {
         setUploadError(`Ошибка импорта: ${data.error}`);
       }
@@ -222,7 +230,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
               type="file"
               id="wizardSoliqFile"
               accept=".xlsx,.xls,.xltx"
-              onChange={(e) => setSoliqFile(e.target.files?.[0] || null)}
+              onChange={(e) => { setSoliqFile(e.target.files?.[0] || null); setEmptyRegistryNotice(null); }}
               className="hidden"
             />
             <label htmlFor="wizardSoliqFile" className="cursor-pointer space-y-1 block">
@@ -239,6 +247,18 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
           {uploadError && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 font-semibold">
               {uploadError}
+            </div>
+          )}
+
+          {emptyRegistryNotice && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded text-xs text-green-800 space-y-1">
+              <div className="flex items-center gap-2 font-semibold">
+                <Check size={14} className="shrink-0 text-green-600" />
+                <span>{emptyRegistryNotice}</span>
+              </div>
+              <div className="pl-6 text-green-700">
+                Если оборота по ЭСФ в этом периоде не было, нажмите «Пропустить шаг →», чтобы завершить сверку и продолжить закрытие месяца.
+              </div>
             </div>
           )}
 

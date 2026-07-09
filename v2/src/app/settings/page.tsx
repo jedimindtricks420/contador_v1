@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { ACTIVITY_CATEGORIES } from "@/lib/activityCategories";
 import CharterCapitalModal from "@/components/CharterCapitalModal";
+import { TAX_RATES, TURNOVER_TAX_RATE_MIN, TURNOVER_TAX_RATE_MAX } from "@/lib/constants";
 
 interface CharterCapitalInfo {
   amount: number | null;
@@ -49,7 +50,7 @@ export default function OrgSettingsPage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.error) setError(data.error);
-        else setSettings({ ...data, turnoverTaxRate: data.turnoverTaxRate ?? 0.04 });
+        else setSettings({ ...data, turnoverTaxRate: data.turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX });
         setLoading(false);
       })
       .catch((err) => {
@@ -272,18 +273,18 @@ export default function OrgSettingsPage() {
           {settings.taxRegime === "TURNOVER_TAX" && (
             <div className="max-w-xs">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ставка налога с оборота ({Math.round((settings.turnoverTaxRate ?? 0.04) * 100)}%)
+                Ставка налога с оборота ({Math.round((settings.turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX) * 100)}%)
               </label>
-              <p className="text-[11px] text-gray-500 mb-2">От 1% до 4% — зависит от вида деятельности.</p>
+              <p className="text-[11px] text-gray-500 mb-2">От {TURNOVER_TAX_RATE_MIN * 100}% до {TURNOVER_TAX_RATE_MAX * 100}% — зависит от вида деятельности.</p>
               <div className="flex items-center gap-3">
                 <input
                   type="number"
-                  min="1"
-                  max="4"
+                  min={TURNOVER_TAX_RATE_MIN * 100}
+                  max={TURNOVER_TAX_RATE_MAX * 100}
                   step="1"
-                  value={Math.round((settings.turnoverTaxRate ?? 0.04) * 100)}
+                  value={Math.round((settings.turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX) * 100)}
                   onChange={(e) => {
-                    const pct = Math.max(1, Math.min(4, parseInt(e.target.value) || 4));
+                    const pct = Math.max(TURNOVER_TAX_RATE_MIN * 100, Math.min(TURNOVER_TAX_RATE_MAX * 100, parseInt(e.target.value) || TURNOVER_TAX_RATE_MAX * 100));
                     setSettings({ ...settings, turnoverTaxRate: pct / 100 });
                   }}
                   className="w-20 px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black text-center font-semibold"

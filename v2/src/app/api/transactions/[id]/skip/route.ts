@@ -45,17 +45,24 @@ export async function PATCH(
         }
       });
     } else {
-      // Void postings if document exists — must succeed before marking SKIPPED
-      if (stagedTx.documentId) {
-        await voidDocument(stagedTx.documentId, prisma, membership.userId);
-      }
-
-      updatedTx = await prisma.stagedTransaction.update({
-        where: { id },
-        data: {
-          status: "SKIPPED",
-          documentId: null
+      // Void postings if document exists — must succeed before marking SKIPPED.
+      // Wrapped in a single $transaction (unlike before) so voidDocument's five
+      // separate writes (document → VOIDED, journal entries deleted, OpenItems
+      // re-opened, staged transaction reset, audit log) either all commit together
+      // or all roll back — a crash/error partway through no longer leaves the
+      // Document/OpenItem/StagedTransaction in a half-voided, inconsistent state.
+      updatedTx = await prisma.$transaction(async (tx) => {
+        if (stagedTx.documentId) {
+          await voidDocument(stagedTx.documentId, tx, membership.userId);
         }
+
+        return tx.stagedTransaction.update({
+          where: { id },
+          data: {
+            status: "SKIPPED",
+            documentId: null
+          }
+        });
       });
     }
 

@@ -202,6 +202,65 @@ describe("POST /api/clarification/answer", () => {
     expect(data.ruleId).toBe("existing-rule");
     expect(mockPrisma.rule.create).not.toHaveBeenCalled();
   });
+
+  // Regression tests for the direction-safety fix: the clarification queue groups
+  // staged transactions by counterparty only (never by direction — see
+  // app/api/clarification/queue/route.ts), so a group could previously contain
+  // both a CREDIT and a DEBIT transaction from the same counterparty. Choosing one
+  // category for the whole group used to post the minority-direction transaction
+  // backwards with no error. SALARY is DEBIT_ONLY_CODES — a CREDIT transaction must
+  // never be allowed to post as SALARY.
+  it("rejects the category upfront when it's MANUAL_ONLY (staged transactions are bank-derived, never manual-only)", async () => {
+    mockPrisma.documentType.findUnique.mockResolvedValue({ id: "cat-manual", code: "SALARY_ACCRUAL", mode: "MANUAL_ONLY" });
+
+    const { POST } = await import("@/app/api/clarification/answer/route");
+    const req = new NextRequest("http://localhost/api/clarification/answer", {
+      method: "POST",
+      body: JSON.stringify({ documentTypeId: "cat-manual", transactionIds: ["tx-1"] }),
+    });
+    const res = await POST(req);
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.document.create).not.toHaveBeenCalled();
+  });
+
+  it("skips (does not post) a transaction whose direction is incompatible with the chosen category, instead of posting it backwards", async () => {
+    mockPrisma.documentType.findUnique.mockResolvedValue({ id: "cat-salary", code: "SALARY", mode: "BANK_AUTO" });
+    // CREDIT transaction (money IN) — SALARY is DEBIT-only, must be rejected.
+    mockPrisma.stagedTransaction.findFirst.mockResolvedValue(stagedTx({ id: "tx-credit", direction: "CREDIT", documentId: null }));
+    mockPrisma.$queryRaw.mockResolvedValue([{ documentId: null }]);
+
+    const { POST } = await import("@/app/api/clarification/answer/route");
+    const req = new NextRequest("http://localhost/api/clarification/answer", {
+      method: "POST",
+      body: JSON.stringify({ documentTypeId: "cat-salary", transactionIds: ["tx-credit"] }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+
+    expect(data.classified).toBe(0);
+    expect(data.skippedDirectionMismatch).toEqual(["tx-credit"]);
+    expect(mockPrisma.document.create).not.toHaveBeenCalled();
+  });
+
+  it("posts a direction-compatible transaction normally (SALARY + DEBIT tx still works)", async () => {
+    mockPrisma.documentType.findUnique.mockResolvedValue({ id: "cat-salary", code: "SALARY", mode: "BANK_AUTO" });
+    mockPrisma.stagedTransaction.findFirst.mockResolvedValue(stagedTx({ id: "tx-debit", direction: "DEBIT", documentId: null }));
+    mockPrisma.$queryRaw.mockResolvedValue([{ documentId: null }]);
+    mockPrisma.document.create.mockResolvedValue({ id: "doc-debit" });
+
+    const { POST } = await import("@/app/api/clarification/answer/route");
+    const req = new NextRequest("http://localhost/api/clarification/answer", {
+      method: "POST",
+      body: JSON.stringify({ documentTypeId: "cat-salary", transactionIds: ["tx-debit"] }),
+    });
+    const res = await POST(req);
+    const data = await res.json();
+
+    expect(data.classified).toBe(1);
+    expect(data.skippedDirectionMismatch).toEqual([]);
+    expect(mockPrisma.document.create).toHaveBeenCalled();
+  });
 });
 
 describe("PATCH /api/transactions/[id]/category — race guard", () => {

@@ -9,7 +9,11 @@ export async function POST(request: Request) {
     if (!code || typeof code !== "string" || !code.trim()) {
       return NextResponse.json({ error: "Введите код ваучера" }, { status: 400 });
     }
-    const adminApiUrl = process.env.ADMIN_API_URL || "http://localhost:3031";
+    const adminApiUrl = process.env.ADMIN_API_URL;
+    if (!adminApiUrl) {
+      console.error("ADMIN_API_URL не настроен — ваучер применить невозможно");
+      return NextResponse.json({ error: "Сервис временно недоступен" }, { status: 500 });
+    }
     const adminRes = await fetch(`${adminApiUrl}/admin/api/v2/vouchers/redeem`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -3,7 +3,7 @@ import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { postDocument, repostDocument } from "@/lib/posting/postingEngine";
 import { clearRulesCache } from "@/lib/classification/rulesEngine";
-import { TRANSIT_INNS } from "@/lib/constants";
+import { TRANSIT_INNS, isDirectionCompatible } from "@/lib/constants";
 
 /**
  * Assigns or changes the classification category of a staged transaction.
@@ -49,6 +49,17 @@ export async function PATCH(
     });
     if (!docType) {
       return NextResponse.json({ error: "Категория операции не найдена" }, { status: 404 });
+    }
+    if (docType.mode === "MANUAL_ONLY") {
+      return NextResponse.json({ error: "Эта категория недоступна для банковских транзакций" }, { status: 400 });
+    }
+    // Direction guard: a CREDIT (money in) transaction can never be posted as a
+    // DEBIT-only category and vice versa — otherwise the journal entry would post
+    // backwards relative to what actually happened on the bank statement.
+    if (!isDirectionCompatible(docType.code, stagedTx.direction)) {
+      return NextResponse.json({
+        error: `Категория «${docType.name}» не подходит для этого направления транзакции (${stagedTx.direction === "CREDIT" ? "входящий платёж" : "исходящий платёж"})`
+      }, { status: 400 });
     }
 
     const result = await prisma.$transaction(async (tx) => {

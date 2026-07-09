@@ -1,2 +1,2 @@
-Total: 138
-Available for Bank/Classifier: 67
+Total: 178
+Available for Bank/Classifier: 105

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/context";
 import { getUserActivePro } from "@/lib/billing";
+import { BILLING } from "@/lib/constants";
 
 export async function GET() {
   try {
@@ -14,16 +15,21 @@ export async function GET() {
         ? Math.max(0, Math.ceil((validUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
         : null;
 
-    let proPrice = 299000;
-    try {
-      const adminApiUrl = process.env.ADMIN_API_URL || "http://localhost:3031";
-      const priceRes = await fetch(`${adminApiUrl}/admin/api/payment-info`);
-      if (priceRes.ok) {
-        const priceData = await priceRes.json();
-        proPrice = priceData.pro_price_yearly || 299000;
+    let proPrice: number = BILLING.DEFAULT_PRO_PRICE_YEARLY;
+    const adminApiUrl = process.env.ADMIN_API_URL;
+    if (!adminApiUrl) {
+      console.error("ADMIN_API_URL не настроен — используется дефолтная цена подписки для отображения");
+    } else {
+      try {
+        const priceRes = await fetch(`${adminApiUrl}/admin/api/payment-info`);
+        if (priceRes.ok) {
+          const priceData = await priceRes.json();
+          proPrice = priceData.pro_price_yearly || BILLING.DEFAULT_PRO_PRICE_YEARLY;
+        }
+      } catch {
+        // fallback to default price — admin service unreachable, this is a
+        // display-only page, not a payment action, so degrade gracefully
       }
-    } catch {
-      // fallback to default price
     }
 
     return NextResponse.json({

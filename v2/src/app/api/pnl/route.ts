@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
-import { ACCOUNTS, REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES } from "@/lib/constants";
+import { ACCOUNTS, REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, TAX_RATES } from "@/lib/constants";
 import Decimal from "decimal.js";
 
 type AggRow = { code: string; sumDebit: string; sumCredit: string };
@@ -254,22 +254,23 @@ export async function GET(req: NextRequest) {
       const r = monthlyRevenueOf(m);
       const cogs = COGS_ACCOUNT_CODES.reduce((s, c) => s.plus(mtd(m, c)), new Decimal(0));
       const exp  = mtd(m, ACCOUNTS.EXPENSE_SALES).plus(mtd(m, ACCOUNTS.EXPENSE_ADMIN)).plus(mtd(m, ACCOUNTS.EXPENSE_OTHER)).plus(mtd(m,"9440"));
-      const oi   = ["9310","9330","9340","9350","9360","9370","9380","9390"]
+      const oi   = LINE090_CREDIT_CODES
                      .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0))
-                     .minus(mtd(m,"9320"));
-      const fin  = ["9510","9520","9530","9540","9550","9560","9590"]
+                     .minus(LINE090_DEBIT_CODES.reduce((s,c) => s.plus(mtd(m,c)), new Decimal(0)));
+      const fin  = [...LINE120_CODES, ...LINE130_CODES, ...LINE140_CODES, ...LINE150_CODES, ...LINE160_CODES]
                      .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0));
-      const finExp = mtd(m,"9610").plus(mtd(m,"9620")).plus(mtd(m,"9630")).plus(mtd(m,"9690"));
+      const finExp = [...LINE180_CODES, ...LINE200_CODES, ...LINE210_CODES]
+                     .reduce((s,c) => s.plus(mtd(m,c)), new Decimal(0));
       const pbt  = r.minus(cogs).minus(exp).plus(oi).plus(fin).minus(finExp)
-                    .plus(mtc(m,"9710")).minus(mtd(m,"9720"));
-      const tax  = mtd(m,"9810").gt(0) ? mtd(m,"9810") : new Decimal(0);
-      return pbt.minus(tax).minus(mtd(m,"9820")).toNumber();
+                    .plus(mtc(m,LINE230_CREDIT_CODES[0])).minus(mtd(m,LINE230_DEBIT_CODES[0]));
+      const tax  = mtd(m,LINE250_CODES[0]).gt(0) ? mtd(m,LINE250_CODES[0]) : new Decimal(0);
+      return pbt.minus(tax).minus(mtd(m,LINE260_CODES[0])).toNumber();
     });
 
     return NextResponse.json({
       period: { from: startDate, to: endDate },
       taxRegime: org?.taxRegime ?? "TURNOVER_TAX",
-      turnoverTaxRate: org?.turnoverTaxRate ?? 0.04,
+      turnoverTaxRate: org?.turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX,
       lines: {
         line010: line010.toNumber(),
         line020: line020.toNumber(),

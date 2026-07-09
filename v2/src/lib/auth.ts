@@ -1,5 +1,6 @@
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
+import { SESSION_MAX_AGE_SECONDS } from "./constants";
 export { COOKIE_NAME, verifySession, type SessionPayload } from "./auth-edge";
 
 if (!process.env.JWT_SECRET) {
@@ -11,7 +12,7 @@ export async function createSession(payload: { userId: string; email: string; ac
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("7d")
+    .setExpirationTime(Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS)
     .sign(JWT_SECRET);
 }
 

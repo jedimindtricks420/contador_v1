@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CreditCard, Clock, AlertCircle, Tag, Sparkles, Lock } from "lucide-react";
+import { BILLING } from "@/lib/constants";
 
 interface SubscriptionData {
   plan: "FREE" | "PRO";
@@ -213,7 +214,7 @@ export default function ProfileClient() {
           </h2>
         </div>
         <p className="text-sm text-gray-400 mb-6">
-          {subscription ? formatPrice(subscription.proPrice) : "299 000 сум"} / год · 365 дней доступа
+          {subscription ? formatPrice(subscription.proPrice) : formatPrice(BILLING.DEFAULT_PRO_PRICE_YEARLY)} / год · {BILLING.DEFAULT_PRO_DURATION_DAYS} дней доступа
         </p>
 
         {error && (

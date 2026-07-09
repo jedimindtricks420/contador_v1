@@ -1,5 +1,15 @@
 import nodemailer from "nodemailer";
 
+// Russian plural forms for "час" (1 час, 2-4 часа, 5+ часов, with the 11-14 exception).
+function formatHoursRu(n: number): string {
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 14) return `${n} часов`;
+  if (mod10 === 1) return `${n} час`;
+  if (mod10 >= 2 && mod10 <= 4) return `${n} часа`;
+  return `${n} часов`;
+}
+
 function createTransport() {
   const host = process.env.SMTP_HOST;
   const port = parseInt(process.env.SMTP_PORT || "587");
@@ -19,7 +29,7 @@ function createTransport() {
   });
 }
 
-export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<boolean> {
+export async function sendPasswordResetEmail(to: string, resetUrl: string, ttlHours: number): Promise<boolean> {
   const transport = createTransport();
   if (!transport) return false;
 
@@ -53,7 +63,7 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
     </a>
 
     <p style="font-size:12px;color:#9ca3af;line-height:1.5;margin:0 0 8px">
-      Ссылка действительна в течение <strong>1 часа</strong>.
+      Ссылка действительна в течение <strong>${formatHoursRu(ttlHours)}</strong>.
       Если вы не запрашивали сброс пароля — проигнорируйте это письмо.
     </p>
 
@@ -66,7 +76,7 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
   </div>
 </body>
 </html>`,
-    text: `Сброс пароля Contador\n\nПерейдите по ссылке для создания нового пароля:\n${resetUrl}\n\nСсылка действительна 1 час.`,
+    text: `Сброс пароля Contador\n\nПерейдите по ссылке для создания нового пароля:\n${resetUrl}\n\nСсылка действительна ${formatHoursRu(ttlHours)}.`,
   });
 
   return true;

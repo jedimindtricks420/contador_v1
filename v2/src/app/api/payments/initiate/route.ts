@@ -12,7 +12,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
 
-    const adminApiUrl = process.env.ADMIN_API_URL || "http://localhost:3031";
+    const adminApiUrl = process.env.ADMIN_API_URL;
+    if (!adminApiUrl) {
+      console.error("ADMIN_API_URL не настроен — платёж инициировать невозможно");
+      return NextResponse.json({ error: "Платёжный сервис временно недоступен" }, { status: 500 });
+    }
     const adminRes = await fetch(`${adminApiUrl}/admin/api/v2/payments/initiate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

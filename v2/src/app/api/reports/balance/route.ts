@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import Decimal from "decimal.js";
+import { ACCOUNTS, BALANCE_SHEET_TOLERANCE } from "@/lib/constants";
 
 type AggRow = { code: string; sumDebit: string; sumCredit: string };
 
@@ -51,6 +52,21 @@ export const BALANCE_NON_CASH_ASSET_CODES = [
   ...LINE190_CODES, ...LINE200_CODES,
   ...LINE220_DEBIT_CODES, ...LINE220_CREDIT_CODES, ...LINE230_CODES, ...LINE240_CODES, ...LINE250_CODES,
   ...LINE260_CODES, ...LINE270_CODES, ...LINE280_CODES, ...LINE290_CODES, ...LINE300_CODES, ...LINE310_CODES,
+];
+
+// ─── Cash-group line codes (строки 320-380, счета 5xxx) ─────────────────────────
+// Single source of truth for the cash lines below AND balance-sheet-cash-completeness.test.ts,
+// which checks every ASSET/CONTRA_ASSET account whose code starts with "5" appears here.
+export const LINE330_CODES = ["5010", "5020"];
+export const LINE340_CODES = [ACCOUNTS.BANK_UZS]; // 5110
+export const LINE350_CODES = [ACCOUNTS.BANK_USD, "5220"]; // 5210, 5220
+export const LINE360_CODES = ["5510", "5520", "5530", "5610", ACCOUNTS.TRANSIT]; // ...,5710
+export const LINE370_CODES = ["5810", "5830", "5890"];
+export const LINE380_CODES = ["5910", "5920"];
+
+export const BALANCE_CASH_CODES = [
+  ...LINE330_CODES, ...LINE340_CODES, ...LINE350_CODES, ...LINE360_CODES,
+  ...LINE370_CODES, ...LINE380_CODES,
 ];
 
 // ─── Passive-side line codes (собственный капитал + обязательства, строки 410-760) ──
@@ -228,14 +244,14 @@ export async function GET(req: NextRequest) {
                           .plus(line260).plus(line270).plus(line280)
                           .plus(line290).plus(line300).plus(line310);
 
-    const line330 = balDebit("5010","5020");
-    const line340 = balDebit("5110");
-    const line350 = balDebit("5210","5220");
-    const line360 = balDebit("5510","5520","5530","5610","5710");
+    const line330 = balDebit(...LINE330_CODES);
+    const line340 = balDebit(...LINE340_CODES);
+    const line350 = balDebit(...LINE350_CODES);
+    const line360 = balDebit(...LINE360_CODES);
     const line320 = line330.plus(line340).plus(line350).plus(line360);
 
-    const line370 = balDebit("5810","5830","5890");
-    const line380 = balDebit("5910","5920");
+    const line370 = balDebit(...LINE370_CODES);
+    const line380 = balDebit(...LINE380_CODES);
 
     const line390 = line140.plus(line190).plus(line200).plus(line210)
                           .plus(line320).plus(line370).plus(line380);
@@ -295,7 +311,7 @@ export async function GET(req: NextRequest) {
     const line770 = line490.plus(line600);
     const line780 = line480.plus(line770);
 
-    const balanceOk = line400.minus(line780).abs().lte(1);
+    const balanceOk = line400.minus(line780).abs().lte(BALANCE_SHEET_TOLERANCE);
 
     const n = (d: Decimal) => d.toNumber();
 

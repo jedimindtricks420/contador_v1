@@ -48,6 +48,7 @@ const mockPrisma = {
     create: vi.fn(),
     deleteMany: vi.fn(),
   },
+  $queryRaw: vi.fn(),
   $transaction: vi.fn((cb) => cb(mockPrisma))
 };
 
@@ -110,7 +111,8 @@ describe("Accrual Method Pending Invoices Route", () => {
     });
     mockPrisma.organization.findUnique.mockResolvedValue({ id: "org-test", isVatPayer: true });
     mockPrisma.documentType.findUnique.mockResolvedValue({ id: "type-1", code: "INVOICE_CONFIRMED_PREPAID", postingTemplate: { lines: [] } });
-    
+    mockPrisma.$queryRaw.mockResolvedValue([{ status: "OPEN" }]);
+
     // Mock the postDocument flow internally
     mockPrisma.document.create.mockResolvedValue({ id: "doc-1", orgId: "org-test", periodId: "period-test", date: new Date(), payload: {} });
     mockPrisma.document.findUnique.mockResolvedValue({ id: "doc-1", orgId: "org-test", periodId: "period-test", type: { postingTemplate: { lines: [] } } });

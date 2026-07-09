@@ -1,6 +1,7 @@
 import prisma from "../prisma";
 import { StagedTransaction, Rule } from "@prisma/client";
 import { postDocument } from "../posting/postingEngine";
+import { isDirectionCompatible } from "../constants";
 
 // Simple in-memory cache for organization rules (valid for 30 seconds)
 interface CachedRules {
@@ -64,9 +65,14 @@ export async function applyRules(orgId: string, transactions: StagedTransaction[
     // INN -> KEYWORD -> AMOUNT_RANGE -> TREASURY_ACCOUNT
     let matchingRule: typeof rules[0] | undefined;
 
-    // Direction filter: skip rules that specify a direction not matching the transaction
+    // Direction filter: skip rules that specify a direction not matching the transaction,
+    // AND (defense in depth) skip any rule whose category is simply incompatible with
+    // the transaction's direction regardless of the rule's own `direction` field — this
+    // catches rules created before direction validation existed, where `direction` could
+    // be stored as null for a group of mixed-direction transactions confirmed together.
     const directionMatch = (r: typeof rules[0]) =>
-      !r.direction || r.direction === tx.direction;
+      (!r.direction || r.direction === tx.direction) &&
+      isDirectionCompatible(r.documentType.code, tx.direction);
 
     // 1. INN match
     if (tx.counterpartyInn) {

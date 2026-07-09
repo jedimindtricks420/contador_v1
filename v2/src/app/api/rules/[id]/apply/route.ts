@@ -3,6 +3,7 @@ import { getActiveOrgId } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { postDocument } from "@/lib/posting/postingEngine";
 import { clearRulesCache } from "@/lib/classification/rulesEngine";
+import { isDirectionCompatible } from "@/lib/constants";
 
 export async function POST(
   req: NextRequest,
@@ -19,6 +20,7 @@ export async function POST(
 
     const rule = await prisma.rule.findFirst({
       where: { id: ruleId, orgId },
+      include: { documentType: { select: { code: true } } },
     });
 
     if (!rule) {
@@ -37,8 +39,15 @@ export async function POST(
     let failed = 0;
 
     for (const tx of transactions) {
-      // Skip transactions whose direction doesn't match the rule's direction filter
+      // Skip transactions whose direction doesn't match the rule's direction filter,
+      // AND (defense in depth) skip if the rule's category is simply incompatible with
+      // the transaction's direction regardless of the rule's own `direction` field —
+      // catches rules created before direction validation existed (direction: null).
       if (rule.direction && rule.direction !== tx.direction) {
+        failed++;
+        continue;
+      }
+      if (!isDirectionCompatible(rule.documentType.code, tx.direction)) {
         failed++;
         continue;
       }

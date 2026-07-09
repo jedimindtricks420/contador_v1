@@ -22,6 +22,10 @@ export interface SoliqParsedData {
   revenues: SoliqEsf[];  // list02: sales invoices (выручка)
   esfItems: SoliqEsf[];  // all items combined (backwards compat)
   taxSummary: SoliqTaxSummary;
+  // The Soliq template structure was found (column-number row 1,2,3…) even if
+  // no invoice rows carried data — distinguishes an empty registry from an
+  // unrecognized file format.
+  templateRecognized: boolean;
 }
 
 function parseExcelDate(val: any): Date | null {
@@ -54,7 +58,8 @@ function parseExcelAmount(val: any): number {
 
 // Find the row that contains sequential column-number labels [1, 2, 3, 4, ...].
 // Data rows start after this row. Soliq templates always include this row.
-function findDataStartRow(rows: any[][]): number {
+// Returns -1 when the numbering row is absent (file is not a Soliq template).
+function findNumberingRow(rows: any[][]): number {
   for (let i = 0; i < Math.min(rows.length, 25); i++) {
     const row = rows[i];
     if (!row || !Array.isArray(row)) continue;
@@ -62,11 +67,18 @@ function findDataStartRow(rows: any[][]): number {
     if (nums.length >= 4) {
       const sorted = [...nums].sort((a, b) => a - b);
       if (sorted[0] === 1 && sorted.every((n, j) => n === j + 1)) {
-        return i + 1;
+        return i;
       }
     }
   }
-  return 14; // fallback: Soliq header is always 14 rows
+  return -1;
+}
+
+const FALLBACK_DATA_START = 14; // Soliq header is always 14 rows
+
+interface SheetParseResult {
+  items: SoliqEsf[];
+  recognized: boolean; // numbering row found — the sheet is a Soliq template
 }
 
 // Soliq .xltx files declare a truncated dimension (e.g. "A1:K14") that makes
@@ -84,10 +96,11 @@ function expandRef(sheet: XLSX.WorkSheet): void {
 // Range starts at column B. Array offsets:
 //   [0]=№  [1]=supplier_name  [2]=supplier_inn  [3]=invoice_no  [4]=date
 //   [5]=amount_ex_vat  [6]=vat_amount
-function parseExpenseSheet(sheet: XLSX.WorkSheet): SoliqEsf[] {
+function parseExpenseSheet(sheet: XLSX.WorkSheet): SheetParseResult {
   expandRef(sheet);
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
-  const dataStart = findDataStartRow(rows);
+  const numberingRow = findNumberingRow(rows);
+  const dataStart = numberingRow !== -1 ? numberingRow + 1 : FALLBACK_DATA_START;
   const items: SoliqEsf[] = [];
 
   for (let i = dataStart; i < rows.length; i++) {
@@ -114,17 +127,18 @@ function parseExpenseSheet(sheet: XLSX.WorkSheet): SoliqEsf[] {
       direction: "EXPENSE",
     });
   }
-  return items;
+  return { items, recognized: numberingRow !== -1 };
 }
 
 // list02 — Приложение 4, Таблица 2: sales invoices (выручка)
 // Range starts at column A (col A is always empty). Array offsets:
 //   [0]=empty  [1]=№  [2]=buyer_name  [3]=buyer_inn  [4]=invoice_no  [5]=date
 //   [6]=amount_ex_vat  [7]=vat_amount  [8]=amount_with_vat
-function parseRevenueSheet(sheet: XLSX.WorkSheet): SoliqEsf[] {
+function parseRevenueSheet(sheet: XLSX.WorkSheet): SheetParseResult {
   expandRef(sheet);
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
-  const dataStart = findDataStartRow(rows);
+  const numberingRow = findNumberingRow(rows);
+  const dataStart = numberingRow !== -1 ? numberingRow + 1 : FALLBACK_DATA_START;
   const items: SoliqEsf[] = [];
 
   for (let i = dataStart; i < rows.length; i++) {
@@ -153,7 +167,7 @@ function parseRevenueSheet(sheet: XLSX.WorkSheet): SoliqEsf[] {
       direction: "REVENUE",
     });
   }
-  return items;
+  return { items, recognized: numberingRow !== -1 };
 }
 
 // Find sheet by canonical name (case-insensitive); fall back to positional index.
@@ -170,8 +184,10 @@ export function parseSoliqExcel(buffer: Buffer): SoliqParsedData {
   const sheet1 = findSheet(workbook, "list01", 0);
   const sheet2 = findSheet(workbook, "list02", 1);
 
-  const expenses = sheet1 ? parseExpenseSheet(sheet1) : [];
-  const revenues = sheet2 ? parseRevenueSheet(sheet2) : [];
+  const expenseResult = sheet1 ? parseExpenseSheet(sheet1) : { items: [], recognized: false };
+  const revenueResult = sheet2 ? parseRevenueSheet(sheet2) : { items: [], recognized: false };
+  const expenses = expenseResult.items;
+  const revenues = revenueResult.items;
   const esfItems = [...expenses, ...revenues];
 
   const inputVat = expenses.reduce((sum, e) => sum + e.vatAmount, 0);
@@ -181,6 +197,7 @@ export function parseSoliqExcel(buffer: Buffer): SoliqParsedData {
     expenses,
     revenues,
     esfItems,
+    templateRecognized: expenseResult.recognized || revenueResult.recognized,
     taxSummary: {
       vat: outputVat - inputVat,
       outputVat,

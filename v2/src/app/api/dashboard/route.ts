@@ -36,8 +36,12 @@ export async function GET(req: NextRequest) {
           prisma.stagedTransaction.count({
             where: { orgId, periodId: period.id, status: "NEEDS_CLARIFICATION" },
           }),
+          // "POSTED" is a StagedTransactionStatus enum value but no code path ever
+          // assigns it (rule/AI auto-matches set AUTO_MATCHED, manual confirmation
+          // sets CONFIRMED) — using it here undercounted every org with any rule-
+          // or AI-classified transaction. AUTO_MATCHED is the correct third status.
           prisma.stagedTransaction.count({
-            where: { orgId, periodId: period.id, status: { in: ["CONFIRMED", "POSTED"] } },
+            where: { orgId, periodId: period.id, status: { in: ["CONFIRMED", "AUTO_MATCHED"] } },
           }),
         ])
       : [0, 0, 0];

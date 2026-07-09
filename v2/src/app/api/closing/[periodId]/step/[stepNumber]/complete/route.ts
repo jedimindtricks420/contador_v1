@@ -4,6 +4,13 @@ import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import { ACCOUNTS, IMPORT, SALARY_EXPENSE_ACCOUNT_CODES } from "@/lib/constants";
 
+class SoliqAlreadyImportedError extends Error {
+  constructor() {
+    super("Сверка Soliq уже была выполнена для этого периода. Отмените предыдущую загрузку, если хотите загрузить новый файл.");
+    this.name = "SoliqAlreadyImportedError";
+  }
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ periodId: string; stepNumber: string }> }
@@ -59,16 +66,7 @@ export async function POST(
       // Execute the Soliq reconciliation if payload is provided
       if (body.parsedPayload) {
         const { postDocument } = await import("@/lib/posting/postingEngine");
-        
-        // Prevent double execution
-        const existingSoliqDoc = await prisma.document.findFirst({
-          where: { periodId, type: { code: "SOLIQ_IMPORT" } }
-        });
-        
-        if (existingSoliqDoc) {
-          return NextResponse.json({ error: "Сверка Soliq уже была выполнена для этого периода. Отмените предыдущую загрузку, если хотите загрузить новый файл." }, { status: 400 });
-        }
-        
+
         let soliqDocType = await prisma.documentType.findUnique({
           where: { code: "SOLIQ_IMPORT" }
         });
@@ -87,9 +85,28 @@ export async function POST(
         const getType = (code: string) => docTypes.find(t => t.code === code);
         
         const parsed = body.parsedPayload;
-        
+
         // Wrap everything in a massive transaction
         await prisma.$transaction(async (tx) => {
+          // Advisory lock scoped to this period, held for the duration of the
+          // transaction (auto-released on commit/rollback) — serialises concurrent
+          // "complete step 6" submissions (double-click, retry, two tabs) for the
+          // SAME period so the existence check right below can't race: the second
+          // transaction blocks here until the first commits (or rolls back), then
+          // sees the just-created SOLIQ_IMPORT document and safely aborts instead
+          // of re-posting every ESF item a second time.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('SOLIQ_IMPORT'), hashtext(${periodId}))`;
+
+          // Prevent double execution — re-checked INSIDE the lock (the read before
+          // the transaction started was a TOCTOU race: two concurrent requests could
+          // both see "no existing doc" before either committed).
+          const existingSoliqDoc = await tx.document.findFirst({
+            where: { periodId, type: { code: "SOLIQ_IMPORT" } }
+          });
+          if (existingSoliqDoc) {
+            throw new SoliqAlreadyImportedError();
+          }
+
           // 1. Create the main SOLIQ_IMPORT document
           await tx.document.create({
             data: {
@@ -222,6 +239,9 @@ export async function POST(
     const updated = await getClosingState(periodId, orgId);
     return NextResponse.json({ nextStep, summary: updated });
   } catch (err: any) {
+    if (err instanceof SoliqAlreadyImportedError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("COMPLETE STEP ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
   }

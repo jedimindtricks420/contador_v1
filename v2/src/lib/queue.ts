@@ -12,33 +12,25 @@ export async function startClassificationJob(orgId: string, periodId: string): P
   // "ALL" is not a real period ID — make it org-scoped to prevent cross-tenant collision
   const jobId = periodId === "ALL" ? `${orgId}_ALL` : periodId;
 
-  // Prevent double-run: if a job is already running return its ID so UI polls it
-  const existingJob = await prisma.classificationJob.findUnique({ where: { id: jobId } });
-  if (existingJob?.status === "running") {
+  // Prevent double-run: the previous check-then-upsert (findUnique, then decide,
+  // then upsert) was a TOCTOU race — two near-simultaneous calls could both see
+  // "not running" before either wrote, and both start a duplicate background job
+  // over the same transactions. This single atomic INSERT ... ON CONFLICT ... WHERE
+  // either creates the row or claims it (resets to running) ONLY if it wasn't
+  // already running; if another call already claimed it, this affects zero rows
+  // and we just return the existing jobId for the UI to poll.
+  const claimed = await prisma.$queryRaw<{ id: string }[]>`
+    INSERT INTO "ClassificationJob" (id, "orgId", status, total, processed, matched, "needsClarification")
+    VALUES (${jobId}, ${orgId}, 'running', 0, 0, 0, 0)
+    ON CONFLICT (id) DO UPDATE SET
+      status = 'running', total = 0, processed = 0, matched = 0, "needsClarification" = 0, error = NULL
+    WHERE "ClassificationJob".status != 'running'
+    RETURNING id
+  `;
+  if (claimed.length === 0) {
+    // Already running (claimed by a concurrent call, or a genuinely still-running job)
     return jobId;
   }
-
-  // Upsert job entry
-  await prisma.classificationJob.upsert({
-    where: { id: jobId },
-    update: {
-      status: "running",
-      total: 0,
-      processed: 0,
-      matched: 0,
-      needsClarification: 0,
-      error: null
-    },
-    create: {
-      id: jobId,
-      orgId,
-      status: "running",
-      total: 0,
-      processed: 0,
-      matched: 0,
-      needsClarification: 0
-    }
-  });
 
   // Start background process asynchronously without blocking
   (async () => {
