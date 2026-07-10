@@ -162,6 +162,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
   const [dismissedGroups, setDismissedGroups] = useState<string[]>([]);
   const [showSkipAllConfirm, setShowSkipAllConfirm] = useState(false);
   const [aiRunning, setAiRunning] = useState(false);
+  const [aiError, setAiError] = useState(false);
   const [aiProgress, setAiProgress] = useState<{ processed: number; total: number } | null>(null);
   const autoAiTriggered = useRef(false);
 
@@ -218,6 +219,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
 
   const handleRunAI = async () => {
     setAiRunning(true);
+    setAiError(false);
     setAiProgress(null);
     try {
       const res = await fetch("/v2/api/classification/run-ai", {
@@ -225,7 +227,11 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ periodId })
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setAiRunning(false);
+        setAiError(true);
+        return;
+      }
 
       const pollId = setInterval(async () => {
         try {
@@ -239,6 +245,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
               clearInterval(pollId);
               setAiRunning(false);
               setAiProgress(null);
+              if (st.status === "failed") setAiError(true);
               // Reload queue — IMPORTED → NEEDS_CLARIFICATION after AI
               setLoading(true);
               loadQueue();
@@ -248,6 +255,7 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
       }, 2000);
     } catch {
       setAiRunning(false);
+      setAiError(true);
     }
   };
 
@@ -423,6 +431,16 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
           </button>
         </div>
       </div>
+
+      {/* AI failure banner — shown when the run couldn't start or the job failed */}
+      {aiError && !aiRunning && (
+        <div className="flex items-start gap-2 rounded p-3 text-xs bg-rose-50 border border-rose-200 text-rose-800">
+          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-rose-500" />
+          <span>
+            Не удалось выполнить ИИ-классификацию. Попробуйте ещё раз кнопкой <strong>Распознать ИИ</strong> или назначьте категории вручную.
+          </span>
+        </div>
+      )}
 
       {/* Banner for unprocessed IMPORTED transactions */}
       {groups.some(g => g.hasImported) && (

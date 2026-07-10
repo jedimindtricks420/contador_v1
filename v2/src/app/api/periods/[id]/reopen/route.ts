@@ -12,8 +12,11 @@ const CLOSING_DOC_CODES = [
   "RENT_ACCRUAL",
   "FX_DIFFERENCE",
   "PROFIT_TAX_ACCRUAL",
+  "PROFIT_TAX_REVERSAL",
   "TURNOVER_TAX_ACCRUAL",
 ];
+
+const PROFIT_TAX_DOC_CODES = ["PROFIT_TAX_ACCRUAL", "PROFIT_TAX_REVERSAL"];
 
 export async function POST(
   req: NextRequest,
@@ -76,6 +79,42 @@ export async function POST(
       await tx.taxCalendarEvent.deleteMany({
         where: { orgId, periodId: id, status: "PENDING" },
       });
+
+      // 3a. Налог на прибыль считается нарастающим итогом по кварталам (ст. 339 НК):
+      // переоткрытие месяца меняет базу своего квартала и всех последующих. Удаляем
+      // начисления/сторно этого и последующих кварталов года — при повторном закрытии
+      // квартальных месяцев дельта пересчитается заново (accruedSoFar это учитывает).
+      const reopenedQuarter = Math.ceil(period.month / 3);
+      const affectedPtaxDocs = await tx.document.findMany({
+        where: {
+          orgId,
+          type: { code: { in: PROFIT_TAX_DOC_CODES } },
+          date: {
+            gte: new Date(period.year, 0, 1),
+            lt: new Date(period.year + 1, 0, 1),
+          },
+        },
+        select: { id: true, periodId: true, payload: true, date: true },
+      });
+      const staleDocs = affectedPtaxDocs.filter((d) => {
+        // Документы без quarter в payload — начисления старой (помесячной) логики;
+        // их квартал выводим из даты документа.
+        const q = (d.payload as any)?.quarter ?? Math.ceil((d.date.getMonth() + 1) / 3);
+        return q >= reopenedQuarter;
+      });
+      if (staleDocs.length > 0) {
+        const staleIds = staleDocs.map((d) => d.id);
+        const stalePeriodIds = [...new Set(staleDocs.map((d) => d.periodId))];
+        await tx.document.deleteMany({ where: { id: { in: staleIds } } });
+        await tx.taxCalendarEvent.deleteMany({
+          where: {
+            orgId,
+            periodId: { in: stalePeriodIds },
+            type: "PROFIT_TAX",
+            status: "PENDING",
+          },
+        });
+      }
 
       // 4. Разблокировать период
       await tx.period.update({

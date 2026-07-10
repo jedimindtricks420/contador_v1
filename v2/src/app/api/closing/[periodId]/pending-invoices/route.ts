@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { postDocument } from "@/lib/posting/postingEngine";
 import { upsertTaxCalendarEventsForPeriod } from "@/lib/closing";
 import { TAX_RATES, ACCOUNTS } from "@/lib/constants";
+import { receiptKindFromPaymentType, receiptDocTypeCode } from "@/lib/receiptKind";
 
 class OpenItemAlreadyClosedError extends Error {
   constructor() {
@@ -32,10 +33,24 @@ export async function GET(
         status: { in: ["OPEN", "RISK"] },
         account: { code: { in: [ACCOUNTS.ADVANCE_RECEIVED, ACCOUNTS.ADVANCE_PAID_GOODS] } }
       },
-      include: { counterparty: true, account: true }
+      include: {
+        counterparty: true,
+        account: true,
+        openingDocument: { include: { type: { select: { code: true } } } }
+      }
     });
 
-    return NextResponse.json(openItems);
+    // suggestedReceiptKind: подсказка «товары/услуги» для выданных авансов (4310) —
+    // по категории исходного платежа; пользователь может переопределить в UI.
+    const items = openItems.map(item => ({
+      ...item,
+      suggestedReceiptKind:
+        item.account.code === ACCOUNTS.ADVANCE_PAID_GOODS
+          ? receiptKindFromPaymentType((item.openingDocument as any)?.type?.code)
+          : null
+    }));
+
+    return NextResponse.json(items);
   } catch (err: any) {
     console.error("GET PENDING INVOICES ERROR:", err);
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
@@ -57,7 +72,7 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { openItemId } = body;
+    const { openItemId, receiptKind } = body;
 
     if (!openItemId) {
       return NextResponse.json({ error: "openItemId обязателен" }, { status: 400 });
@@ -65,7 +80,11 @@ export async function POST(
 
     const openItem = await prisma.openItem.findFirst({
       where: { id: openItemId, orgId },
-      include: { counterparty: true, account: true }
+      include: {
+        counterparty: true,
+        account: true,
+        openingDocument: { include: { type: { select: { code: true } } } }
+      }
     });
 
     if (!openItem) {
@@ -88,7 +107,13 @@ export async function POST(
 
     let docTypeCode = "INVOICE_CONFIRMED_PREPAID";
     if (openItem.account.code === ACCOUNTS.ADVANCE_PAID_GOODS) {
-      docTypeCode = "GOODS_RECEIVED_PREPAID";
+      // Товары или услуги: явный выбор пользователя из UI, иначе — по категории
+      // исходного платежа (SUPPLIER_PAYMENT_SERVICES → услуга, Дт 9420 вместо Дт 2910).
+      const kind =
+        receiptKind === "goods" || receiptKind === "services"
+          ? receiptKind
+          : receiptKindFromPaymentType((openItem.openingDocument as any)?.type?.code);
+      docTypeCode = receiptDocTypeCode(kind, true);
     }
 
     const docType = await prisma.documentType.findUnique({

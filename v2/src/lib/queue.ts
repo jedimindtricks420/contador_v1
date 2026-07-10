@@ -19,11 +19,13 @@ export async function startClassificationJob(orgId: string, periodId: string): P
   // either creates the row or claims it (resets to running) ONLY if it wasn't
   // already running; if another call already claimed it, this affects zero rows
   // and we just return the existing jobId for the UI to poll.
+  // "updatedAt" must be set explicitly: @updatedAt is filled in by Prisma Client,
+  // not by a database default, and $queryRaw bypasses the client (NOT NULL otherwise).
   const claimed = await prisma.$queryRaw<{ id: string }[]>`
-    INSERT INTO "ClassificationJob" (id, "orgId", status, total, processed, matched, "needsClarification")
-    VALUES (${jobId}, ${orgId}, 'running', 0, 0, 0, 0)
+    INSERT INTO "ClassificationJob" (id, "orgId", status, total, processed, matched, "needsClarification", "updatedAt")
+    VALUES (${jobId}, ${orgId}, 'running', 0, 0, 0, 0, NOW())
     ON CONFLICT (id) DO UPDATE SET
-      status = 'running', total = 0, processed = 0, matched = 0, "needsClarification" = 0, error = NULL
+      status = 'running', total = 0, processed = 0, matched = 0, "needsClarification" = 0, error = NULL, "updatedAt" = NOW()
     WHERE "ClassificationJob".status != 'running'
     RETURNING id
   `;

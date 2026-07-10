@@ -425,6 +425,22 @@ export const baseDocumentTypes = [
     }
   },
   {
+    // Обратная проводка к PROFIT_TAX_ACCRUAL: налог считается нарастающим итогом
+    // с начала года (ст. 339 НК), и если накопленная база упала после убыточного
+    // квартала, ранее начисленный излишек снимается этим документом.
+    code: "PROFIT_TAX_REVERSAL",
+    name: "Сторно налога на прибыль (уменьшение нарастающим итогом)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6410", side: "debit", expression: "taxAmount" },
+        { accountCode: "9810", side: "credit", expression: "taxAmount" }
+      ],
+      opensItem: false,
+      requiresCounterparty: false
+    }
+  },
+  {
     code: "PERIOD_CLOSING",
     name: "Закрытие счетов доходов и расходов (реформация баланса)",
     mode: "MANUAL_ONLY",

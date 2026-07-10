@@ -93,8 +93,15 @@ describe("Accrual Method Pending Invoices Route", () => {
         status: { in: ["OPEN", "RISK"] },
         account: { code: { in: ["6310", "4310"] } }
       },
-      include: { counterparty: true, account: true }
+      include: {
+        counterparty: true,
+        account: true,
+        // тип исходного платежа нужен для подсказки suggestedReceiptKind (товары/услуги)
+        openingDocument: { include: { type: { select: { code: true } } } }
+      }
     });
+    // для полученных авансов (6310) подсказка не выдаётся
+    expect(body[0].suggestedReceiptKind).toBeNull();
   });
 
   it("POST manually confirms pending invoice and creates prepaid document", async () => {

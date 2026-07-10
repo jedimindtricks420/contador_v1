@@ -164,8 +164,10 @@ export async function GET(req: NextRequest) {
     const line230 = tc(LINE230_CREDIT_CODES[0]).minus(td(LINE230_DEBIT_CODES[0]));
     const line240 = line220.plus(line230);
 
-    // стр. 250 — из проводок 9810; если 0 — из taxCalendarEvent только по периодам в диапазоне
-    const line250 = td(LINE250_CODES[0]);
+    // стр. 250 — из проводок 9810 нетто (Дт начислений минус Кт сторно PROFIT_TAX_REVERSAL;
+    // кредиты реформации сюда не попадают — PERIOD_CLOSING исключён из выборки);
+    // если 0 — из taxCalendarEvent только по периодам в диапазоне
+    const line250 = td(LINE250_CODES[0]).minus(tc(LINE250_CODES[0]));
     let taxAmountFromCalendar = new Decimal(0);
     if (line250.isZero()) {
       // Берём только события, привязанные к периодам внутри диапазона дат,
@@ -263,7 +265,9 @@ export async function GET(req: NextRequest) {
                      .reduce((s,c) => s.plus(mtd(m,c)), new Decimal(0));
       const pbt  = r.minus(cogs).minus(exp).plus(oi).plus(fin).minus(finExp)
                     .plus(mtc(m,LINE230_CREDIT_CODES[0])).minus(mtd(m,LINE230_DEBIT_CODES[0]));
-      const tax  = mtd(m,LINE250_CODES[0]).gt(0) ? mtd(m,LINE250_CODES[0]) : new Decimal(0);
+      // Нетто 9810: Дт начислений минус Кт сторно (PROFIT_TAX_REVERSAL) — в месяц
+      // сторно налоговая нагрузка уменьшается, чистая прибыль растёт.
+      const tax  = mtd(m,LINE250_CODES[0]).minus(mtc(m,LINE250_CODES[0]));
       return pbt.minus(tax).minus(mtd(m,LINE260_CODES[0])).toNumber();
     });
 

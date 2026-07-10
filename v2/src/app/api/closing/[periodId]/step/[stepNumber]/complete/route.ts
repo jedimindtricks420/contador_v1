@@ -3,6 +3,41 @@ import { saveClosingState, getClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import { ACCOUNTS, IMPORT, SALARY_EXPENSE_ACCOUNT_CODES } from "@/lib/constants";
+import { receiptKindFromPaymentType, receiptDocTypeCode, ReceiptKind } from "@/lib/receiptKind";
+
+// Вид поступления по входящему ЭСФ (товары/услуги) определяется категорией
+// исходного платежа: MATCHED-позиции — через связанный OpenItem/StagedTransaction,
+// UNMATCHED — по последнему исходящему платежу этому же ИНН. Явный esf.receiptKind
+// из фронтенда имеет приоритет.
+async function resolveReceiptKind(tx: any, orgId: string, esf: any): Promise<ReceiptKind> {
+  if (esf.receiptKind === "goods" || esf.receiptKind === "services") return esf.receiptKind;
+
+  let paymentTypeCode: string | null = null;
+  if (esf.matchStatus === "MATCHED" && esf.matchedOpenItemId) {
+    if (esf.expenseMatch) {
+      const stx = await tx.stagedTransaction.findFirst({
+        where: { id: esf.matchedOpenItemId, orgId },
+        include: { document: { include: { type: { select: { code: true } } } } }
+      });
+      paymentTypeCode = stx?.document?.type?.code ?? null;
+    } else {
+      const openItem = await tx.openItem.findFirst({
+        where: { id: esf.matchedOpenItemId, orgId },
+        include: { openingDocument: { include: { type: { select: { code: true } } } } }
+      });
+      paymentTypeCode = (openItem?.openingDocument as any)?.type?.code ?? null;
+    }
+  }
+  if (!paymentTypeCode && esf.inn) {
+    const stx = await tx.stagedTransaction.findFirst({
+      where: { orgId, direction: "DEBIT", counterpartyInn: esf.inn, documentId: { not: null } },
+      orderBy: { date: "desc" },
+      include: { document: { include: { type: { select: { code: true } } } } }
+    });
+    paymentTypeCode = stx?.document?.type?.code ?? null;
+  }
+  return receiptKindFromPaymentType(paymentTypeCode);
+}
 
 class SoliqAlreadyImportedError extends Error {
   constructor() {
@@ -152,7 +187,9 @@ export async function POST(
                   docTypeCode = "INVOICE_CONFIRMED_PREPAID";
                 }
               } else {
-                docTypeCode = "GOODS_RECEIVED_PREPAID";
+                // EXPENSE: товары или услуги — по категории исходного платежа
+                const kind = await resolveReceiptKind(tx, orgId, esf);
+                docTypeCode = receiptDocTypeCode(kind, true);
               }
               
               const type = getType(docTypeCode);
@@ -194,7 +231,8 @@ export async function POST(
               // Postpaid case
               let docTypeCode = "INVOICE_CONFIRMED";
               if (esf.direction === "EXPENSE") {
-                docTypeCode = "GOODS_RECEIVED";
+                const kind = await resolveReceiptKind(tx, orgId, esf);
+                docTypeCode = receiptDocTypeCode(kind, false);
               }
               
               const type = getType(docTypeCode);

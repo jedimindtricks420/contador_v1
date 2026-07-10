@@ -15,6 +15,9 @@ interface OpenItem {
     name: string;
     inn?: string;
   };
+  // Подсказка для выданных авансов (4310): «товары» или «услуги» — из категории
+  // исходного платежа; null для полученных авансов (6310).
+  suggestedReceiptKind?: "goods" | "services" | null;
 }
 
 interface Step7EInvoicesProps {
@@ -29,6 +32,8 @@ export default function Step7EInvoices({ periodId, onNext, onPrev }: Step7EInvoi
   const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  // Выбор «товары/услуги» по каждому выданному авансу (id → kind)
+  const [receiptKinds, setReceiptKinds] = useState<Record<string, "goods" | "services">>({});
 
   const loadPendingItems = async () => {
     setLoading(true);
@@ -38,6 +43,12 @@ export default function Step7EInvoices({ periodId, onNext, onPrev }: Step7EInvoi
       if (res.ok) {
         const data = await res.json();
         setItems(data);
+        // дефолт выбора «товары/услуги» — из подсказки бэкенда (категория платежа)
+        const kinds: Record<string, "goods" | "services"> = {};
+        for (const it of data as OpenItem[]) {
+          if (it.suggestedReceiptKind) kinds[it.id] = it.suggestedReceiptKind;
+        }
+        setReceiptKinds(kinds);
       } else {
         setError("Не удалось загрузить список нераспределенных авансов");
       }
@@ -60,7 +71,7 @@ export default function Step7EInvoices({ periodId, onNext, onPrev }: Step7EInvoi
       const res = await fetch(`/v2/api/closing/${periodId}/pending-invoices`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ openItemId })
+        body: JSON.stringify({ openItemId, receiptKind: receiptKinds[openItemId] })
       });
 
       if (res.ok) {
@@ -133,6 +144,7 @@ export default function Step7EInvoices({ periodId, onNext, onPrev }: Step7EInvoi
                     <th className="p-3">Счет</th>
                     <th className="p-3">Сумма аванса</th>
                     <th className="p-3">Дата</th>
+                    <th className="p-3">Что получено</th>
                     <th className="p-3 text-right">Действие</th>
                   </tr>
                 </thead>
@@ -156,6 +168,23 @@ export default function Step7EInvoices({ periodId, onNext, onPrev }: Step7EInvoi
                       </td>
                       <td className="p-3 text-gray-400 text-[11px]">
                         {new Date(item.dateOpened).toLocaleDateString("ru-RU")}
+                      </td>
+                      <td className="p-3">
+                        {item.suggestedReceiptKind ? (
+                          <select
+                            value={receiptKinds[item.id] ?? item.suggestedReceiptKind}
+                            onChange={(e) =>
+                              setReceiptKinds((prev) => ({ ...prev, [item.id]: e.target.value as "goods" | "services" }))
+                            }
+                            disabled={processingId !== null}
+                            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 text-gray-700 bg-white cursor-pointer hover:border-gray-400 focus:outline-none focus:border-black disabled:opacity-40"
+                          >
+                            <option value="services">Услуги (расход, 9420)</option>
+                            <option value="goods">Товары (склад, 2910)</option>
+                          </select>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 italic">выручка (ЭСФ)</span>
+                        )}
                       </td>
                       <td className="p-3 text-right">
                         <button

@@ -68,6 +68,49 @@ export async function saveClosingState(periodId: string, patch: any, orgId?: str
   });
 }
 
+// Кумулятивная бухгалтерская прибыль нарастающим итогом (ст. 296 ч.4, ст. 339 ч.2 НК).
+// Формула та же, что месячный netProfit в блоке E finalizePeriod, но по диапазону дат,
+// а не по periodId. Документы PERIOD_CLOSING исключаются: реформация — техническое
+// закрытие транзитных счетов, её дебеты по 93xx исказили бы otherIncome.
+export async function computeCumulativeNetProfit(
+  orgId: string, from: Date, to: Date, tx: any
+): Promise<Decimal> {
+  const docFilter = {
+    orgId,
+    status: "POSTED",
+    date: { gte: from, lte: to },
+    type: { code: { notIn: ["PERIOD_CLOSING"] } }
+  };
+
+  const sumBy = (entries: any[], field: "debit" | "credit") =>
+    entries.reduce((s: Decimal, e: any) => s.plus(new Decimal(e[field].toString())), new Decimal(0));
+
+  const revenueEntries = await tx.journalEntry.findMany({
+    where: { document: docFilter, account: { code: { in: REVENUE_ACCOUNT_CODES } } }
+  });
+  const otherIncomeEntries = await tx.journalEntry.findMany({
+    where: { document: docFilter, account: { code: { startsWith: "93" } } }
+  });
+  const fxIncomeEntries = await tx.journalEntry.findMany({
+    where: { document: docFilter, account: { code: ACCOUNTS.FX_INCOME } }
+  });
+  const fxExpenseEntries = await tx.journalEntry.findMany({
+    where: { document: docFilter, account: { code: ACCOUNTS.FX_EXPENSE } }
+  });
+  const expenseEntries = await tx.journalEntry.findMany({
+    where: {
+      document: docFilter,
+      account: { code: { in: [...COGS_ACCOUNT_CODES, ...EXPENSE_ACCOUNT_CODES, ACCOUNTS.INTEREST_EXPENSE] } }
+    }
+  });
+
+  return sumBy(revenueEntries, "credit")
+    .plus(sumBy(otherIncomeEntries, "credit").minus(sumBy(otherIncomeEntries, "debit")))
+    .plus(sumBy(fxIncomeEntries, "credit"))
+    .minus(sumBy(expenseEntries, "debit"))
+    .minus(sumBy(fxExpenseEntries, "debit"));
+}
+
 export async function finalizePeriod(
   periodId: string,
   orgId: string,
@@ -313,22 +356,75 @@ export async function finalizePeriod(
     }
 
     if (org.taxRegime === "VAT") {
-      // E2. Начислить налог на прибыль проводкой Дт 9810 — Кт 6410
+      // E2. Налог на прибыль — нарастающим итогом с начала года (ст. 296 ч.4,
+      // ст. 339 ч.2 НК), начисление только по итогам отчётного периода — квартала
+      // (ст. 338). delta = кумулятивный налог года − уже начисленное за год:
+      // положительная — PROFIT_TAX_ACCRUAL (Дт 9810/Кт 6410), отрицательная
+      // (накопленная база упала после убыточного квартала) — PROFIT_TAX_REVERSAL
+      // (Дт 6410/Кт 9810). Убыточные месяцы поглощаются нарастающим итогом сами;
+      // перенос убытков прошлых лет — только в годовом расчёте (ст. 333 ч.6, Фаза 2).
+      // Проводки управляются org.autoAccrueProfitTax; календарное событие
+      // создаётся всегда, в т.ч. с суммой 0 — фиксирует факт расчёта.
+      const isQuarterEnd = period.month % 3 === 0;
       const existingPtax = await tx.document.findFirst({
-        where: { orgId, periodId, type: { code: "PROFIT_TAX_ACCRUAL" }, status: "POSTED" }
+        where: {
+          orgId, periodId, status: "POSTED",
+          type: { code: { in: ["PROFIT_TAX_ACCRUAL", "PROFIT_TAX_REVERSAL"] } }
+        }
       });
-      if (!existingPtax && netProfit.gt(0)) {
-        const profitTaxAmt = netProfit.mul(TAX_RATES.PROFIT_TAX);
-        taxes.push({ type: "PROFIT_TAX", amount: profitTaxAmt, dueDate: nextMonth20th });
+      if (isQuarterEnd && !existingPtax) {
+        const yearStart = new Date(period.year, 0, 1);
+        const quarterEnd = new Date(period.year, period.month, 0, 23, 59, 59, 999);
 
-        const ptaxType = await tx.documentType.findUniqueOrThrow({ where: { code: "PROFIT_TAX_ACCRUAL" } });
-        const ptaxDoc = await tx.document.create({
-          data: {
-            orgId, periodId, typeId: ptaxType.id, date: accrualDate, status: "POSTED",
-            payload: { taxAmount: profitTaxAmt.toNumber() } as any
-          }
+        const cumulativeProfit = await computeCumulativeNetProfit(orgId, yearStart, quarterEnd, tx);
+        const cumulativeBase = Decimal.max(cumulativeProfit, 0);
+        const rate = new Decimal((org as any).profitTaxRate ?? TAX_RATES.PROFIT_TAX);
+        const cumulativeTaxDue = cumulativeBase.mul(rate);
+
+        const accruedDocs = await tx.document.findMany({
+          where: {
+            orgId, status: "POSTED",
+            date: { gte: yearStart, lte: quarterEnd },
+            type: { code: { in: ["PROFIT_TAX_ACCRUAL", "PROFIT_TAX_REVERSAL"] } }
+          },
+          include: { type: { select: { code: true } } }
         });
-        await postDocument(ptaxDoc.id, tx, userId);
+        let accruedSoFar = new Decimal(0);
+        for (const d of accruedDocs) {
+          const amt = new Decimal((d.payload as any)?.taxAmount ?? 0);
+          accruedSoFar = d.type.code === "PROFIT_TAX_ACCRUAL"
+            ? accruedSoFar.plus(amt)
+            : accruedSoFar.minus(amt);
+        }
+
+        const delta = cumulativeTaxDue.minus(accruedSoFar);
+
+        // Срок отчётности/уплаты: за квартал — 20-е число следующего месяца
+        // (ст. 339 ч.5 п.1, ст. 340 ч.1); за год (Q4) — 1 марта (ст. 339 ч.5 п.2).
+        // К доплате не бывает отрицательной суммы (ст. 340 ч.7).
+        const profitTaxDueDate = period.month === 12
+          ? new Date(period.year + 1, 2, 1)
+          : new Date(period.year, period.month, CLOSING.TAX_DUE_DAY);
+        taxes.push({ type: "PROFIT_TAX", amount: Decimal.max(delta, 0), dueDate: profitTaxDueDate });
+
+        if (org.autoAccrueProfitTax && !delta.isZero()) {
+          const typeCode = delta.gt(0) ? "PROFIT_TAX_ACCRUAL" : "PROFIT_TAX_REVERSAL";
+          const ptaxType = await tx.documentType.findUniqueOrThrow({ where: { code: typeCode } });
+          const ptaxDoc = await tx.document.create({
+            data: {
+              orgId, periodId, typeId: ptaxType.id, date: accrualDate, status: "POSTED",
+              payload: {
+                taxAmount: delta.abs().toNumber(),
+                year: period.year,
+                quarter: period.month / 3,
+                cumulativeBase: cumulativeBase.toNumber(),
+                cumulativeTaxDue: cumulativeTaxDue.toNumber(),
+                accruedBefore: accruedSoFar.toNumber()
+              } as any
+            }
+          });
+          await postDocument(ptaxDoc.id, tx, userId);
+        }
       }
     } else {
       // E3. Налог с оборота: проводка Дт 9810 — Кт 6410
@@ -590,7 +686,7 @@ export async function upsertTaxCalendarEventsForPeriod(periodId: string, orgId: 
         document: {
           periodId,
           orgId,
-          type: { code: { notIn: ["SALARY_ACCRUAL", "PROFIT_TAX_ACCRUAL", "TURNOVER_TAX_ACCRUAL"] } }
+          type: { code: { notIn: ["SALARY_ACCRUAL", "PROFIT_TAX_ACCRUAL", "PROFIT_TAX_REVERSAL", "TURNOVER_TAX_ACCRUAL"] } }
         },
         account: { code: ACCOUNTS.TAX_PAYABLE },
         credit: { gt: 0 }

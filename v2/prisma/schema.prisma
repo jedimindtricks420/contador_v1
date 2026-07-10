@@ -25,6 +25,13 @@ model Organization {
   inn                       String?
   taxRegime                 TaxRegime             @default(TURNOVER_TAX)
   isVatPayer                Boolean               @default(false)
+  /// Автоначисление налога на прибыль при финализации периода (E2 в closing.ts).
+  /// false — проводка Дт9810/Кт6410 не создаётся (налог считают вручную),
+  /// событие PROFIT_TAX в налоговом календаре создаётся в любом случае.
+  autoAccrueProfitTax       Boolean               @default(true)
+  /// Ставка налога на прибыль (ст. 337 НК: базовая 15%, банки/мобильная связь 20%,
+  /// отдельные категории 0%). Настраивается per-org по образцу turnoverTaxRate.
+  profitTaxRate             Float                 @default(0.15)
   createdAt                 DateTime              @default(now())
   activityDescription       String?
   turnoverTaxRate           Float                 @default(0.04)
