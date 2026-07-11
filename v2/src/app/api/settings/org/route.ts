@@ -20,6 +20,11 @@ export async function GET(req: NextRequest) {
         aiConfidenceThreshold: true,
         maxClarificationQuestions: true,
         turnoverTaxRate: true,
+        taxBenefit: true,
+        itParkResidentSince: true,
+        itParkCertificateNumber: true,
+        avgHeadcount: true,
+        avgHeadcountDisabled: true,
       },
     });
 
@@ -51,6 +56,20 @@ export async function PATCH(req: NextRequest) {
       ? Math.max(TURNOVER_TAX_RATE_MIN, Math.min(TURNOVER_TAX_RATE_MAX, Number(body.turnoverTaxRate)))
       : undefined;
 
+    // Льгота IT Park (эпик, Фаза 1 — только поля настроек, ТЗ 7.1) и поля
+    // шапки «Расчёта налога на прибыль» (среднегодовая численность).
+    if (body.taxBenefit !== undefined && body.taxBenefit !== "NONE" && body.taxBenefit !== "IT_PARK_RESIDENT") {
+      return NextResponse.json({ error: "taxBenefit должен быть NONE или IT_PARK_RESIDENT" }, { status: 400 });
+    }
+    const itParkResidentSince = body.itParkResidentSince !== undefined
+      ? (body.itParkResidentSince ? new Date(body.itParkResidentSince) : null)
+      : undefined;
+    if (itParkResidentSince && isNaN(itParkResidentSince.getTime())) {
+      return NextResponse.json({ error: "Некорректная дата itParkResidentSince" }, { status: 400 });
+    }
+    const avgHeadcount = body.avgHeadcount !== undefined ? Math.max(0, Math.trunc(Number(body.avgHeadcount) || 0)) : undefined;
+    const avgHeadcountDisabled = body.avgHeadcountDisabled !== undefined ? Math.max(0, Math.trunc(Number(body.avgHeadcountDisabled) || 0)) : undefined;
+
     const updatedOrg = await prismaWithOrg(orgId).organization.update({
       where: { id: orgId },
       data: {
@@ -64,6 +83,11 @@ export async function PATCH(req: NextRequest) {
         aiConfidenceThreshold: body.aiConfidenceThreshold,
         maxClarificationQuestions: body.maxClarificationQuestions,
         ...(turnoverTaxRate !== undefined && { turnoverTaxRate }),
+        ...(body.taxBenefit !== undefined && { taxBenefit: body.taxBenefit }),
+        ...(itParkResidentSince !== undefined && { itParkResidentSince }),
+        ...(body.itParkCertificateNumber !== undefined && { itParkCertificateNumber: body.itParkCertificateNumber || null }),
+        ...(avgHeadcount !== undefined && { avgHeadcount }),
+        ...(avgHeadcountDisabled !== undefined && { avgHeadcountDisabled }),
       },
     });
 

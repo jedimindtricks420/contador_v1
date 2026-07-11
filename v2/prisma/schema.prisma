@@ -32,6 +32,17 @@ model Organization {
   /// Ставка налога на прибыль (ст. 337 НК: базовая 15%, банки/мобильная связь 20%,
   /// отдельные категории 0%). Настраивается per-org по образцу turnoverTaxRate.
   profitTaxRate             Float                 @default(0.15)
+  /// Налоговая льгота организации. IT_PARK_RESIDENT — только поле в этом апдейте,
+  /// полная логика применения льгот — отдельный эпик (ТЗ, раздел 7).
+  taxBenefit                TaxBenefitType        @default(NONE)
+  /// Дата регистрации резидентства IT Park; льготы применяются только с этой даты
+  /// вперёд, не задним числом на уже закрытые периоды.
+  itParkResidentSince       DateTime?
+  itParkCertificateNumber   String?
+  /// Среднегодовая численность работников / в т.ч. лица с инвалидностью —
+  /// поля шапки «Расчёта налога на прибыль» my.soliq.uz (ручной ввод на портале).
+  avgHeadcount              Int                   @default(1)
+  avgHeadcountDisabled      Int                   @default(0)
   createdAt                 DateTime              @default(now())
   activityDescription       String?
   turnoverTaxRate           Float                 @default(0.04)
@@ -58,6 +69,8 @@ model Organization {
   taxCalendar               TaxCalendarEvent[]
   taxTemplates              TaxDeadlineTemplate[]
   vouchers                  Voucher[]
+  taxReportMappings         TaxReportAccountMapping[]
+  costingMethodHistory      OrgCostingMethodHistory[]
 }
 
 model OrgMember {
@@ -188,6 +201,12 @@ model Document {
   payload               Json
   sourceTransactionId   String?             @unique
   correctionForPeriodId String?
+  /// Переопределение вычитаемости расхода для «Расчёта налога на прибыль»
+  /// (Приложение №2, графа 4): true — вычитаемый, false — невычитаемый,
+  /// null — по дефолтному маппингу счёта/типа документа (TaxReportAccountMapping).
+  /// Уровень Document, а не JournalEntry: проводки генерируются из postingTemplate,
+  /// единица пользовательского ввода в системе — документ (ТЗ, раздел 1.2).
+  taxDeductibleOverride Boolean?
   taxCalendarSyncStatus String?             /// PENDING | OK | FAILED — статус синхронизации налогового календаря
   taxCalendarSyncError  String?             /// Сообщение об ошибке синхронизации (если FAILED)
   org                   Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -475,6 +494,70 @@ model ClassificationJob {
   org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+}
+
+/// Маппинг «счёт НСБУ (и опционально тип документа) → строка приложения
+/// Расчёта налога на прибыль» (ТЗ, раздел 1.1). Строки с orgId = null —
+/// дефолтный маппинг для всех организаций (сидится в ensureBaseData из
+/// DEFAULT_TAX_REPORT_MAPPING); строка с orgId организации переопределяет
+/// дефолт для того же (accountCode, documentTypeCode, appendixCode).
+/// documentTypeCode — расширение схемы ТЗ: в этом проекте один счёт (напр. 9420)
+/// наполняется разными типами документов (SALARY_ACCRUAL → строка 0105,
+/// RENT_ACCRUAL → 0111, прочее → 0137), поэтому маппинг по типу документа
+/// имеет приоритет над маппингом по счёту.
+model TaxReportAccountMapping {
+  id               String          @id @default(uuid())
+  orgId            String?
+  accountCode      String
+  /// null — правило применяется к любому типу документа (маппинг по счёту);
+  /// не-null — правило только для проводок документов этого типа (приоритетнее).
+  documentTypeCode String?
+  appendixCode     TaxAppendixCode
+  lineCode         String
+  column           TaxReportColumn @default(TOTAL)
+  isDefault        Boolean         @default(true)
+  org              Organization?   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([accountCode])
+}
+
+/// История метода себестоимости по налоговым годам (ТЗ, раздел 0.3).
+/// Отдельная таблица, а не мутируемое поле настроек: генератор отчёта за
+/// прошлый период всегда берёт метод, действовавший в ТОМ году. Если записи
+/// на год N нет — действует метод последнего года ≤ N (метод «тянется»,
+/// новая запись нужна только при первом выборе и при смене).
+model OrgCostingMethodHistory {
+  id            String        @id @default(uuid())
+  orgId         String
+  fiscalYear    Int
+  costingMethod CostingMethod
+  setAt         DateTime      @default(now())
+  setById       String?
+  org           Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, fiscalYear])
+  @@index([orgId])
+}
+
+enum TaxBenefitType {
+  NONE
+  IT_PARK_RESIDENT
+}
+
+enum CostingMethod {
+  PROPORTIONAL
+  DIRECT
+}
+
+enum TaxAppendixCode {
+  APPENDIX_1
+  APPENDIX_2
+}
+
+enum TaxReportColumn {
+  TOTAL
+  NON_DEDUCTIBLE
 }
 
 model ClosingJob {

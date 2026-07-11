@@ -503,6 +503,35 @@ export async function finalizePeriod(
       throw new Error("Pre-close validation failed:\n" + disposalErrors.join("\n"));
     }
 
+    // H0b. Pre-close warning: товарная выручка без списания себестоимости.
+    // GOODS_SOLD (Дт 9120 / Кт 2910) — ручной документ; если за период есть
+    // Кт-обороты 9020 (реализация товаров), но себестоимость не списана,
+    // строка 020 Приложения №2 «Расчёта налога на прибыль» останется нулевой,
+    // а проданный товар — на складе. Предупреждаем, не блокируем: продажа
+    // могла быть с нулевой маржой по 9030 или списание отложено сознательно.
+    const revenue9020 = await tx.journalEntry.aggregate({
+      where: {
+        document: { periodId, orgId, status: "POSTED" },
+        account: { code: ACCOUNTS.REVENUE_TRADE },
+        credit: { gt: 0 }
+      },
+      _sum: { credit: true }
+    });
+    const trade = new Decimal(revenue9020._sum.credit?.toString() || "0");
+    if (trade.gt(0)) {
+      const goodsSold = await tx.document.findFirst({
+        where: { orgId, periodId, type: { code: "GOODS_SOLD" }, status: "POSTED" }
+      });
+      if (!goodsSold) {
+        warnings.push(
+          `За период есть выручка от реализации товаров (Кт 9020: ${trade.toFixed(2)}), ` +
+          `но нет документа GOODS_SOLD — себестоимость проданных товаров не списана со склада (2910). ` +
+          `Создайте GOODS_SOLD (Дт 9120 / Кт 2910), иначе расходы будут занижены, ` +
+          `а строка 020 Приложения №2 «Расчёта налога на прибыль» останется нулевой.`
+        );
+      }
+    }
+
     const acc9910 = await tx.account.findUnique({ where: { code: ACCOUNTS.FINAL_RESULT } });
     if (!acc9910) throw new Error("Счёт 9910 не найден — выполните seed счетов");
 

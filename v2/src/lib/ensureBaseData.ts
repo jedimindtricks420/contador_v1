@@ -2766,6 +2766,54 @@ export async function ensureBaseData() {
     }
   }
 
+  await ensureTaxReportMapping();
+}
+
+// Синхронизирует дефолтный маппинг «счёт/тип документа → строка Расчёта налога
+// на прибыль» (orgId = null) с DEFAULT_TAX_REPORT_MAPPING: недостающие строки
+// создаются, разошедшиеся обновляются, лишние дефолты удаляются. Строки
+// организаций (orgId != null) не трогаются — это их переопределения.
+export async function ensureTaxReportMapping() {
+  const { DEFAULT_TAX_REPORT_MAPPING } = await import("./taxReport/constants");
+  const existing = await prisma.taxReportAccountMapping.findMany({ where: { orgId: null } });
+  const key = (r: { accountCode: string; documentTypeCode?: string | null }) =>
+    `${r.accountCode}|${r.documentTypeCode ?? ""}`;
+
+  const wanted = new Map(DEFAULT_TAX_REPORT_MAPPING.map(m => [key(m), m]));
+  const present = new Map(existing.map(r => [key(r), r]));
+
+  let created = 0, updated = 0, removed = 0;
+  for (const [k, m] of wanted) {
+    const row = present.get(k);
+    const data = {
+      accountCode: m.accountCode,
+      documentTypeCode: m.documentTypeCode ?? null,
+      appendixCode: m.appendixCode,
+      lineCode: m.lineCode,
+      column: m.column ?? "TOTAL",
+      isDefault: true,
+    } as const;
+    if (!row) {
+      await prisma.taxReportAccountMapping.create({ data: { ...data, orgId: null } });
+      created++;
+    } else if (
+      row.appendixCode !== data.appendixCode ||
+      row.lineCode !== data.lineCode ||
+      row.column !== data.column
+    ) {
+      await prisma.taxReportAccountMapping.update({ where: { id: row.id }, data });
+      updated++;
+    }
+  }
+  for (const [k, row] of present) {
+    if (!wanted.has(k)) {
+      await prisma.taxReportAccountMapping.delete({ where: { id: row.id } });
+      removed++;
+    }
+  }
+  if (created || updated || removed) {
+    console.log(`[seed] Маппинг налога на прибыль: создано ${created}, обновлено ${updated}, удалено ${removed}`);
+  }
 }
 
 /**

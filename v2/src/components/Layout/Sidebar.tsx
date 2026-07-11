@@ -26,6 +26,7 @@ import {
   Trash2,
   Check,
   Building2,
+  Percent,
 } from "lucide-react";
 
 const NAV = [
@@ -47,6 +48,7 @@ const REPORTS_NAV = [
   { href: "/reports/subconto", label: "Анализ субконто", icon: BookOpen },
   { href: "/balance", label: "Форма №1 — Баланс", icon: Scale },
   { href: "/pnl", label: "Форма №2 — Финрезультаты", icon: BarChart2 },
+  { href: "/tax-dashboard", label: "Налог на прибыль", icon: Percent },
 ];
 
 interface Membership {

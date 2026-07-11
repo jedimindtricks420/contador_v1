@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
-  Building2, 
-  GitBranch, 
-  BookOpen, 
-  CalendarDays, 
+  Building2,
+  GitBranch,
+  BookOpen,
+  CalendarDays,
   AlertCircle,
-  Users
+  Users,
+  Percent
 } from "lucide-react";
 
 export function SettingsSidebar() {
@@ -19,6 +20,7 @@ export function SettingsSidebar() {
     { href: "/settings/rules", label: "Правила классификации", icon: GitBranch },
     { href: "/settings/accounts", label: "Справочники счетов", icon: BookOpen },
     { href: "/settings/tax-calendar", label: "Налоговый календарь", icon: CalendarDays },
+    { href: "/settings/profit-tax", label: "Налог на прибыль", icon: Percent },
     { href: "/settings/open-items-deadlines", label: "Риски открытых позиций", icon: AlertCircle },
     { href: "/settings/members", label: "Участники организации", icon: Users },
   ];
