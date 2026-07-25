@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { provider } = body;
 
-    if (!provider || !["PAYME", "CLICK"].includes(provider)) {
+    if (!provider || !["PAYME", "CLICK", "ALIF"].includes(provider)) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
 

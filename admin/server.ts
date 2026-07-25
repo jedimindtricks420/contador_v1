@@ -38,7 +38,15 @@ if (!process.env.ADMIN_PASSWORD) {
 }
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-app.use(express.json());
+// verify captures the exact raw bytes of every JSON body into req.rawBody -
+// нужно для проверки HMAC-подписи вебхука Alifpay (see /v2/payments/alif/webhook below).
+// JSON.stringify(req.body) не подходит: повторная сериализация может изменить
+// порядок ключей/пробелы, и подпись не совпадёт с присланной Alifpay.
+app.use(express.json({
+  verify: (req: any, _res, buf: Buffer) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use((req: Request, _res: Response, next: NextFunction) => { if (req.body === undefined) req.body = {}; next(); });
 
@@ -105,6 +113,63 @@ function generateClickUrl(orderId: string, amount: number, config: any) {
   const serviceId = config.click_service_id;
   const returnUrl = "https://contador.uz/settings/subscription?payment=success";
   return `https://my.click.uz/services/pay?service_id=${serviceId}&merchant_id=${merchantId}&amount=${amount}&transaction_param=${orderId}&return_url=${encodeURIComponent(returnUrl)}`;
+}
+
+// ─────────────────────────────────────────────
+// ALIFPAY
+// ─────────────────────────────────────────────
+
+const ALIF_PRODUCTION_BASE_URL = "https://api.alifpay.uz/v2";
+// ВАЖНО: sandbox-адрес API не подтверждён напрямую документацией Alifpay
+// (спрятан за JS-переключателем на docs.alifpay.uz) - сверить в личном кабинете.
+const ALIF_SANDBOX_BASE_URL = "https://api-dev.alifpay.uz/v2";
+const ALIF_MIN_AMOUNT_TIYIN = 50000; // 500 сум
+const ALIF_MAX_AMOUNT_TIYIN = 20000000000; // 200 000 000 сум
+
+function isAmountInAlifRange(amountTiyin: number) {
+  return amountTiyin >= ALIF_MIN_AMOUNT_TIYIN && amountTiyin <= ALIF_MAX_AMOUNT_TIYIN;
+}
+
+async function createAlifInvoice({ token, env, items, cancelUrl, redirectUrl, webhookUrl, meta }: {
+  token: string; env: string; items: any[]; cancelUrl: string; redirectUrl: string; webhookUrl: string; meta: any;
+}): Promise<{ success: boolean; id?: string; error?: string }> {
+  const baseUrl = env === "production" ? ALIF_PRODUCTION_BASE_URL : ALIF_SANDBOX_BASE_URL;
+  try {
+    const res = await fetch(`${baseUrl}/invoice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Token: token },
+      body: JSON.stringify({ items, cancel_url: cancelUrl, redirect_url: redirectUrl, webhook_url: webhookUrl, meta }),
+    });
+    const data: any = await res.json();
+    // Alifpay всегда возвращает HTTP 200, даже при бизнес-ошибке - признак ошибки: поле `error`.
+    if (data.error) {
+      console.error("[Alif] createInvoice business error:", data.error);
+      return { success: false, error: data.error.message || "Alifpay error" };
+    }
+    return { success: true, id: data.id };
+  } catch (err: any) {
+    console.error("[Alif] createInvoice network error:", err.message);
+    return { success: false, error: "Платёжный сервис Alifpay временно недоступен" };
+  }
+}
+
+function getAlifCheckoutUrl(invoiceId: string, env: string) {
+  const base = env === "production" ? "https://checkout.alifpay.uz/" : "https://checkout-dev.alifpay.uz/";
+  return `${base}?invoice=${encodeURIComponent(invoiceId)}`;
+}
+
+/**
+ * Проверка подписи вебхука Alifpay: base64( HMAC-SHA256(rawBody, secretKey) ), заголовок `Signature`.
+ * rawBody должен быть точным сырым телом запроса, а не JSON.stringify(req.body) -
+ * при повторной сериализации порядок ключей/пробелы могут отличаться от оригинала.
+ */
+function verifyAlifSignature(rawBody: Buffer | undefined, signatureHeader: string | undefined, secretKey: string | undefined | null) {
+  if (!rawBody || !signatureHeader || !secretKey) return false;
+  const expected = crypto.createHmac("sha256", secretKey).update(rawBody).digest("base64");
+  const expectedBuf = Buffer.from(expected);
+  const receivedBuf = Buffer.from(signatureHeader);
+  if (expectedBuf.length !== receivedBuf.length) return false;
+  return crypto.timingSafeEqual(expectedBuf, receivedBuf);
 }
 
 async function fulfillSubscription(paymentId: string, externalId: string) {
@@ -347,7 +412,7 @@ publicRouter.post("/payments/click/complete", publicLimiter, async (req: Request
 // V2 - Initiate Payment
 publicRouter.post("/v2/payments/initiate", publicLimiter, async (req: Request, res: Response) => {
   const { orgId, provider } = req.body;
-  if (!orgId || !["PAYME", "CLICK"].includes(provider)) {
+  if (!orgId || !["PAYME", "CLICK", "ALIF"].includes(provider)) {
     return res.status(400).json({ error: "Invalid orgId or provider" });
   }
 
@@ -375,8 +440,36 @@ publicRouter.post("/v2/payments/initiate", publicLimiter, async (req: Request, r
     let url = "";
     if (provider === "PAYME") {
       url = generatePaymeUrl(orderCode, amount * 100, config);
-    } else {
+    } else if (provider === "CLICK") {
       url = generateClickUrl(orderCode, amount, config);
+    } else {
+      const env = (config as any).alif_env || "sandbox";
+      const token = env === "production" ? (config as any).alif_token_production : (config as any).alif_token_sandbox;
+      if (!token) {
+        await prismaV2.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+        return res.status(400).json({ error: "Alifpay не настроен" });
+      }
+      const priceInTiyin = amount * 100;
+      if (!isAmountInAlifRange(priceInTiyin)) {
+        await prismaV2.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+        return res.status(400).json({ error: "Сумма вне допустимого диапазона Alifpay" });
+      }
+      const invoiceResult = await createAlifInvoice({
+        token,
+        env,
+        items: [{ name: "Contador PRO — подписка на 1 год", amount: 1, price: priceInTiyin }],
+        cancelUrl: "https://contador.uz/settings/subscription",
+        redirectUrl: "https://contador.uz/settings/subscription?payment=success",
+        webhookUrl: "https://contador.uz/admin/api/v2/payments/alif/webhook",
+        meta: { order_id: orderCode },
+      });
+      if (!invoiceResult.success) {
+        await prismaV2.payment.update({ where: { id: payment.id }, data: { status: "FAILED" } });
+        return res.status(502).json({ error: invoiceResult.error });
+      }
+      // Сохраняем invoice id сразу вместо PENDING_ плейсхолдера - счёт уже реально создан у Alifpay.
+      await prismaV2.payment.update({ where: { id: payment.id }, data: { externalId: invoiceResult.id } });
+      url = getAlifCheckoutUrl(invoiceResult.id!, env);
     }
 
     res.json({ success: true, url, paymentId: orderCode });
@@ -575,6 +668,64 @@ publicRouter.post("/v2/payments/click/complete", publicLimiter, async (req: Requ
   } catch (err: any) {
     console.error("[V2 Click Complete] Error:", err);
     res.json({ click_trans_id: p.click_trans_id, merchant_trans_id: p.merchant_trans_id, error: CLICK_ERRORS.SYSTEM_ERROR, error_note: "System error" });
+  }
+});
+
+// V2 - Alifpay Webhook
+publicRouter.post("/v2/payments/alif/webhook", publicLimiter, async (req: Request, res: Response) => {
+  const rawBody = (req as any).rawBody as Buffer | undefined;
+  const signature = req.headers["signature"] as string | undefined;
+
+  try {
+    const config = await getPaymentConfig();
+    const env = (config as any)?.alif_env || "sandbox";
+    const secretKey = env === "production" ? (config as any)?.alif_secret_key_production : (config as any)?.alif_secret_key_sandbox;
+
+    if (!verifyAlifSignature(rawBody, signature, secretKey)) {
+      console.error("[V2 Alif] Webhook: invalid signature");
+      return res.status(403).json({ status: "invalid_signature" });
+    }
+
+    const body = req.body;
+    // ВАЖНО: верхнеуровневый `id` - это ID СЧЁТА (invoice), не платежа.
+    // Статус/сумма/ID платежа лежат в body.payment.*
+    const invoiceId = body.id;
+    const payment = body.payment || {};
+    const paymentStatus = payment.status;
+    const orderCodeFromMeta = body.meta?.order_id;
+
+    console.log(`[V2 Alif] Webhook: invoice=${invoiceId} payment=${payment.id} status=${paymentStatus}`);
+
+    let record = orderCodeFromMeta
+      ? await prismaV2.payment.findUnique({ where: { orderCode: orderCodeFromMeta } })
+      : null;
+    if (!record) {
+      record = await prismaV2.payment.findFirst({ where: { externalId: invoiceId } });
+    }
+
+    if (!record) {
+      console.error("[V2 Alif] Webhook: payment not found for invoice", invoiceId);
+      return res.status(200).json({ status: "payment_not_found" });
+    }
+
+    if (record.status === "SUCCESS") {
+      return res.status(200).json({ status: "already_paid" });
+    }
+
+    if (paymentStatus !== "SUCCEEDED") {
+      if (paymentStatus && !["PENDING", "PENDING_REVERSAL", "OTP_REQUIRED"].includes(paymentStatus)) {
+        await prismaV2.payment.update({ where: { id: record.id }, data: { status: "FAILED" } });
+      }
+      return res.status(200).json({ status: "not_succeeded", paymentStatus });
+    }
+
+    await fulfillSubscriptionV2(record.id, String(payment.id));
+    console.log("[V2 Alif] Webhook: payment successful for", record.id);
+    return res.status(200).json({ status: "ok" });
+  } catch (error) {
+    console.error("[V2 Alif] Webhook error:", error);
+    // 200, чтобы Alifpay не повторял бесконечно при нашей внутренней ошибке.
+    return res.status(200).json({ status: "internal_error" });
   }
 });
 
@@ -809,12 +960,14 @@ router.patch("/users/:userId/credentials", async (req: Request, res: Response) =
 router.get("/payment-settings", async (_req: Request, res: Response) => {
   const config = await getPaymentConfig();
   if (!config) {
-    res.json({ payme_merchant_id: "", payme_env: "test", click_merchant_id: "", click_service_id: "", click_env: "test", pro_price_yearly: 299000 });
+    res.json({ payme_merchant_id: "", payme_env: "test", click_merchant_id: "", click_service_id: "", click_env: "test", alif_env: "sandbox", pro_price_yearly: 299000 });
   } else {
     const scrubbed = { ...config } as any;
     if (scrubbed.payme_key) scrubbed.payme_key = "********";
     if (scrubbed.payme_test_key) scrubbed.payme_test_key = "********";
     if (scrubbed.click_secret_key) scrubbed.click_secret_key = "********";
+    if (scrubbed.alif_secret_key_production) scrubbed.alif_secret_key_production = "********";
+    if (scrubbed.alif_secret_key_sandbox) scrubbed.alif_secret_key_sandbox = "********";
     res.json(scrubbed);
   }
 });
@@ -825,6 +978,8 @@ router.post("/payment-settings", async (req: Request, res: Response) => {
   if (data.payme_key === "********") data.payme_key = current?.payme_key;
   if (data.payme_test_key === "********") data.payme_test_key = current?.payme_test_key;
   if (data.click_secret_key === "********") data.click_secret_key = current?.click_secret_key;
+  if (data.alif_secret_key_production === "********") data.alif_secret_key_production = (current as any)?.alif_secret_key_production;
+  if (data.alif_secret_key_sandbox === "********") data.alif_secret_key_sandbox = (current as any)?.alif_secret_key_sandbox;
   if (data.pro_price_yearly) data.pro_price_yearly = parseInt(data.pro_price_yearly);
   const config = await prisma.paymentConfig.upsert({ where: { id: "default" }, update: data, create: { id: "default", ...data } });
   res.json({ success: true, config });

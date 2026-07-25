@@ -25,6 +25,7 @@ interface PaymentRecord {
 const PROVIDER_LABELS: Record<string, string> = {
   PAYME: "Payme",
   CLICK: "Click",
+  ALIF: "Alif",
 };
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -49,7 +50,7 @@ export default function ProfileClient() {
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [initiating, setInitiating] = useState<"PAYME" | "CLICK" | null>(null);
+  const [initiating, setInitiating] = useState<"PAYME" | "CLICK" | "ALIF" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [voucherCode, setVoucherCode] = useState("");
   const [voucherLoading, setVoucherLoading] = useState(false);
@@ -69,7 +70,7 @@ export default function ProfileClient() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handlePayment = async (provider: "PAYME" | "CLICK") => {
+  const handlePayment = async (provider: "PAYME" | "CLICK" | "ALIF") => {
     setInitiating(provider);
     setError(null);
     try {
@@ -224,7 +225,7 @@ export default function ProfileClient() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Payme button */}
           <button
             onClick={() => handlePayment("PAYME")}
@@ -253,6 +254,22 @@ export default function ProfileClient() {
               <p className="text-xs text-gray-400">Мобильное приложение</p>
             </div>
             {initiating === "CLICK" && (
+              <div className="ml-auto w-4 h-4 border-2 border-gray-300 border-t-black rounded-full animate-spin" />
+            )}
+          </button>
+
+          {/* Alif button */}
+          <button
+            onClick={() => handlePayment("ALIF")}
+            disabled={initiating !== null}
+            className="flex items-center gap-4 px-5 py-4 border border-gray-200 rounded-xl hover:border-black hover:shadow-sm transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <img src="/v2/1alif.png" alt="Alif" className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold text-sm text-gray-900">Alif</p>
+              <p className="text-xs text-gray-400">Карта / приложение Alif</p>
+            </div>
+            {initiating === "ALIF" && (
               <div className="ml-auto w-4 h-4 border-2 border-gray-300 border-t-black rounded-full animate-spin" />
             )}
           </button>

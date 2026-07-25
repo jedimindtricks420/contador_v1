@@ -1608,6 +1608,7 @@
                                                 { label: 'Payme — JSON-RPC URL', url: 'https://contador.uz/admin/api/v2/payments/payme' },
                                                 { label: 'Click — Prepare URL', url: 'https://contador.uz/admin/api/v2/payments/click/prepare' },
                                                 { label: 'Click — Complete URL', url: 'https://contador.uz/admin/api/v2/payments/click/complete' },
+                                                { label: 'Alifpay — Webhook URL', url: 'https://contador.uz/admin/api/v2/payments/alif/webhook' },
                                             ].map(e => (
                                                 <div key={e.url} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
                                                     <div className="flex-1 min-w-0">
@@ -1680,6 +1681,36 @@
                                                     <select value={config.click_env || 'test'} onChange={e => setConfig({ ...config, click_env: e.target.value })}
                                                         className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none">
                                                         <option value="test">test</option>
+                                                        <option value="production">production</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Alif Token (Production)</label>
+                                                    <input type="text" value={config.alif_token_production || ''} onChange={e => setConfig({ ...config, alif_token_production: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Alif Token (Sandbox)</label>
+                                                    <input type="text" value={config.alif_token_sandbox || ''} onChange={e => setConfig({ ...config, alif_token_sandbox: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Alif Secret Key (Production)</label>
+                                                    <input type="password" value={config.alif_secret_key_production || ''} onChange={e => setConfig({ ...config, alif_secret_key_production: e.target.value })}
+                                                        placeholder="Secret key"
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Alif Secret Key (Sandbox)</label>
+                                                    <input type="password" value={config.alif_secret_key_sandbox || ''} onChange={e => setConfig({ ...config, alif_secret_key_sandbox: e.target.value })}
+                                                        placeholder="Secret key"
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono outline-none" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Alif Env</label>
+                                                    <select value={config.alif_env || 'sandbox'} onChange={e => setConfig({ ...config, alif_env: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs outline-none">
+                                                        <option value="sandbox">sandbox</option>
                                                         <option value="production">production</option>
                                                     </select>
                                                 </div>

@@ -242,6 +242,11 @@ model PaymentConfig {
   click_service_id  String?
   click_secret_key  String?
   click_env         String   @default("test")
+  alif_token_production      String?
+  alif_token_sandbox         String?
+  alif_secret_key_production String?
+  alif_secret_key_sandbox    String?
+  alif_env                   String   @default("sandbox")
   pro_price_yearly  Int      @default(299000)
   updated_at        DateTime @updatedAt
 }
