@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prismaWithOrg } from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const orgId = await getActiveOrgId();
     if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

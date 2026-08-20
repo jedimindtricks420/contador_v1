@@ -100,8 +100,11 @@ describe("Accrual Method Pending Invoices Route", () => {
         openingDocument: { include: { type: { select: { code: true } } } }
       }
     });
-    // для полученных авансов (6310) подсказка не выдаётся
-    expect(body[0].suggestedReceiptKind).toBeNull();
+    // для полученных авансов (6310) нет надёжного сигнала из платежа клиента —
+    // дефолт "services" (сохраняет прежнее поведение, выручка на 9030), но теперь
+    // это реальная подсказка, а не null: бухгалтер может явно выбрать "goods" в UI
+    // и провести выручку на 9020 (см. receiptKind.ts:saleDocTypeCode).
+    expect(body[0].suggestedReceiptKind).toBe("services");
   });
 
   it("POST manually confirms pending invoice and creates prepaid document", async () => {

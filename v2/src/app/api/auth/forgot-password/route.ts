@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { sendPasswordResetEmail, isMailConfigured } from "@/lib/mailer";
+import { sendPasswordResetEmail } from "@/lib/mailer";
 import crypto from "crypto";
 
 const TOKEN_TTL_HOURS = 1;

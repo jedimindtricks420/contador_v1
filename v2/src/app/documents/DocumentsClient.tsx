@@ -1,8 +1,9 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { FileText, Plus, RotateCcw, AlertCircle, X } from "lucide-react";
-import { formatSum, formatDate, periodLabel } from "@/lib/format";
+import { formatSum } from "@/lib/format";
 import Link from "next/link";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface JournalEntry {
   debit: string;
@@ -124,37 +125,32 @@ export default function DocumentsClient() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
-        <select
+        <SearchableSelect
+          options={periods.map(p => ({ value: p.id, label: `${MONTH_NAMES[p.month - 1]} ${p.year}` }))}
           value={filterPeriod}
-          onChange={e => { setFilterPeriod(e.target.value); setPage(1); }}
-          className="bg-white border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
-        >
-          <option value="ALL">Все периоды</option>
-          {periods.map(p => (
-            <option key={p.id} value={p.id}>{MONTH_NAMES[p.month - 1]} {p.year}</option>
-          ))}
-        </select>
+          onChange={v => { setFilterPeriod(v); setPage(1); }}
+          allOption={{ value: "ALL", label: "Все периоды" }}
+          className="w-auto min-w-[160px]"
+        />
 
-        <select
+        <SearchableSelect
+          options={docTypes.map(t => ({ value: t.code, label: t.name, searchText: t.code }))}
           value={filterType}
-          onChange={e => { setFilterType(e.target.value); setPage(1); }}
-          className="bg-white border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
-        >
-          <option value="ALL">Все типы</option>
-          {docTypes.map(t => (
-            <option key={t.id} value={t.code}>{t.name}</option>
-          ))}
-        </select>
+          onChange={v => { setFilterType(v); setPage(1); }}
+          allOption={{ value: "ALL", label: "Все типы" }}
+          className="w-auto min-w-[200px]"
+        />
 
-        <select
+        <SearchableSelect
+          options={[
+            { value: "POSTED", label: "Проведён" },
+            { value: "VOIDED", label: "Аннулирован" },
+          ]}
           value={filterStatus}
-          onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-          className="bg-white border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
-        >
-          <option value="ALL">Все статусы</option>
-          <option value="POSTED">Проведён</option>
-          <option value="VOIDED">Аннулирован</option>
-        </select>
+          onChange={v => { setFilterStatus(v); setPage(1); }}
+          allOption={{ value: "ALL", label: "Все статусы" }}
+          className="w-auto min-w-[160px]"
+        />
 
         <button onClick={() => { setFilterPeriod("ALL"); setFilterType("ALL"); setFilterStatus("ALL"); setPage(1); }}
           className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 transition">

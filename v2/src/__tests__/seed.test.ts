@@ -6,4 +6,4 @@ test('Run ensureBaseData', async () => {
     await ensureBaseData();
     await prisma.$disconnect();
     expect(true).toBe(true);
-});
+}, 60_000);

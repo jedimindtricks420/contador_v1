@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { CheckCircle2, AlertCircle, Plus, Trash2, X } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface BalanceLine {
   accountCode: string;
@@ -122,16 +123,12 @@ export default function OpeningBalancePage() {
                   {lines.map((line, idx) => (
                     <tr key={idx} className="hover:bg-gray-50/40">
                       <td className="py-2 px-4">
-                        <select
+                        <SearchableSelect
+                          options={accounts.map(a => ({ value: a.code, label: `${a.code} — ${a.name}`, searchText: a.code }))}
                           value={line.accountCode}
-                          onChange={e => updateLine(idx, "accountCode", e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
-                        >
-                          <option value="">— Выберите счёт —</option>
-                          {accounts.map(a => (
-                            <option key={a.code} value={a.code}>{a.code} — {a.name}</option>
-                          ))}
-                        </select>
+                          onChange={v => updateLine(idx, "accountCode", v)}
+                          placeholder="— Выберите счёт —"
+                        />
                       </td>
                       <td className="py-2 px-4">
                         <input

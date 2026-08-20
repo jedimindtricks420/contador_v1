@@ -10,7 +10,7 @@ import { RISK_DAYS_BY_ACCOUNT, RISK_DAYS_DEFAULT } from "@/lib/constants";
  * on, per baseDocumentTypes) joined with the real Account.name from the chart of accounts, so
  * the UI always matches whatever the posting engine can actually create.
  */
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const orgId = await getActiveOrgId();
     if (!orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -87,8 +87,8 @@ export async function calculateOSV(
   const openingMap = new Map(openingAgg.map(r => [r.accountId, r]));
   const turnoverMap = new Map(turnoverAgg.map(r => [r.accountId, r]));
 
-  let subcontoOpenMap = new Map<string, SubcontoAggRow[]>();
-  let subcontoTurnMap = new Map<string, SubcontoAggRow[]>();
+  const subcontoOpenMap = new Map<string, SubcontoAggRow[]>();
+  const subcontoTurnMap = new Map<string, SubcontoAggRow[]>();
 
   if (expandSubconto) {
     const [subOpen, subTurn] = await Promise.all([

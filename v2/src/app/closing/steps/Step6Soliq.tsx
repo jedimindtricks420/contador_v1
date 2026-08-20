@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BarChart2, Check, AlertTriangle } from "lucide-react";
 import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Step6SoliqProps {
   periodId: string;
@@ -384,19 +385,16 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
                       <td className="p-2.5 text-center text-rose-500 text-xs font-bold">◄─►</td>
                       <td className="p-2.5">
                         {reconciliation.soliqOnly.length > 0 ? (
-                          <select
-                            defaultValue=""
-                            onChange={(e) => { if (e.target.value) handleManualMatch(b.id, e.target.value); }}
+                          <SearchableSelect
+                            options={reconciliation.soliqOnly.map((s: any) => ({
+                              value: s.id,
+                              label: `${s.counterpartyName} (${formatSum(s.amount)})`,
+                            }))}
+                            value=""
+                            onChange={(v) => { if (v) handleManualMatch(b.id, v); }}
                             disabled={aiMatching}
-                            className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 text-gray-600 bg-white cursor-pointer hover:border-gray-400 focus:outline-none focus:border-black disabled:opacity-40"
-                          >
-                            <option value="">— выбрать ЭСФ вручную —</option>
-                            {reconciliation.soliqOnly.map((s: any) => (
-                              <option key={s.id} value={s.id}>
-                                {s.counterpartyName} ({formatSum(s.amount)})
-                              </option>
-                            ))}
-                          </select>
+                            placeholder="— выбрать ЭСФ вручную —"
+                          />
                         ) : (
                           <span className="text-gray-400 italic text-[10px]">(нет ЭСФ для сопоставления)</span>
                         )}
@@ -409,19 +407,16 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
                     <tr key={`s-${idx}`} className="hover:bg-gray-50/50">
                       <td className="p-2.5">
                         {reconciliation.bankOnly.length > 0 ? (
-                          <select
-                            defaultValue=""
-                            onChange={(e) => { if (e.target.value) handleManualMatch(e.target.value, s.id); }}
+                          <SearchableSelect
+                            options={reconciliation.bankOnly.map((b: any) => ({
+                              value: b.id,
+                              label: `${b.counterpartyName} (${formatSum(b.amount)})`,
+                            }))}
+                            value=""
+                            onChange={(v) => { if (v) handleManualMatch(v, s.id); }}
                             disabled={aiMatching}
-                            className="w-full text-[10px] border border-gray-200 rounded px-1.5 py-1 text-gray-600 bg-white cursor-pointer hover:border-gray-400 focus:outline-none focus:border-black disabled:opacity-40"
-                          >
-                            <option value="">— выбрать из банка вручную —</option>
-                            {reconciliation.bankOnly.map((b: any) => (
-                              <option key={b.id} value={b.id}>
-                                {b.counterpartyName} ({formatSum(b.amount)})
-                              </option>
-                            ))}
-                          </select>
+                            placeholder="— выбрать из банка вручную —"
+                          />
                         ) : (
                           <span className="text-gray-400 italic text-[10px]">(нет авансов для сопоставления)</span>
                         )}

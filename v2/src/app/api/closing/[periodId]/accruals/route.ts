@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClosingState, saveClosingState } from "@/lib/closing";
+import { saveClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import { ACCOUNTS } from "@/lib/constants";

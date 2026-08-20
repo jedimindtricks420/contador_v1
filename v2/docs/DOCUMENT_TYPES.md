@@ -4,7 +4,7 @@
 > **Не редактировать вручную** — правки будут потеряны при следующем запуске `npm run docs:types`.
 > Регенерировать: `npm run docs:types`.
 
-Всего типов документов: **178**.
+Всего типов документов: **180**.
 
 ## Автоматически по банковской выписке (104)
 
@@ -1160,7 +1160,7 @@
   - Дт `9430` = `amount`
   - Кт `5110` = `amount`
 
-## Только ручной ввод (74)
+## Только ручной ввод (76)
 
 ### `ACCOUNTABLE_GENERAL_WRITEOFF`
 
@@ -1637,6 +1637,18 @@
   - Кт `9030` = `amount - vatAmount`
   - Кт `6410` = `vatAmount` — при условии `vatAmount > 0`
 
+### `INVOICE_CONFIRMED_GOODS`
+
+**ЭСФ подтверждён — постоплата (товары)**
+
+- Режим: `MANUAL_ONLY`
+- открывает Open Item на `4010`; требует контрагента
+
+Проводки:
+  - Дт `4010` = `amount`
+  - Кт `9020` = `amount - vatAmount`
+  - Кт `6410` = `vatAmount` — при условии `vatAmount > 0`
+
 ### `INVOICE_CONFIRMED_PREPAID`
 
 **ЭСФ подтверждён — зачёт аванса**
@@ -1647,6 +1659,18 @@
 Проводки:
   - Дт `6310` = `amount`
   - Кт `9030` = `amount - vatAmount`
+  - Кт `6410` = `vatAmount` — при условии `vatAmount > 0`
+
+### `INVOICE_CONFIRMED_PREPAID_GOODS`
+
+**ЭСФ подтверждён — зачёт аванса (товары)**
+
+- Режим: `MANUAL_ONLY`
+- требует контрагента
+
+Проводки:
+  - Дт `6310` = `amount`
+  - Кт `9020` = `amount - vatAmount`
   - Кт `6410` = `vatAmount` — при условии `vatAmount > 0`
 
 ### `LETTER_OF_CREDIT_EXECUTION`

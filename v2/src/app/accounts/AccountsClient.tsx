@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { CreditCard, DollarSign, Pencil, Trash2, AlertTriangle, X } from "lucide-react";
 import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface BankAccount {
   id: string;
@@ -288,15 +289,15 @@ export default function AccountsClient() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-gray-500 mb-1">Валюта</label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: "UZS", label: "UZS" },
+                      { value: "USD", label: "USD" },
+                      { value: "EUR", label: "EUR" },
+                    ]}
                     value={form.currency}
-                    onChange={(e) => setForm(prev => ({ ...prev, currency: e.target.value }))}
-                    className="w-full bg-gray-50 border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
-                  >
-                    <option value="UZS">UZS</option>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                  </select>
+                    onChange={(v) => setForm(prev => ({ ...prev, currency: v }))}
+                  />
                 </div>
                 <div>
                   <label className="block font-semibold text-gray-500 mb-1">Текущий баланс</label>

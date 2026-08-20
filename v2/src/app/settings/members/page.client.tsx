@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Users, Mail, Trash2, Shield, Plus, X, AlertTriangle } from "lucide-react";
-import { useRouter } from "next/navigation";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Member {
   id: string;
@@ -15,7 +15,6 @@ interface Member {
 }
 
 export default function MembersClient() {
-  const router = useRouter();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -178,14 +177,14 @@ export default function MembersClient() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Роль</label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: "ACCOUNTANT", label: "Бухгалтер" },
+                      { value: "ADMIN", label: "Администратор" },
+                    ]}
                     value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black"
-                  >
-                    <option value="ACCOUNTANT">Бухгалтер</option>
-                    <option value="ADMIN">Администратор</option>
-                  </select>
+                    onChange={setInviteRole}
+                  />
                 </div>
 
                 {inviteError && (

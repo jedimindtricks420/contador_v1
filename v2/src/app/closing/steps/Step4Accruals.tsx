@@ -60,7 +60,6 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
   const salVal = parseFloat(salaryAmount) || 0;
   const inpsVal   = salVal * TAX_RATES.INPS;
   const ndflVal   = salVal * TAX_RATES.NDFL_BUDGET;
-  const pitVal    = salVal * TAX_RATES.NDFL;   // total withholding (ИНПС + НДФЛ)
   const socVal    = salVal * TAX_RATES.SOCIAL_TAX;
   const netSalary = salVal * (1 - TAX_RATES.NDFL);
 

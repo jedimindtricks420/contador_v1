@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { postDocument } from "@/lib/posting/postingEngine";
 import { upsertTaxCalendarEventsForPeriod } from "@/lib/closing";
 import { TAX_RATES, ACCOUNTS } from "@/lib/constants";
-import { receiptKindFromPaymentType, receiptDocTypeCode } from "@/lib/receiptKind";
+import { receiptKindFromPaymentType, receiptDocTypeCode, saleDocTypeCode } from "@/lib/receiptKind";
 
 class OpenItemAlreadyClosedError extends Error {
   constructor() {
@@ -40,13 +40,18 @@ export async function GET(
       }
     });
 
-    // suggestedReceiptKind: подсказка «товары/услуги» для выданных авансов (4310) —
-    // по категории исходного платежа; пользователь может переопределить в UI.
+    // suggestedReceiptKind: подсказка «товары/услуги» — для выданных авансов (4310)
+    // по категории исходного платежа; для полученных авансов (6310) надёжного
+    // сигнала нет (клиентские платежи пока не классифицируются на товар/услугу),
+    // поэтому дефолт "services" сохраняет прежнее поведение (выручка на 9030),
+    // пока бухгалтер явно не укажет "товары" в UI.
     const items = openItems.map(item => ({
       ...item,
       suggestedReceiptKind:
         item.account.code === ACCOUNTS.ADVANCE_PAID_GOODS
           ? receiptKindFromPaymentType((item.openingDocument as any)?.type?.code)
+          : item.account.code === ACCOUNTS.ADVANCE_RECEIVED
+          ? "services"
           : null
     }));
 
@@ -114,6 +119,12 @@ export async function POST(
           ? receiptKind
           : receiptKindFromPaymentType((openItem.openingDocument as any)?.type?.code);
       docTypeCode = receiptDocTypeCode(kind, true);
+    } else if (openItem.account.code === ACCOUNTS.ADVANCE_RECEIVED) {
+      // Товары или услуги на стороне продажи: надёжного сигнала из платежа клиента
+      // нет, поэтому решает бухгалтер в UI; дефолт "services" сохраняет прежнее
+      // поведение (выручка на 9030), пока явно не выбрано "товары" (9020).
+      const kind = receiptKind === "goods" || receiptKind === "services" ? receiptKind : "services";
+      docTypeCode = saleDocTypeCode(kind, true);
     }
 
     const docType = await prisma.documentType.findUnique({

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Upload, RotateCcw, X } from "lucide-react";
-import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Step1ImportProps {
   periodId: string;
@@ -16,7 +16,7 @@ interface LastBatch {
   fileName: string;
 }
 
-export default function Step1Import({ periodId, onNext, stats, onRefreshStats }: Step1ImportProps) {
+export default function Step1Import({ onNext, stats, onRefreshStats }: Step1ImportProps) {
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [selectedBankAccountId, setSelectedBankAccountId] = useState("");
   const parserType = "AUTO";
@@ -129,17 +129,11 @@ export default function Step1Import({ periodId, onNext, stats, onRefreshStats }:
       <div className="bg-gray-50/20 border border-gray-200 rounded p-5 space-y-4">
         <div>
           <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Банковский счёт</label>
-          <select
+          <SearchableSelect
+            options={bankAccounts.map((acc) => ({ value: acc.id, label: `${acc.name} (${acc.currency})` }))}
             value={selectedBankAccountId}
-            onChange={(e) => setSelectedBankAccountId(e.target.value)}
-            className="w-full bg-white border border-gray-200 rounded px-3 py-1.5 text-xs text-gray-700 outline-hidden font-semibold"
-          >
-            {bankAccounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name} ({acc.currency})
-              </option>
-            ))}
-          </select>
+            onChange={setSelectedBankAccountId}
+          />
           <p className="text-[10px] text-gray-400 mt-1">Формат выписки определяется автоматически (.txt / .xlsx)</p>
         </div>
 

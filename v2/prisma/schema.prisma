@@ -352,11 +352,14 @@ model Payment {
 model Voucher {
   id          String        @id @default(uuid())
   code        String        @unique
+  series      String        @default("CV2")
   daysGranted Int
   usedByOrgId String?
   usedAt      DateTime?
   createdAt   DateTime      @default(now())
   org         Organization? @relation(fields: [usedByOrgId], references: [id], onDelete: SetNull)
+
+  @@index([series])
 }
 
 model PasswordResetToken {

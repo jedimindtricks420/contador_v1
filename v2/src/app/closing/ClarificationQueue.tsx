@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Briefcase, AlertTriangle, RefreshCw, Sparkles } from "lucide-react";
 import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Transaction {
   id: string;
@@ -84,65 +85,14 @@ function TypeaheadSelect({
   value: string;
   onChange: (id: string) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const selectedName = options.find((o) => o.id === value)?.name ?? "";
-  const filtered =
-    query.length > 0
-      ? options.filter(
-          (o) =>
-            o.name.toLowerCase().includes(query.toLowerCase()) ||
-            o.code.toLowerCase().includes(query.toLowerCase())
-        )
-      : options;
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   return (
-    <div ref={containerRef} className="relative flex-1 md:flex-none md:min-w-[280px]">
-      <input
-        type="text"
-        className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-none focus:border-black"
-        placeholder={open ? "Поиск по категории..." : (selectedName || "Выберите категорию...")}
-        value={open ? query : selectedName}
-        onFocus={() => { setOpen(true); setQuery(""); }}
-        onChange={(e) => setQuery(e.target.value)}
+    <div className="relative flex-1 md:flex-none md:min-w-[280px]">
+      <SearchableSelect
+        options={options.map(o => ({ value: o.id, label: o.name, searchText: o.code }))}
+        value={value}
+        onChange={onChange}
+        placeholder="Выберите категорию..."
       />
-      {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded shadow-lg max-h-52 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
-          ) : (
-            filtered.map((o) => (
-              <div
-                key={o.id}
-                className={`px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 ${
-                  o.id === value ? "bg-gray-100 font-semibold" : ""
-                }`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onChange(o.id);
-                  setOpen(false);
-                  setQuery("");
-                }}
-              >
-                {o.name}
-              </div>
-            ))
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -591,20 +541,17 @@ export default function ClarificationQueue({ periodId, onDone, onBack }: Clarifi
                             {field.name}
                           </label>
                         ) : (
-                          <select
-                            value={groupExtraAnswers[field.name] ?? ""}
-                            onChange={e => setExtraAnswers(prev => ({
-                              ...prev,
-                              [group.groupId]: { ...prev[group.groupId], [field.name]: e.target.value }
-                            }))}
-                            className="text-[11px] font-semibold bg-white border border-gray-200 rounded px-3 py-2 text-gray-600 outline-hidden focus:border-black"
-                          >
-                            <option value="">{field.name} — выберите</option>
-                            {field.options.map(opt => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                            <option value="other">Другое</option>
-                          </select>
+                          <div className="min-w-[200px]">
+                            <SearchableSelect
+                              options={[...field.options.map(opt => ({ value: opt, label: opt })), { value: "other", label: "Другое" }]}
+                              value={groupExtraAnswers[field.name] ?? ""}
+                              onChange={val => setExtraAnswers(prev => ({
+                                ...prev,
+                                [group.groupId]: { ...prev[group.groupId], [field.name]: val }
+                              }))}
+                              placeholder={`${field.name} — выберите`}
+                            />
+                          </div>
                         )}
                       </div>
                     ))}

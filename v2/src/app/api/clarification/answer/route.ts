@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveOrgId, getActiveMembership } from "@/lib/context";
+import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { clearRulesCache } from "@/lib/classification/rulesEngine";
 import { postDocument } from "@/lib/posting/postingEngine";

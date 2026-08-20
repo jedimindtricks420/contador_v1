@@ -5,6 +5,7 @@ import { Calendar, Lock, FileText, Trash2, X } from "lucide-react";
 import ClientLayout from "@/components/Layout/ClientLayout";
 import { periodLabel } from "@/lib/format";
 import ClosingWizard from "./ClosingWizard";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Period {
   id: string;
@@ -25,7 +26,7 @@ function ClosingPageContent() {
   const [periods, setPeriods] = useState<Period[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<Period | null>(null);
   const [loading, setLoading] = useState(true);
-  const [closureStats, setClosureStats] = useState<any | null>(null);
+  const [, setClosureStats] = useState<any | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createYear, setCreateYear] = useState(new Date().getFullYear());
   const [createMonth, setCreateMonth] = useState(new Date().getMonth() + 1);
@@ -177,20 +178,18 @@ function ClosingPageContent() {
             {periods.length === 0 ? (
               <span className="text-sm font-semibold text-gray-400 italic">Нет периодов</span>
             ) : (
-              <select
+              <SearchableSelect
+                options={periods.map((p) => ({
+                  value: p.id,
+                  label: `${periodLabel(p.year, p.month)} (${p.status === "CLOSED" ? "Закрыт" : "Открыт"})`,
+                }))}
                 value={selectedPeriod?.id || ""}
-                onChange={(e) => {
-                  const p = periods.find((x) => x.id === e.target.value);
+                onChange={(id) => {
+                  const p = periods.find((x) => x.id === id);
                   if (p) setSelectedPeriod(p);
                 }}
-                className="bg-white border border-gray-200 px-3 py-1.5 text-xs text-gray-700 font-semibold outline-none focus:border-black"
-              >
-                {periods.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {periodLabel(p.year, p.month)} ({p.status === "CLOSED" ? "Закрыт" : "Открыт"})
-                  </option>
-                ))}
-              </select>
+                className="min-w-[220px]"
+              />
             )}
             {selectedPeriod && selectedPeriod.status !== "CLOSED" && (
               <button
@@ -250,15 +249,11 @@ function ClosingPageContent() {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Месяц</label>
-                <select
-                  value={createMonth}
-                  onChange={(e) => setCreateMonth(parseInt(e.target.value))}
-                  className="w-full border border-gray-200 px-3 py-2 text-sm text-gray-700 outline-none focus:border-black"
-                >
-                  {MONTHS.map((m, i) => (
-                    <option key={i + 1} value={i + 1}>{m}</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={MONTHS.map((m, i) => ({ value: String(i + 1), label: m }))}
+                  value={String(createMonth)}
+                  onChange={(v) => setCreateMonth(parseInt(v))}
+                />
               </div>
             </div>
             <div className="flex gap-3 pt-1">

@@ -9,6 +9,13 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY v2/ .
 # Генерируем Prisma Client перед сборкой
 RUN npx prisma generate
+# Жёсткий потолок памяти для сборки (V8 heap): без него next build не ограничен
+# ничем и однажды съел всю RAM хоста (15.5GB, без swap), уронив VM целиком —
+# 19.08.2026. 3GB heap + next.config.ts cpus:1 (один воркер вместо одного на
+# ядро) держат пик сборки предсказуемым и оставляют хосту память для остальных
+# ~30 контейнеров других проектов. Если сборка упадёт с "JavaScript heap out of
+# memory" — значит порог реально нужен выше; поднимайте это число, а не убирайте.
+ENV NODE_OPTIONS="--max-old-space-size=3072"
 RUN npm run build
 
 FROM node:20-alpine AS runner

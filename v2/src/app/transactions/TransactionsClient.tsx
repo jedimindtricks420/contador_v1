@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { formatSum, formatDate, periodLabel } from "@/lib/format";
 import { TRANSIT_INNS } from "@/lib/constants";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface BankAccount {
   id: string;
@@ -71,7 +72,7 @@ interface CounterpartyTx {
   selectable: boolean;
 }
 
-// Searchable combobox for category selection.
+// Category selection, backed by the shared SearchableSelect.
 // allOption: if provided, adds "All" option with that value (used in filter bar).
 // compact: smaller styling for use inside table rows.
 function CategoryCombobox({
@@ -89,87 +90,16 @@ function CategoryCombobox({
   compact?: boolean;
   disabled?: boolean;
 }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const allOptions = allOption
-    ? [{ id: allOption.value, code: "__all__", name: allOption.label }, ...options]
-    : options;
-
-  const selectedName = allOptions.find(o => o.id === value)?.name ?? "";
-  const filtered = query.length > 0
-    ? options.filter(o =>
-        o.name.toLowerCase().includes(query.toLowerCase()) ||
-        o.code.toLowerCase().includes(query.toLowerCase())
-      )
-    : allOptions;
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  if (disabled) {
-    return (
-      <span className={`text-gray-400 ${compact ? "text-xs px-1" : "text-xs"}`}>
-        {selectedName || "—"}
-      </span>
-    );
-  }
-
   return (
-    <div ref={containerRef} className="relative w-full">
-      {compact && !open ? (
-        <div
-          onClick={() => { setOpen(true); setQuery(""); }}
-          className="w-full bg-transparent py-1 px-1 font-semibold text-gray-800 text-xs cursor-pointer hover:bg-gray-100 transition-colors leading-tight min-h-[22px]"
-        >
-          {selectedName || <span className="text-gray-400 font-normal">— Выберите —</span>}
-        </div>
-      ) : (
-        <input
-          type="text"
-          autoFocus={compact && open}
-          className={compact
-            ? "w-full bg-white border border-gray-300 py-1 px-1 font-semibold text-gray-800 text-xs outline-none"
-            : "w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
-          }
-          placeholder={compact ? "Поиск..." : "Все категории"}
-          value={open ? query : selectedName}
-          onFocus={() => { setOpen(true); setQuery(""); }}
-          onChange={e => setQuery(e.target.value)}
-        />
-      )}
-      {open && (
-        <div className="absolute z-50 left-0 w-56 mt-0.5 bg-white border border-gray-200 shadow-lg max-h-60 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-gray-400">Ничего не найдено</div>
-          ) : (
-            filtered.map(o => (
-              <div
-                key={o.id}
-                className={`px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 ${o.id === value ? "bg-gray-100 font-semibold" : ""}`}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  onChange(o.id);
-                  setOpen(false);
-                  setQuery("");
-                }}
-              >
-                {o.name}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+    <SearchableSelect
+      options={options.map(o => ({ value: o.id, label: o.name, searchText: o.code }))}
+      value={value}
+      onChange={onChange}
+      allOption={allOption}
+      compact={compact}
+      disabled={disabled}
+      placeholder={compact ? undefined : "Все категории"}
+    />
   );
 }
 
@@ -588,32 +518,25 @@ export default function TransactionsClient() {
 
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Период</label>
-            <select
+            <SearchableSelect
+              options={periods.map(p => ({
+                value: p.id,
+                label: `${periodLabel(p.year, p.month)} (${p.status === "CLOSED" ? "Закр" : "Откр"})`,
+              }))}
               value={selectedPeriod}
-              onChange={(e) => { setSelectedPeriod(e.target.value); setCurrentPage(1); }}
-              className="w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
-            >
-              <option value="ALL">Все месяцы</option>
-              {periods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {periodLabel(p.year, p.month)} ({p.status === "CLOSED" ? "Закр" : "Откр"})
-                </option>
-              ))}
-            </select>
+              onChange={(id) => { setSelectedPeriod(id); setCurrentPage(1); }}
+              allOption={{ value: "ALL", label: "Все месяцы" }}
+            />
           </div>
 
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Счет</label>
-            <select
+            <SearchableSelect
+              options={accounts.map(a => ({ value: a.id, label: `${a.name} (${a.currency})` }))}
               value={selectedAccount}
-              onChange={(e) => { setSelectedAccount(e.target.value); setCurrentPage(1); }}
-              className="w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
-            >
-              <option value="ALL">Все счета</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>
-              ))}
-            </select>
+              onChange={(id) => { setSelectedAccount(id); setCurrentPage(1); }}
+              allOption={{ value: "ALL", label: "Все счета" }}
+            />
           </div>
 
           <div>
@@ -628,15 +551,15 @@ export default function TransactionsClient() {
 
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Направление</label>
-            <select
+            <SearchableSelect
+              options={[
+                { value: "CREDIT", label: "Приход (+)" },
+                { value: "DEBIT", label: "Расход (-)" },
+              ]}
               value={selectedDirection}
-              onChange={(e) => { setSelectedDirection(e.target.value); setCurrentPage(1); }}
-              className="w-full border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 bg-white outline-none focus:border-black"
-            >
-              <option value="ALL">Все</option>
-              <option value="CREDIT">Приход (+)</option>
-              <option value="DEBIT">Расход (-)</option>
-            </select>
+              onChange={(id) => { setSelectedDirection(id); setCurrentPage(1); }}
+              allOption={{ value: "ALL", label: "Все" }}
+            />
           </div>
         </div>
       </div>

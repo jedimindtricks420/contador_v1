@@ -270,6 +270,13 @@ export async function postDocument(
         new Decimal(c.amount.toString()).minus(docAmount).abs().lessThan(AMOUNT_TOLERANCE)
       );
       const toClose = exactMatch ?? candidates[0] ?? null;
+      if (!toClose && template.requireCloseMatch) {
+        throw new Error(
+          `У этого контрагента нет открытого долга на счёте ${template.closesOpenItemByAccount} — ` +
+          `похоже, это аванс, а не погашение существующей задолженности. ` +
+          `Используйте категорию «Предоплата поставщику» (ADVANCE_PAID) вместо этой.`
+        );
+      }
       if (toClose) {
         // updateMany with status: "OPEN" in the WHERE (instead of update by id alone)
         // makes this an optimistic-concurrency check: if two documents concurrently
@@ -385,10 +392,12 @@ export async function voidDocument(
     throw new Error("Период закрыт для редактирования");
   }
 
-  // 3. Mark document status as VOIDED
+  // 3. Mark document status as VOIDED. Clear sourceTransactionId too — it has a
+  // unique DB constraint, so leaving it set on a voided document would permanently
+  // block the underlying bank transaction from ever being reclassified and reposted.
   await tx.document.update({
     where: { id: documentId },
-    data: { status: "VOIDED" }
+    data: { status: "VOIDED", sourceTransactionId: null }
   });
 
   // 4. Delete related journal entries

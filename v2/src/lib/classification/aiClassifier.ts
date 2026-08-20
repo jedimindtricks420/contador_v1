@@ -576,7 +576,6 @@ export async function classifyAllWithAI(
           { role: "user", content: JSON.stringify({ transactions: chunkEnriched }) }
         ],
         response_format: responseFormatSchema,
-        // @ts-ignore — gpt-5.x uses max_completion_tokens instead of max_tokens
         max_completion_tokens: 16384,
       });
 

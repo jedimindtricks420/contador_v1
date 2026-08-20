@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { TAX_RATES } from "@/lib/constants";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface PnLLines {
   line010: number; line020: number; line030: number;
@@ -177,15 +178,16 @@ export default function PnLClient() {
         <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-gray-700 w-full md:w-auto">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] text-gray-400">Период:</span>
-            <select
+            <SearchableSelect
+              options={[
+                { value: "YEAR", label: "Текущий год" },
+                { value: "QUARTER", label: "Текущий квартал" },
+                { value: "CUSTOM", label: "Произвольный диапазон" },
+              ]}
               value={periodType}
-              onChange={(e) => setPeriodType(e.target.value)}
-              className="bg-white border border-gray-200 rounded px-2.5 py-1.5 outline-hidden focus:border-black font-semibold text-gray-700"
-            >
-              <option value="YEAR">Текущий год</option>
-              <option value="QUARTER">Текущий квартал</option>
-              <option value="CUSTOM">Произвольный диапазон</option>
-            </select>
+              onChange={setPeriodType}
+              className="min-w-[180px]"
+            />
           </div>
           {periodType === "CUSTOM" && (
             <div className="flex items-center gap-2 pt-5">

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 // Isolated unit test for the HISTORICAL mode auto-detection logic
 // (extracted from /api/import/bank/route.ts)

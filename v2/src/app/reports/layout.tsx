@@ -10,7 +10,7 @@ export default async function ReportsLayout({
 }) {
   try {
     await getActiveOrgId();
-  } catch (err) {
+  } catch {
     return (
       <ClientLayout>
         <div style={{ padding: 32, textAlign: "center", color: "#ef4444", fontWeight: 600 }}>

@@ -1,5 +1,6 @@
 "use client";
 import { Fragment, useEffect, useState } from "react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 // Дашборд «Расчёт налога на прибыль» — зеркало формы my.soliq.uz (ТЗ, раздел 5).
 // Цветовая логика портала: жёлтый = «Contador посчитал сам» (вычисляемая ячейка),
@@ -201,19 +202,21 @@ export default function TaxDashboardClient() {
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs font-semibold text-gray-700">
-          <select value={year} onChange={e => setYear(Number(e.target.value))}
-            className="bg-white border border-gray-200 rounded px-2.5 py-1.5 outline-hidden focus:border-black">
-            {Array.from({ length: 5 }, (_, i) => now.getFullYear() - 3 + i).map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-          <select value={quarter} onChange={e => setQuarter(Number(e.target.value))}
-            className="bg-white border border-gray-200 rounded px-2.5 py-1.5 outline-hidden focus:border-black">
-            <option value={1}>I квартал</option>
-            <option value={2}>II квартал (полугодие)</option>
-            <option value={3}>III квартал (9 месяцев)</option>
-            <option value={4}>IV квартал (год)</option>
-          </select>
+          <SearchableSelect
+            options={Array.from({ length: 5 }, (_, i) => now.getFullYear() - 3 + i).map(y => ({ value: String(y), label: String(y) }))}
+            value={String(year)}
+            onChange={v => setYear(Number(v))}
+          />
+          <SearchableSelect
+            options={[
+              { value: "1", label: "I квартал" },
+              { value: "2", label: "II квартал (полугодие)" },
+              { value: "3", label: "III квартал (9 месяцев)" },
+              { value: "4", label: "IV квартал (год)" },
+            ]}
+            value={String(quarter)}
+            onChange={v => setQuarter(Number(v))}
+          />
           <button
             onClick={() => window.print()}
             className="bg-gray-900 text-white rounded px-3 py-1.5 font-semibold hover:bg-gray-700"

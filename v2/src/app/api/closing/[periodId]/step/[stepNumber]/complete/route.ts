@@ -3,7 +3,7 @@ import { saveClosingState, getClosingState } from "@/lib/closing";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import { ACCOUNTS, IMPORT, SALARY_EXPENSE_ACCOUNT_CODES } from "@/lib/constants";
-import { receiptKindFromPaymentType, receiptDocTypeCode, ReceiptKind } from "@/lib/receiptKind";
+import { receiptKindFromPaymentType, receiptDocTypeCode, saleDocTypeCode, ReceiptKind } from "@/lib/receiptKind";
 
 // Вид поступления по входящему ЭСФ (товары/услуги) определяется категорией
 // исходного платежа: MATCHED-позиции — через связанный OpenItem/StagedTransaction,
@@ -37,6 +37,16 @@ async function resolveReceiptKind(tx: any, orgId: string, esf: any): Promise<Rec
     paymentTypeCode = stx?.document?.type?.code ?? null;
   }
   return receiptKindFromPaymentType(paymentTypeCode);
+}
+
+// Вид реализации по исходящему ЭСФ (товары/услуги) — в отличие от закупок, у
+// массового импорта из Soliq нет надёжного сигнала «категория исходного платежа
+// клиента» (такой классификации на стороне продаж пока не существует), поэтому
+// дефолт "services" сохраняет прежнее поведение (выручка на 9030). Явный
+// esf.receiptKind с фронтенда (если появится в будущем UI) имеет приоритет —
+// тот же контракт, что и resolveReceiptKind на стороне закупок.
+function resolveSaleKind(esf: any): ReceiptKind {
+  return esf.receiptKind === "goods" || esf.receiptKind === "services" ? esf.receiptKind : "services";
 }
 
 class SoliqAlreadyImportedError extends Error {
@@ -184,7 +194,7 @@ export async function POST(
                     counterpartyHint: esf.counterpartyName
                   };
                 } else {
-                  docTypeCode = "INVOICE_CONFIRMED_PREPAID";
+                  docTypeCode = saleDocTypeCode(resolveSaleKind(esf), true);
                 }
               } else {
                 // EXPENSE: товары или услуги — по категории исходного платежа
@@ -233,6 +243,8 @@ export async function POST(
               if (esf.direction === "EXPENSE") {
                 const kind = await resolveReceiptKind(tx, orgId, esf);
                 docTypeCode = receiptDocTypeCode(kind, false);
+              } else {
+                docTypeCode = saleDocTypeCode(resolveSaleKind(esf), false);
               }
               
               const type = getType(docTypeCode);

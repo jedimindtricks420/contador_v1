@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Sparkles, Check, AlertTriangle } from "lucide-react";
 import { formatSum, periodLabel } from "@/lib/format";
 import CharterCapitalModal from "@/components/CharterCapitalModal";
+import SearchableSelect from "@/components/SearchableSelect";
 
 const CHARTER_DISMISS_KEY = "charterCapitalDismissedUntil";
 const CHARTER_DISMISS_DAYS = 7;
@@ -151,20 +152,18 @@ export default function DashboardClient() {
               {statusInfo.label}
             </span>
             {allPeriods && allPeriods.length > 1 && (
-              <select
+              <SearchableSelect
+                options={allPeriods.map((p) => ({
+                  value: p.id,
+                  label: `${periodLabel(p.year, p.month)} ${p.status === "CLOSED" ? "(Закрыт)" : "(Открыт)"}`,
+                }))}
                 value={selectedDashboardPeriodId || period?.id || ""}
-                onChange={(e) => {
-                  setSelectedDashboardPeriodId(e.target.value);
-                  loadDashboard(e.target.value);
+                onChange={(id) => {
+                  setSelectedDashboardPeriodId(id);
+                  loadDashboard(id);
                 }}
-                className="bg-white border border-gray-200 px-2 py-1 text-xs text-gray-700 font-semibold outline-none focus:border-black"
-              >
-                {allPeriods.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {periodLabel(p.year, p.month)} {p.status === "CLOSED" ? "(Закрыт)" : "(Открыт)"}
-                  </option>
-                ))}
-              </select>
+                className="min-w-[200px]"
+              />
             )}
           </div>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">

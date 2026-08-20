@@ -18,12 +18,13 @@ const TAX_NAMES: Record<string, string> = {
   SOCIAL_TAX: "Социальный налог (12%)"
 };
 
-export default function Step7Summary({ periodId, onPrev, state, onFinalized }: Step7SummaryProps) {
+export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7SummaryProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [stats, setStats] = useState<any | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [missingCogsError, setMissingCogsError] = useState<string | null>(null);
   const [finalResult, setFinalResult] = useState<any | null>(null);
   const [yearEndDone, setYearEndDone] = useState(false);
   const [yearEndLoading, setYearEndLoading] = useState(false);
@@ -61,18 +62,23 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
     loadSummaryStats();
   }, [periodId]);
 
-  const handleFinalize = async () => {
+  const handleFinalize = async (confirmMissingCogs = false) => {
     setShowFinalizeConfirm(false);
     setFinalizing(true);
     setFinalizeError(null);
+    if (!confirmMissingCogs) setMissingCogsError(null);
     try {
       const res = await fetch(`/v2/api/closing/${periodId}/finalize`, {
-        method: "POST"
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmMissingCogs })
       });
       const data = await res.json();
       if (res.ok) {
         setFinalResult(data);
         onFinalized();
+      } else if (data.code === "MISSING_COGS") {
+        setMissingCogsError(data.error);
       } else {
         setFinalizeError(`Ошибка при финализации: ${data.error}`);
       }
@@ -324,6 +330,33 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
         </div>
       )}
 
+      {missingCogsError && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded space-y-3">
+          <div className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+            <AlertTriangle size={14} />Себестоимость реализованных товаров не списана полностью
+          </div>
+          <p className="text-xs text-amber-700 leading-relaxed">{missingCogsError}</p>
+          <p className="text-xs text-amber-700">
+            Если это осознанный выбор (например, нулевая маржа или списание будет сделано позже отдельным документом), можно закрыть период всё равно — но расходы за период будут занижены.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMissingCogsError(null)}
+              className="text-xs bg-white border border-amber-300 text-amber-800 font-bold py-1.5 px-4 rounded transition hover:bg-amber-100"
+            >
+              Отмена — создам GOODS_SOLD
+            </button>
+            <button
+              onClick={() => handleFinalize(true)}
+              disabled={finalizing}
+              className="text-xs bg-amber-700 hover:bg-amber-800 text-white font-bold py-1.5 px-4 rounded transition disabled:opacity-50"
+            >
+              {finalizing ? "Закрываем..." : "Всё равно закрыть период"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Nav Buttons */}
       <div className="flex justify-between items-center pt-4 border-t border-gray-100">
         <button
@@ -379,7 +412,7 @@ export default function Step7Summary({ periodId, onPrev, state, onFinalized }: S
                 Отмена
               </button>
               <button
-                onClick={handleFinalize}
+                onClick={() => handleFinalize(false)}
                 disabled={finalizing}
                 className="flex-1 text-xs bg-black text-white font-bold py-2.5 px-4 rounded hover:opacity-80 transition disabled:opacity-50"
               >

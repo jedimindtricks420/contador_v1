@@ -112,7 +112,6 @@ ${JSON.stringify(soliqOnly, null, 2)}
       model: AI.MODEL,
       messages: [{ role: "system", content: systemPrompt }],
       response_format: responseFormatSchema,
-      // @ts-ignore — gpt-5.x uses max_completion_tokens instead of max_tokens
       max_completion_tokens: 2048,
     });
 

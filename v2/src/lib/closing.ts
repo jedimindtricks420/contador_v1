@@ -9,6 +9,16 @@ import {
 // Net salary multiplier: employee receives gross minus NDFL_BUDGET (11.9%) minus INPS (0.1%)
 const NET_SALARY_RATE = 1 - TAX_RATES.NDFL_BUDGET - TAX_RATES.INPS; // 0.88
 
+// Thrown by H0b pre-close validation (товарная выручка без списания себестоимости)
+// so the API route can tell this specific, overridable case apart from other
+// pre-close failures and offer the UI an explicit "confirm anyway" action.
+export class MissingCogsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MissingCogsError";
+  }
+}
+
 // ── ClosingJob helpers (DB-backed, replaces globalThis.closingStates) ──
 
 function defaultState() {
@@ -115,7 +125,8 @@ export async function finalizePeriod(
   periodId: string,
   orgId: string,
   userId: string,
-  overrideAccruals?: { salaryAmount?: number; depreciationAmount?: number; rentAmount?: number; expenseAccountCode?: string }
+  overrideAccruals?: { salaryAmount?: number; depreciationAmount?: number; rentAmount?: number; expenseAccountCode?: string },
+  options?: { confirmMissingCogs?: boolean }
 ) {
   const period = await prisma.period.findUnique({
     where: { id: periodId },
@@ -305,41 +316,6 @@ export async function finalizePeriod(
       (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())), new Decimal(0)
     );
 
-    const otherIncomeEntries = await tx.journalEntry.findMany({
-      where: { document: { periodId, orgId }, account: { code: { startsWith: "93" } } }
-    });
-    const otherIncome = otherIncomeEntries.reduce(
-      (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())).minus(new Decimal(e.debit.toString())),
-      new Decimal(0)
-    );
-
-    const fxIncomeEntries = await tx.journalEntry.findMany({
-      where: { document: { periodId, orgId }, account: { code: ACCOUNTS.FX_INCOME } }
-    });
-    const totalFxIncome = fxIncomeEntries.reduce(
-      (s: Decimal, e: any) => s.plus(new Decimal(e.credit.toString())), new Decimal(0)
-    );
-
-    const fxExpenseEntries = await tx.journalEntry.findMany({
-      where: { document: { periodId, orgId }, account: { code: ACCOUNTS.FX_EXPENSE } }
-    });
-    const totalFxExpense = fxExpenseEntries.reduce(
-      (s: Decimal, e: any) => s.plus(new Decimal(e.debit.toString())), new Decimal(0)
-    );
-
-    const expenseEntries = await tx.journalEntry.findMany({
-      where: {
-        document: { periodId, orgId },
-        account: { code: { in: [...COGS_ACCOUNT_CODES, ...EXPENSE_ACCOUNT_CODES, ACCOUNTS.INTEREST_EXPENSE] } }
-      }
-    });
-    const totalExpense = expenseEntries.reduce(
-      (s: Decimal, e: any) => s.plus(new Decimal(e.debit.toString())), new Decimal(0)
-    );
-
-    const netProfit = totalRevenue.plus(otherIncome).plus(totalFxIncome)
-      .minus(totalExpense).minus(totalFxExpense);
-
     // Clear pending events for this period to avoid duplicates
     await tx.taxCalendarEvent.deleteMany({
       where: { orgId, periodId, status: "PENDING" }
@@ -503,12 +479,20 @@ export async function finalizePeriod(
       throw new Error("Pre-close validation failed:\n" + disposalErrors.join("\n"));
     }
 
-    // H0b. Pre-close warning: товарная выручка без списания себестоимости.
+    // H0b. Pre-close block: товарная выручка без единого списания себестоимости.
     // GOODS_SOLD (Дт 9120 / Кт 2910) — ручной документ; если за период есть
-    // Кт-обороты 9020 (реализация товаров), но себестоимость не списана,
+    // Кт-обороты 9020 (реализация товаров), но ни одного GOODS_SOLD не создано,
     // строка 020 Приложения №2 «Расчёта налога на прибыль» останется нулевой,
-    // а проданный товар — на складе. Предупреждаем, не блокируем: продажа
-    // могла быть с нулевой маржой по 9030 или списание отложено сознательно.
+    // а проданный товар — числиться на складе. Проверяем именно ФАКТ списания,
+    // а не полное совпадение сумм: себестоимость по определению меньше выручки
+    // при нормальной марже (revenue - COGS = прибыль), поэтому сравнение сумм
+    // ложно сработало бы на любой прибыльной продаже (see profit-tax-two-year-audit
+    // fixture: 8 000 000 выручки / 5 000 000 себестоимости — здоровая маржа 37.5%,
+    // не пропущенный расход). Раньше это было предупреждением (не блокировало
+    // закрытие) — именно так GP TECH UNION закрыла период с ~380 млн выручки и
+    // без единой проводки себестоимости, и никто не заметил. Теперь это блокирует
+    // закрытие, если явно не подтверждено options.confirmMissingCogs (например,
+    // продажа была с нулевой маржой по факту, или списание сознательно отложено).
     const revenue9020 = await tx.journalEntry.aggregate({
       where: {
         document: { periodId, orgId, status: "POSTED" },
@@ -523,12 +507,15 @@ export async function finalizePeriod(
         where: { orgId, periodId, type: { code: "GOODS_SOLD" }, status: "POSTED" }
       });
       if (!goodsSold) {
-        warnings.push(
+        const message =
           `За период есть выручка от реализации товаров (Кт 9020: ${trade.toFixed(2)}), ` +
-          `но нет документа GOODS_SOLD — себестоимость проданных товаров не списана со склада (2910). ` +
-          `Создайте GOODS_SOLD (Дт 9120 / Кт 2910), иначе расходы будут занижены, ` +
-          `а строка 020 Приложения №2 «Расчёта налога на прибыль» останется нулевой.`
-        );
+          `но нет ни одного документа GOODS_SOLD — себестоимость проданных товаров не списана со склада ` +
+          `(${ACCOUNTS.INVENTORY_TRADE_GOODS}). Создайте GOODS_SOLD (Дт 9120 / Кт ${ACCOUNTS.INVENTORY_TRADE_GOODS}), ` +
+          `иначе расходы будут занижены, а строка 020 Приложения №2 «Расчёта налога на прибыль» останется нулевой.`;
+        if (!options?.confirmMissingCogs) {
+          throw new MissingCogsError(message);
+        }
+        warnings.push(message + " (закрытие подтверждено вручную, несмотря на отсутствие списания себестоимости.)");
       }
     }
 

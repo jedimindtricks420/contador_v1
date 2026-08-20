@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 // Настройки «Расчёта налога на прибыль»: метод себестоимости (фиксируется на
 // налоговый год, ТЗ 0.3), льгота IT Park (Фаза 1 эпика — только поля, ТЗ 7.1)
@@ -175,11 +176,15 @@ export default function ProfitTaxSettingsPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-semibold text-gray-400">Метод</label>
-            <select value={newMethod} onChange={e => setNewMethod(e.target.value as any)}
-              className="bg-white border border-gray-200 rounded px-2.5 py-1.5 text-xs outline-hidden focus:border-black">
-              <option value="PROPORTIONAL">{METHOD_LABEL.PROPORTIONAL}</option>
-              <option value="DIRECT">{METHOD_LABEL.DIRECT}</option>
-            </select>
+            <SearchableSelect
+              options={[
+                { value: "PROPORTIONAL", label: METHOD_LABEL.PROPORTIONAL },
+                { value: "DIRECT", label: METHOD_LABEL.DIRECT },
+              ]}
+              value={newMethod}
+              onChange={v => setNewMethod(v as any)}
+              className="min-w-[260px]"
+            />
           </div>
           <button onClick={fixMethod} disabled={saving}
             className="bg-gray-900 text-white rounded px-3 py-1.5 text-xs font-semibold hover:bg-gray-700 disabled:opacity-50">
@@ -202,12 +207,14 @@ export default function ProfitTaxSettingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-semibold text-gray-400">Налоговая льгота</label>
-              <select value={org.taxBenefit}
-                onChange={e => setOrg({ ...org, taxBenefit: e.target.value as any })}
-                className="bg-white border border-gray-200 rounded px-2.5 py-1.5 outline-hidden focus:border-black">
-                <option value="NONE">Нет льгот</option>
-                <option value="IT_PARK_RESIDENT">Резидент IT Park Uzbekistan</option>
-              </select>
+              <SearchableSelect
+                options={[
+                  { value: "NONE", label: "Нет льгот" },
+                  { value: "IT_PARK_RESIDENT", label: "Резидент IT Park Uzbekistan" },
+                ]}
+                value={org.taxBenefit}
+                onChange={v => setOrg({ ...org, taxBenefit: v as any })}
+              />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-semibold text-gray-400">Дата регистрации резидентства</label>

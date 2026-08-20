@@ -232,7 +232,7 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
   // SCENARIO B — Supplier accrual + payment
   // ═══════════════════════════════════════════════════════════════════════════
   describe("Scenario B: GOODS_RECEIVED creates 6010 payable, SUPPLIER_PAYMENT closes it", () => {
-    it("B1: GOODS_RECEIVED → Дт 9120 + Дт 4410 / Кт 6010 (creates OpenItem)", async () => {
+    it("B1: GOODS_RECEIVED → Дт 2910 + Дт 4410 / Кт 6010 (creates OpenItem)", async () => {
       const dt = await prisma.documentType.findUnique({ where: { code: "GOODS_RECEIVED" } });
       expect(dt).toBeTruthy();
 
@@ -253,16 +253,19 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
       const totCr = journalEntries.reduce((s, e) => s.plus(e.credit.toString()), new Decimal(0));
       expect(totDr.equals(totCr), "B1 JE not balanced").toBe(true);
 
+      // Товар при поступлении идёт на склад (2910, актив), а не сразу в
+      // себестоимость (9120) — та признаётся только при реализации, документом
+      // GOODS_SOLD (см. docs/modules/module_E_closing.md: "Дт 2910 — склад/перепродажа").
       const jes = await prisma.journalEntry.findMany({ where: { documentId: doc.id }, include: { account: true } });
-      const cogs = jes.find(e => e.account.code === "9120" && new Decimal(e.debit.toString()).gt(0));
+      const stock = jes.find(e => e.account.code === "2910" && new Decimal(e.debit.toString()).gt(0));
       const vatIn = jes.find(e => e.account.code === "4410" && new Decimal(e.debit.toString()).gt(0));
       const pay   = jes.find(e => e.account.code === "6010" && new Decimal(e.credit.toString()).gt(0));
 
-      expect(cogs,  "9120 debit missing").toBeTruthy();
+      expect(stock, "2910 debit missing").toBeTruthy();
       expect(vatIn, "4410 debit missing").toBeTruthy();
       expect(pay,   "6010 credit missing").toBeTruthy();
 
-      expect(new Decimal(cogs!.debit.toString()).toNumber()).toBe(GOODS_NET);
+      expect(new Decimal(stock!.debit.toString()).toNumber()).toBe(GOODS_NET);
       expect(new Decimal(vatIn!.debit.toString()).toNumber()).toBe(GOODS_VAT);
       expect(new Decimal(pay!.credit.toString()).toNumber()).toBe(GOODS_AMT);
 
@@ -299,6 +302,37 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
       expect(new Decimal(dr!.debit.toString()).toNumber()).toBe(GOODS_AMT);
     });
 
+    it("B4: SUPPLIER_PAYMENT_GOODS with no existing 6010 debt → rejected (should be ADVANCE_PAID instead)", async () => {
+      // Регрессия по реальному инциденту GP TECH UNION: оплата поставщику ДО
+      // получения товара ошибочно классифицировалась как SUPPLIER_PAYMENT_GOODS
+      // (погашение долга), хотя долга не было — движок молча проводил Дт6010 без
+      // какого-либо отслеживания, оставляя неучтённый аванс. Теперь это должно
+      // явно отклоняться с понятной ошибкой.
+      const dt = await prisma.documentType.findUnique({ where: { code: "SUPPLIER_PAYMENT_GOODS" } });
+
+      // Wrapped in a transaction (matching how every real call site posts documents)
+      // so the rejection rolls back the Document row too — otherwise it would linger
+      // half-posted and trip up later tests that scan all documents in the org.
+      await expect(prisma.$transaction(async (tx) => {
+        const doc = await tx.document.create({
+          data: {
+            orgId,
+            periodId: periodMarchId,
+            typeId: dt!.id,
+            date: new Date(2025, 2, 26),
+            status: "POSTED",
+            payload: { amount: 999_000, counterpartyHint: "Новый поставщик без долга", counterpartyInn: "7777777771" } as any,
+          },
+        });
+        await postDocument(doc.id, tx, "test");
+      })).rejects.toThrow(/ADVANCE_PAID/);
+
+      const orphan = await prisma.document.findFirst({
+        where: { orgId, payload: { path: ["counterpartyHint"], equals: "Новый поставщик без долга" } },
+      });
+      expect(orphan, "rejected document must not persist").toBeNull();
+    });
+
     it("B3: Net 6010 for March period = 0 (fully closed)", async () => {
       const jes = await prisma.journalEntry.findMany({
         where: { document: { orgId, periodId: periodMarchId, status: "POSTED" }, account: { code: "6010" } },
@@ -315,17 +349,21 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
   // SCENARIO C — Expense bank templates
   // ═══════════════════════════════════════════════════════════════════════════
   describe("Scenario C: Expense bank templates post to correct accounts", () => {
-    const cases: { code: string; amount: number; debitCode: string; creditCode: string }[] = [
+    // INSURANCE_PAYMENT — предоплата, актив (3120), списывается позже через
+    // INSURANCE_WRITEOFF (docs/modules/module_DOCUMENT_TYPES.md). SUBSCRIPTION
+    // требует subscriptionPeriod в payload: "monthly" → сразу в расход (9420),
+    // иначе → расходы будущих периодов (3120) — тестируем monthly-ветку.
+    const cases: { code: string; amount: number; debitCode: string; creditCode: string; payload?: Record<string, any> }[] = [
       { code: "BANK_COMMISSION",  amount:  50_000, debitCode: "9430", creditCode: "5110" },
       { code: "INTEREST_PAYMENT", amount: 200_000, debitCode: "9610", creditCode: "5110" },
       { code: "UTILITY_PAYMENT",  amount: 300_000, debitCode: "9420", creditCode: "5110" },
       { code: "FINE_PENALTY",     amount: 100_000, debitCode: "9430", creditCode: "5110" },
-      { code: "INSURANCE_PAYMENT",amount: 150_000, debitCode: "9420", creditCode: "5110" },
-      { code: "SUBSCRIPTION",     amount:  80_000, debitCode: "9420", creditCode: "5110" },
+      { code: "INSURANCE_PAYMENT",amount: 150_000, debitCode: "3120", creditCode: "5110" },
+      { code: "SUBSCRIPTION",     amount:  80_000, debitCode: "9420", creditCode: "5110", payload: { subscriptionPeriod: "monthly" } },
       { code: "CUSTOMS_DUTY",     amount: 220_000, debitCode: "9430", creditCode: "5110" },
     ];
 
-    for (const { code, amount, debitCode, creditCode } of cases) {
+    for (const { code, amount, debitCode, creditCode, payload } of cases) {
       it(`C: ${code} → Дт ${debitCode} / Кт ${creditCode}`, async () => {
         const dt = await prisma.documentType.findUnique({ where: { code } });
         expect(dt, `${code} type missing in DB`).toBeTruthy();
@@ -337,7 +375,7 @@ describe("Contador E2E Full Cycle", { timeout: 60_000 }, () => {
             typeId: dt!.id,
             date: new Date(2025, 3, 5),
             status: "POSTED",
-            payload: { amount, counterpartyHint: "Тест" } as any,
+            payload: { amount, counterpartyHint: "Тест", ...payload } as any,
           },
         });
 

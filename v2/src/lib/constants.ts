@@ -24,6 +24,7 @@ export const ACCOUNTS = {
   DEPOSIT: "4890",
   RECEIVABLES: "4010",
   ADVANCE_PAID_GOODS: "4310",
+  INVENTORY_TRADE_GOODS: "2910", // Товары на складах (для перепродажи)
   ADVANCE_PAID_TRAVEL: "4220",
   ADVANCE_PAID_GENERAL: "4230",
   VAT_INPUT: "4410",        // Входящий НДС (НДС к зачёту / аванс по налогам)

@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
 
     // Generate list of months in YYYY-MM format
     const months: string[] = [];
-    let curr = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    const curr = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
     const last = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
     while (curr <= last) {
       const key = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, "0")}`;

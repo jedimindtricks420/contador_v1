@@ -23,3 +23,14 @@ export function receiptDocTypeCode(kind: ReceiptKind, prepaid: boolean): string 
   if (kind === "services") return prepaid ? "SERVICE_RECEIVED_PREPAID" : "SERVICE_RECEIVED";
   return prepaid ? "GOODS_RECEIVED_PREPAID" : "GOODS_RECEIVED";
 }
+
+// Аналог receiptDocTypeCode для стороны продажи (исходящий ЭСФ покупателю):
+// kind="goods" ведёт выручку на 9020 (реализация товаров) вместо 9030 (услуги),
+// что необходимо для матчинга со списанием себестоимости (GOODS_SOLD, Дт9120/Кт2910)
+// — см. docs/backlog_profit_tax.md, кейс GP TECH UNION.
+// prepaid=true — закрытие полученного аванса (Дт 6310),
+// prepaid=false — реализация в долг (Дт 4010).
+export function saleDocTypeCode(kind: ReceiptKind, prepaid: boolean): string {
+  if (kind === "goods") return prepaid ? "INVOICE_CONFIRMED_PREPAID_GOODS" : "INVOICE_CONFIRMED_GOODS";
+  return prepaid ? "INVOICE_CONFIRMED_PREPAID" : "INVOICE_CONFIRMED";
+}

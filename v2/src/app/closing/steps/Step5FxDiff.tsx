@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { formatSum } from "@/lib/format";
 import { Info } from "lucide-react";
 
 interface Step5FxDiffProps {
@@ -17,8 +16,7 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
   const [usdAccounts, setUsdAccounts] = useState<any[]>([]);
   const [exchangeRate, setExchangeRate] = useState(String(initialFxDiff.exchangeRate || ""));
   const [difference, setDifference] = useState(String(initialFxDiff.difference || 0));
-  const [prevRate, setPrevRate] = useState(initialFxDiff.exchangeRate || 0);
-  const [rateLoading, setRateLoading] = useState(false);
+  const [prevRate] = useState(initialFxDiff.exchangeRate || 0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -91,7 +89,7 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
         const err = await res.json();
         setSaveError(`Ошибка сохранения: ${err.error}`);
       }
-    } catch (err) {
+    } catch {
       setSaveError("Ошибка сети. Попробуйте снова.");
     } finally {
       setSaving(false);

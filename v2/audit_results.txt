@@ -3,18 +3,18 @@
 1.1.1 Account count: 269 (Expected: 214)
 1.1.2 Account 6010 type: ACTIVE_PASSIVE (Expected: ACTIVE_PASSIVE)
 
-1.2.1 DocumentTypes total: 179
+1.2.1 DocumentTypes total: 181
 1.2.2 Used modes: BANK_AUTO, MANUAL_ONLY
 1.2.3 Found GOODS_RECEIVED: true
 1.2.3 Found SERVICE_RECEIVED: true
 1.2.3 Found FIXED_ASSET_DISPOSAL: true
 1.2.4 FIXED_ASSET_DISPOSAL template: {"lines":[{"side":"debit","expression":"accumulatedDepreciation","accountCode":"0200"},{"side":"debit","condition":"acquisitionCost > accumulatedDepreciation","expression":"acquisitionCost - accumulatedDepreciation","accountCode":"9210"},{"side":"credit","expression":"acquisitionCost","accountCode":"$assetAccountCode"}],"opensItem":false,"requiresCounterparty":false}
 1.2.3 Found SUPPLIER_PAYMENT_GOODS: true
-1.2.5 SUPPLIER_PAYMENT_GOODS template: {"lines":[{"side":"debit","expression":"amount","accountCode":"6010"},{"side":"credit","expression":"amount","accountCode":"5110"}],"opensItem":false,"requiresCounterparty":true,"closesOpenItemByAccount":"6010"}
+1.2.5 SUPPLIER_PAYMENT_GOODS template: {"lines":[{"side":"debit","expression":"amount","accountCode":"6010"},{"side":"credit","expression":"amount","accountCode":"5110"}],"opensItem":false,"requireCloseMatch":true,"requiresCounterparty":true,"closesOpenItemByAccount":"6010"}
 1.2.3 Found SUPPLIER_PAYMENT_SERVICES: true
-1.2.5 SUPPLIER_PAYMENT_SERVICES template: {"lines":[{"side":"debit","expression":"amount","accountCode":"6010"},{"side":"credit","expression":"amount","accountCode":"5110"}],"opensItem":false,"requiresCounterparty":true,"closesOpenItemByAccount":"6010"}
+1.2.5 SUPPLIER_PAYMENT_SERVICES template: {"lines":[{"side":"debit","expression":"amount","accountCode":"6010"},{"side":"credit","expression":"amount","accountCode":"5110"}],"opensItem":false,"requireCloseMatch":true,"requiresCounterparty":true,"closesOpenItemByAccount":"6010"}
 1.2.3 Found SUPPLIER_PAYMENT_OTHER: true
-1.2.5 SUPPLIER_PAYMENT_OTHER template: {"lines":[{"side":"debit","expression":"amount","accountCode":"6010"},{"side":"credit","expression":"amount","accountCode":"5110"}],"opensItem":false,"requiresCounterparty":true,"closesOpenItemByAccount":"6010"}
+1.2.5 SUPPLIER_PAYMENT_OTHER template: {"lines":[{"side":"debit","expression":"amount","accountCode":"6010"},{"side":"credit","expression":"amount","accountCode":"5110"}],"opensItem":false,"requireCloseMatch":true,"requiresCounterparty":true,"closesOpenItemByAccount":"6010"}
 
 1.3.1 Account 6310 exists: true
 

@@ -125,7 +125,7 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
           if (/^0+$/.test(counterpartyInn)) counterpartyInn = undefined;
         }
 
-        let description = current["НазначениеПлатежа"] || current["Назначение"] || "";
+        const description = current["НазначениеПлатежа"] || current["Назначение"] || "";
 
         let finalCounterpartyHint = counterpartyHint || undefined;
         let finalCounterpartyInn = counterpartyInn || undefined;

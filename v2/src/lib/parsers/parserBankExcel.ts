@@ -88,7 +88,6 @@ export function parseBankExcel(buffer: Buffer): ParsedBankStatement {
     const row = rows[i];
     if (!row || !Array.isArray(row)) continue;
 
-    let matches = 0;
     const tempColIndices = { date: -1, desc: -1, debit: -1, credit: -1, amount: -1, inn: -1, party: -1 };
 
     for (let c = 0; c < row.length; c++) {
@@ -97,25 +96,18 @@ export function parseBankExcel(buffer: Buffer): ParsedBankStatement {
 
       if (dateKeywords.some(k => cellVal.includes(k)) && tempColIndices.date === -1) {
         tempColIndices.date = c;
-        matches++;
       } else if (descKeywords.some(k => cellVal.includes(k)) && tempColIndices.desc === -1) {
         tempColIndices.desc = c;
-        matches++;
       } else if (debitKeywords.some(k => cellVal.includes(k)) && tempColIndices.debit === -1) {
         tempColIndices.debit = c;
-        matches++;
       } else if (creditKeywords.some(k => cellVal.includes(k)) && tempColIndices.credit === -1) {
         tempColIndices.credit = c;
-        matches++;
       } else if (amountKeywords.some(k => cellVal.includes(k)) && tempColIndices.amount === -1) {
         tempColIndices.amount = c;
-        matches++;
       } else if (innKeywords.some(k => cellVal.includes(k)) && tempColIndices.inn === -1) {
         tempColIndices.inn = c;
-        matches++;
       } else if (partyKeywords.some(k => cellVal.includes(k)) && tempColIndices.party === -1) {
         tempColIndices.party = c;
-        matches++;
       }
     }
 

@@ -1522,12 +1522,15 @@ router.get("/v2/payments", async (req: Request, res: Response) => {
   res.json({ payments, total, page: parseInt(page as string), pages: Math.ceil(total / take) });
 });
 
+const VOUCHER_SERIES_RE = /^[A-Z0-9]{2,15}$/;
+
 // V2 Vouchers list
 router.get("/v2/vouchers", async (req: Request, res: Response) => {
-  const { used } = req.query;
+  const { used, series } = req.query;
   const where: any = {};
   if (used === "true") where.usedAt = { not: null };
   if (used === "false") where.usedAt = null;
+  if (series) where.series = String(series).toUpperCase();
   const vouchers = await prismaV2.voucher.findMany({
     where,
     include: { org: { select: { name: true } } },
@@ -1537,22 +1540,46 @@ router.get("/v2/vouchers", async (req: Request, res: Response) => {
   res.json(vouchers);
 });
 
+// Export V2 vouchers as .txt (one code per line), optionally filtered by series
+router.get("/v2/vouchers/export", async (req: Request, res: Response) => {
+  const { series } = req.query;
+  const where: any = series ? { series: String(series).toUpperCase() } : {};
+  const vouchers = await prismaV2.voucher.findMany({ where, orderBy: { createdAt: "desc" } });
+  const lines = vouchers.map(v => v.code);
+  const suffix = series ? `_${String(series).toUpperCase()}` : "";
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="vouchers_v2${suffix}_${Date.now()}.txt"`);
+  res.send(lines.join("\n"));
+});
+
 // Generate V2 vouchers
 router.post("/v2/vouchers/generate", async (req: Request, res: Response) => {
-  const { count = 10, daysGranted = 365 } = req.body;
-  const n = Math.min(parseInt(count), 100);
-  const days = parseInt(daysGranted);
+  const { count = 10, daysGranted = 365, series = "CV2" } = req.body;
+
+  const n = Math.min(Math.max(parseInt(count) || 0, 1), 100);
+
+  const days = parseInt(daysGranted, 10);
+  if (!Number.isFinite(days) || days <= 0) {
+    return res.status(400).json({ error: "Некорректный срок действия (дней)" });
+  }
+
+  const s = String(series || "CV2").trim().toUpperCase();
+  if (!VOUCHER_SERIES_RE.test(s)) {
+    return res.status(400).json({ error: "Серия должна содержать 2-15 символов: латинские буквы и цифры" });
+  }
+
   const vouchers = Array.from({ length: n }, () => ({
-    code: `CV2-${randomBytes(3).toString("hex").toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`,
+    code: `${s}-${randomBytes(3).toString("hex").toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`,
+    series: s,
     daysGranted: days
   }));
   await prismaV2.voucher.createMany({ data: vouchers });
-  res.json({ success: true, count: n, vouchers });
+  res.json({ success: true, count: n, series: s, vouchers });
 });
 
 // Apply V2 voucher to org
 router.post("/v2/vouchers/:code/apply", async (req: Request, res: Response) => {
-  const { code } = req.params;
+  const code = String(req.params.code || "").trim().toUpperCase();
   const { orgId } = req.body;
   if (!orgId) return res.status(400).json({ error: "orgId is required" });
   const voucher = await prismaV2.voucher.findUnique({ where: { code } });

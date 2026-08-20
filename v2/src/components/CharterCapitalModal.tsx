@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 type FundingType = "FULLY_PAID_CASH" | "PARTIALLY_PAID" | "PAID_IN_KIND" | "NOT_PAID";
 
@@ -192,17 +193,12 @@ export default function CharterCapitalModal({ open, onClose, onSaved, currentAmo
                   />
                   <span className="text-xs text-gray-500">сум</span>
                 </div>
-                <select
+                <SearchableSelect
+                  options={assetAccounts.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}`, searchText: a.code }))}
                   value={fundedAccountCode}
-                  onChange={(e) => setFundedAccountCode(e.target.value)}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-black bg-white"
-                  required
-                >
-                  <option value="">— Выберите счёт актива —</option>
-                  {assetAccounts.map((a) => (
-                    <option key={a.id} value={a.code}>{a.code} — {a.name}</option>
-                  ))}
-                </select>
+                  onChange={setFundedAccountCode}
+                  placeholder="— Выберите счёт актива —"
+                />
               </div>
             )}
           </div>

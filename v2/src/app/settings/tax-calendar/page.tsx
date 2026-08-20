@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Save } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface ITaxDeadlineTemplate {
   id: string;
@@ -127,23 +128,19 @@ export default function TaxCalendarSettingsPage() {
           <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div>
               <label className="block text-xs font-medium text-black mb-1">Тип события</label>
-              <select
+              <SearchableSelect
+                options={TAX_TYPES}
                 value={newType}
-                onChange={(e) => setNewType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black text-sm"
-              >
-                {TAX_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
+                onChange={setNewType}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-black mb-1">Периодичность</label>
-              <select
+              <SearchableSelect
+                options={FREQUENCIES}
                 value={newFreq}
-                onChange={(e) => setNewFreq(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black text-sm"
-              >
-                {FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-              </select>
+                onChange={setNewFreq}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-black mb-1">Число месяца</label>
@@ -208,13 +205,12 @@ export default function TaxCalendarSettingsPage() {
                       )}
                     </td>
                     <td className="py-4 px-6">
-                      <select
+                      <SearchableSelect
+                        options={FREQUENCIES}
                         value={template.frequency}
-                        onChange={(e) => handleUpdate(template.id, "frequency", e.target.value)}
-                        className="bg-transparent border-none text-gray-600 outline-none hover:text-gray-900 cursor-pointer text-sm"
-                      >
-                        {FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
+                        onChange={(v) => handleUpdate(template.id, "frequency", v)}
+                        compact
+                      />
                     </td>
                     <td className="py-4 px-6">
                       <input

@@ -3,7 +3,7 @@ import { getActiveOrgId, getActiveMembership } from "@/lib/context";
 import { prismaWithOrg } from "@/lib/prisma";
 import { TURNOVER_TAX_RATE_MIN, TURNOVER_TAX_RATE_MAX } from "@/lib/constants";
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const orgId = await getActiveOrgId();
 

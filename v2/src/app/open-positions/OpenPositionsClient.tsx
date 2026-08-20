@@ -6,6 +6,7 @@ import {
   FolderOpen, Folder, Banknote, AlertOctagon, AlertTriangle, X, AlertCircle
 } from "lucide-react";
 import { formatSum, formatDate, periodLabel } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Counterparty {
   id: string;
@@ -330,38 +331,28 @@ export default function OpenPositionsClient() {
           {/* Account Filter */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-400 whitespace-nowrap">Счет:</span>
-            <select
-              value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="bg-white border border-gray-200 rounded px-2.5 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
-            >
-              <option value="ALL">Все буферные счета</option>
-              {(summary?.byAccount ?? [])
+            <SearchableSelect
+              options={(summary?.byAccount ?? [])
                 .slice()
                 .sort((a, b) => a.accountCode.localeCompare(b.accountCode))
-                .map((acc) => (
-                  <option key={acc.accountCode} value={acc.accountCode}>
-                    {acc.accountCode} ({acc.name})
-                  </option>
-                ))}
-            </select>
+                .map((acc) => ({ value: acc.accountCode, label: `${acc.accountCode} (${acc.name})`, searchText: acc.accountCode }))}
+              value={selectedAccount}
+              onChange={setSelectedAccount}
+              allOption={{ value: "ALL", label: "Все буферные счета" }}
+              className="min-w-[180px]"
+            />
           </div>
 
           {/* Period Filter */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-400 whitespace-nowrap">Период:</span>
-            <select
+            <SearchableSelect
+              options={periods.map((p) => ({ value: p.id, label: periodLabel(p.year, p.month) }))}
               value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="bg-white border border-gray-200 rounded px-2.5 py-1.5 text-xs text-gray-700 outline-hidden focus:border-black"
-            >
-              <option value="ALL">Все месяцы</option>
-              {periods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {periodLabel(p.year, p.month)}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedPeriod}
+              allOption={{ value: "ALL", label: "Все месяцы" }}
+              className="min-w-[160px]"
+            />
           </div>
         </div>
       </div>

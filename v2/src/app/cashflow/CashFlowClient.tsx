@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 import {
   BarChart,
   Bar,
@@ -181,33 +182,29 @@ export default function CashFlowClient() {
           {/* Account */}
           <div className="flex flex-col gap-1">
             <span className="text-[10px] text-gray-400">Счёт:</span>
-            <select
+            <SearchableSelect
+              options={bankAccounts.map((acc) => ({ value: acc.id, label: `${acc.name} (${acc.currency})` }))}
               value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="bg-white border border-gray-200 rounded px-2.5 py-1.5 outline-hidden focus:border-black font-semibold text-gray-700"
-            >
-              <option value="ALL">Все счета</option>
-              {bankAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.currency})
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedAccount}
+              allOption={{ value: "ALL", label: "Все счета" }}
+              className="min-w-[180px]"
+            />
           </div>
 
           {/* Period Type */}
           <div className="flex flex-col gap-1">
             <span className="text-[10px] text-gray-400">Период:</span>
-            <select
+            <SearchableSelect
+              options={[
+                { value: "YEAR", label: "Текущий год" },
+                { value: "QUARTER", label: "Текущий квартал" },
+                { value: "MONTH", label: "Текущий месяц" },
+                { value: "CUSTOM", label: "Произвольный диапазон" },
+              ]}
               value={periodType}
-              onChange={(e) => setPeriodType(e.target.value)}
-              className="bg-white border border-gray-200 rounded px-2.5 py-1.5 outline-hidden focus:border-black font-semibold text-gray-700"
-            >
-              <option value="YEAR">Текущий год</option>
-              <option value="QUARTER">Текущий квартал</option>
-              <option value="MONTH">Текущий месяц</option>
-              <option value="CUSTOM">Произвольный диапазон</option>
-            </select>
+              onChange={setPeriodType}
+              className="min-w-[180px]"
+            />
           </div>
 
           {/* Custom Date Range Picker */}

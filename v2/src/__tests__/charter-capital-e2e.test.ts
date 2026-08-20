@@ -18,7 +18,6 @@ import { PrismaClient } from "@prisma/client";
 import { postDocument } from "@/lib/posting/postingEngine";
 import { ensureBaseData } from "@/lib/ensureBaseData";
 import { getCharterCapitalDebt } from "@/lib/charterCapital";
-import Decimal from "decimal.js";
 
 const prisma = new PrismaClient();
 

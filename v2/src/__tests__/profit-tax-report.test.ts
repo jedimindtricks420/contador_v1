@@ -370,8 +370,8 @@ describe("costing-method API", () => {
 
 // ─── Pre-close предупреждение в finalizePeriod ──────────────────────────────────
 
-describe("finalizePeriod: предупреждение о несписанной себестоимости", () => {
-  it("Кт 9020 без GOODS_SOLD за период → warning, закрытие не блокируется", async () => {
+describe("finalizePeriod: блокировка при несписанной себестоимости", () => {
+  it("Кт 9020 без GOODS_SOLD за период → блокирует закрытие, confirmMissingCogs=true закрывает с warning", async () => {
     const org = await makeOrg();
     const period = await prisma.period.create({
       data: {
@@ -387,12 +387,42 @@ describe("finalizePeriod: предупреждение о несписанной
       { code: "6310", debit: 2_000_000 }, { code: "9020", credit: 2_000_000 },
     ]);
 
-    const result = await finalizePeriod(period.id, org.id, userId);
+    await expect(finalizePeriod(period.id, org.id, userId)).rejects.toThrow(/себестоимост/);
+
+    const result = await finalizePeriod(period.id, org.id, userId, undefined, { confirmMissingCogs: true });
     expect(result.period.status).toBe("CLOSED");
     expect(result.warnings.some((w: string) => w.includes("GOODS_SOLD"))).toBe(true);
   }, 60_000);
 
-  it("Кт 9020 со списанием GOODS_SOLD → предупреждения нет", async () => {
+  it("Кт 9020 с полным списанием GOODS_SOLD → закрывается сразу, без блокировки и без warning", async () => {
+    const org = await makeOrg();
+    const period = await prisma.period.create({
+      data: {
+        orgId: org.id, year: 2026, month: 1,
+        closingData: {
+          currentStep: 7,
+          accruals: { salaryAmount: 0, depreciationAmount: 0, rentAmount: 0 },
+          fxDiff: { exchangeRate: 0, difference: 0 },
+        } as any,
+      },
+    });
+    await makeDoc(org.id, period.id, "INVOICE_CONFIRMED_PREPAID", new Date(2026, 0, 15), [
+      { code: "6310", debit: 2_000_000 }, { code: "9020", credit: 2_000_000 },
+    ]);
+    await makeDoc(org.id, period.id, "GOODS_SOLD", new Date(2026, 0, 15), [
+      { code: "9120", debit: 2_000_000 }, { code: "2910", credit: 2_000_000 },
+    ]);
+
+    const result = await finalizePeriod(period.id, org.id, userId);
+    expect(result.period.status).toBe("CLOSED");
+    expect(result.warnings.some((w: string) => w.includes("GOODS_SOLD"))).toBe(false);
+  }, 60_000);
+
+  it("Кт 9020 с GOODS_SOLD на сумму меньше выручки (нормальная маржа) → закрывается без блокировки", async () => {
+    // Себестоимость по определению меньше выручки при прибыльной продаже —
+    // проверка смотрит на ФАКТ списания (документ GOODS_SOLD существует), а не
+    // на равенство сумм, иначе любая маржинальная продажа ложно блокировала бы
+    // закрытие (см. комментарий у H0b в closing.ts).
     const org = await makeOrg();
     const period = await prisma.period.create({
       data: {

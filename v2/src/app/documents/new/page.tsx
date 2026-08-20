@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ClientLayout from "@/components/Layout/ClientLayout";
 import { AlertCircle, CheckCircle2, ChevronLeft } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface DocumentType {
   id: string;
@@ -176,33 +177,23 @@ export default function NewDocumentPage() {
             {/* Type */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-500">Тип документа *</label>
-              <select
+              <SearchableSelect
+                options={docTypes.map(t => ({ value: t.id, label: `${t.name} (${t.code})`, searchText: t.code }))}
                 value={selectedTypeId}
-                onChange={e => { setSelectedTypeId(e.target.value); setPayload({}); }}
-                required
-                className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
-              >
-                <option value="">— Выберите тип —</option>
-                {docTypes.map(t => (
-                  <option key={t.id} value={t.id}>{t.name} ({t.code})</option>
-                ))}
-              </select>
+                onChange={v => { setSelectedTypeId(v); setPayload({}); }}
+                placeholder="— Выберите тип —"
+              />
             </div>
 
             {/* Period */}
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-gray-500">Период *</label>
-              <select
+              <SearchableSelect
+                options={periods.map(p => ({ value: p.id, label: `${MONTH_NAMES[p.month - 1]} ${p.year}` }))}
                 value={selectedPeriodId}
-                onChange={e => setSelectedPeriodId(e.target.value)}
-                required
-                className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
-              >
-                {periods.length === 0 && <option value="">— Нет открытых периодов —</option>}
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>{MONTH_NAMES[p.month - 1]} {p.year}</option>
-                ))}
-              </select>
+                onChange={setSelectedPeriodId}
+                placeholder={periods.length === 0 ? "— Нет открытых периодов —" : undefined}
+              />
             </div>
 
             {/* Date */}
@@ -237,18 +228,15 @@ export default function NewDocumentPage() {
                       ) : meta.type === "enum" ? (
                         <>
                           <label className="text-xs font-semibold text-gray-500">{field}</label>
-                          <select
+                          <SearchableSelect
+                            options={[
+                              ...meta.options.map(opt => ({ value: opt, label: opt })),
+                              { value: "other", label: "Другое" },
+                            ]}
                             value={payload[field] ?? ""}
-                            onChange={e => setPayload(prev => ({ ...prev, [field]: e.target.value }))}
-                            required
-                            className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
-                          >
-                            <option value="">— выберите —</option>
-                            {meta.options.map(opt => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                            <option value="other">Другое</option>
-                          </select>
+                            onChange={v => setPayload(prev => ({ ...prev, [field]: v }))}
+                            placeholder="— выберите —"
+                          />
                         </>
                       ) : (
                         <>

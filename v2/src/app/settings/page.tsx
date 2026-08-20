@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { ACTIVITY_CATEGORIES } from "@/lib/activityCategories";
 import CharterCapitalModal from "@/components/CharterCapitalModal";
+import SearchableSelect from "@/components/SearchableSelect";
 import { TAX_RATES, TURNOVER_TAX_RATE_MIN, TURNOVER_TAX_RATE_MAX } from "@/lib/constants";
 
 interface CharterCapitalInfo {
@@ -53,7 +54,7 @@ export default function OrgSettingsPage() {
         else setSettings({ ...data, turnoverTaxRate: data.turnoverTaxRate ?? TAX_RATES.TURNOVER_TAX });
         setLoading(false);
       })
-      .catch((err) => {
+      .catch(() => {
         setError("Failed to load settings");
         setLoading(false);
       });
@@ -81,7 +82,7 @@ export default function OrgSettingsPage() {
         const data = await res.json();
         setError(data.error || "Failed to save settings");
       }
-    } catch (err) {
+    } catch {
       setError("Network error");
     } finally {
       setSaving(false);
@@ -143,31 +144,22 @@ export default function OrgSettingsPage() {
               Помогает ИИ точнее классифицировать транзакции — он будет понимать, что типично для вашего бизнеса.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <select
+              <SearchableSelect
+                options={ACTIVITY_CATEGORIES.map((cat) => ({ value: cat.group, label: cat.group }))}
                 value={settings.activityGroup || ""}
-                onChange={(e) => {
-                  const group = e.target.value;
+                onChange={(group) => {
                   setSettings({ ...settings, activityGroup: group, activityDescription: "", activityCustom: "" });
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black bg-white"
-              >
-                <option value="">— Выберите группу —</option>
-                {ACTIVITY_CATEGORIES.map((cat) => (
-                  <option key={cat.group} value={cat.group}>{cat.group}</option>
-                ))}
-              </select>
+                placeholder="— Выберите группу —"
+              />
 
               {settings.activityGroup && (
-                <select
+                <SearchableSelect
+                  options={(ACTIVITY_CATEGORIES.find((c) => c.group === settings.activityGroup)?.items ?? []).map((item) => ({ value: item, label: item }))}
                   value={settings.activityDescription || ""}
-                  onChange={(e) => setSettings({ ...settings, activityDescription: e.target.value, activityCustom: "" })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black bg-white"
-                >
-                  <option value="">— Выберите вид деятельности —</option>
-                  {ACTIVITY_CATEGORIES.find((c) => c.group === settings.activityGroup)?.items.map((item) => (
-                    <option key={item} value={item}>{item}</option>
-                  ))}
-                </select>
+                  onChange={(v) => setSettings({ ...settings, activityDescription: v, activityCustom: "" })}
+                  placeholder="— Выберите вид деятельности —"
+                />
               )}
             </div>
 
@@ -248,14 +240,14 @@ export default function OrgSettingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Налоговый режим</label>
-              <select
+              <SearchableSelect
+                options={[
+                  { value: "TURNOVER_TAX", label: "Налог с оборота (УСН)" },
+                  { value: "VAT", label: "Общеустановленный (НДС + Налог на прибыль)" },
+                ]}
                 value={settings.taxRegime}
-                onChange={(e) => setSettings({ ...settings, taxRegime: e.target.value as "VAT" | "TURNOVER_TAX" })}
-                className="w-full px-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-black"
-              >
-                <option value="TURNOVER_TAX">Налог с оборота (УСН)</option>
-                <option value="VAT">Общеустановленный (НДС + Налог на прибыль)</option>
-              </select>
+                onChange={(v) => setSettings({ ...settings, taxRegime: v as "VAT" | "TURNOVER_TAX" })}
+              />
             </div>
             <div className="flex items-center mt-6">
               <label className="flex items-center cursor-pointer gap-3">

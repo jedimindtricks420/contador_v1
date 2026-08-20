@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface Account {
   id: string;
@@ -191,70 +192,66 @@ export default function ReportFilters({
         {/* Dynamic Period controls */}
         {periodType === "month" && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, background: "#fff", outline: "none" }}
-            >
-              {Array.from({ length: 12 }, (_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  {new Date(2000, i, 1).toLocaleString("ru", { month: "long" })}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, background: "#fff", outline: "none" }}
-            >
-              {Array.from({ length: 5 }, (_, i) => (
-                <option key={currentYear - 2 + i} value={currentYear - 2 + i}>
-                  {currentYear - 2 + i} год
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 160 }}>
+              <SearchableSelect
+                options={Array.from({ length: 12 }, (_, i) => ({
+                  value: String(i + 1),
+                  label: new Date(2000, i, 1).toLocaleString("ru", { month: "long" }),
+                }))}
+                value={String(selectedMonth)}
+                onChange={(v) => setSelectedMonth(Number(v))}
+              />
+            </div>
+            <div style={{ width: 120 }}>
+              <SearchableSelect
+                options={Array.from({ length: 5 }, (_, i) => ({
+                  value: String(currentYear - 2 + i),
+                  label: `${currentYear - 2 + i} год`,
+                }))}
+                value={String(selectedYear)}
+                onChange={(v) => setSelectedYear(Number(v))}
+              />
+            </div>
           </div>
         )}
 
         {periodType === "quarter" && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <select
-              value={selectedQuarter}
-              onChange={(e) => setSelectedQuarter(Number(e.target.value))}
-              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, background: "#fff", outline: "none" }}
-            >
-              <option value={1}>I Квартал</option>
-              <option value={2}>II Квартал</option>
-              <option value={3}>III Квартал</option>
-              <option value={4}>IV Квартал</option>
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, background: "#fff", outline: "none" }}
-            >
-              {Array.from({ length: 5 }, (_, i) => (
-                <option key={currentYear - 2 + i} value={currentYear - 2 + i}>
-                  {currentYear - 2 + i} год
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 140 }}>
+              <SearchableSelect
+                options={[
+                  { value: "1", label: "I Квартал" },
+                  { value: "2", label: "II Квартал" },
+                  { value: "3", label: "III Квартал" },
+                  { value: "4", label: "IV Квартал" },
+                ]}
+                value={String(selectedQuarter)}
+                onChange={(v) => setSelectedQuarter(Number(v))}
+              />
+            </div>
+            <div style={{ width: 120 }}>
+              <SearchableSelect
+                options={Array.from({ length: 5 }, (_, i) => ({
+                  value: String(currentYear - 2 + i),
+                  label: `${currentYear - 2 + i} год`,
+                }))}
+                value={String(selectedYear)}
+                onChange={(v) => setSelectedYear(Number(v))}
+              />
+            </div>
           </div>
         )}
 
         {periodType === "year" && (
-          <div>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 13, background: "#fff", outline: "none" }}
-            >
-              {Array.from({ length: 5 }, (_, i) => (
-                <option key={currentYear - 2 + i} value={currentYear - 2 + i}>
-                  {currentYear - 2 + i} год
-                </option>
-              ))}
-            </select>
+          <div style={{ width: 120 }}>
+            <SearchableSelect
+              options={Array.from({ length: 5 }, (_, i) => ({
+                value: String(currentYear - 2 + i),
+                label: `${currentYear - 2 + i} год`,
+              }))}
+              value={String(selectedYear)}
+              onChange={(v) => setSelectedYear(Number(v))}
+            />
           </div>
         )}
 
@@ -297,27 +294,15 @@ export default function ReportFilters({
         {showAccountSelect && onChangeAccountId && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Счёт</label>
-            <select
-              value={accountId}
-              onChange={(e) => onChangeAccountId(e.target.value)}
-              style={{
-                width: 280,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                fontSize: 13,
-                background: "#fff",
-                outline: "none"
-              }}
-            >
-              {allowAllAccounts && <option value="ALL">Все счета</option>}
-              {!allowAllAccounts && !accountId && <option value="">Выберите счёт...</option>}
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.code} — {acc.name}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 280 }}>
+              <SearchableSelect
+                options={accounts.map((acc) => ({ value: acc.id, label: `${acc.code} — ${acc.name}`, searchText: acc.code }))}
+                value={accountId}
+                onChange={onChangeAccountId}
+                allOption={allowAllAccounts ? { value: "ALL", label: "Все счета" } : undefined}
+                placeholder={!allowAllAccounts ? "Выберите счёт..." : undefined}
+              />
+            </div>
           </div>
         )}
 
@@ -325,26 +310,18 @@ export default function ReportFilters({
         {showCounterpartySelect && onChangeCounterpartyId && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Контрагент</label>
-            <select
-              value={counterpartyId}
-              onChange={(e) => onChangeCounterpartyId(e.target.value)}
-              style={{
-                width: 240,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                fontSize: 13,
-                background: "#fff",
-                outline: "none"
-              }}
-            >
-              <option value="ALL">Все контрагенты</option>
-              {counterparties.map((cp) => (
-                <option key={cp.id} value={cp.id}>
-                  {cp.name} {cp.inn ? `(ИНН ${cp.inn})` : ""}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 240 }}>
+              <SearchableSelect
+                options={counterparties.map((cp) => ({
+                  value: cp.id,
+                  label: `${cp.name} ${cp.inn ? `(ИНН ${cp.inn})` : ""}`,
+                  searchText: cp.inn ?? undefined,
+                }))}
+                value={counterpartyId}
+                onChange={onChangeCounterpartyId}
+                allOption={{ value: "ALL", label: "Все контрагенты" }}
+              />
+            </div>
           </div>
         )}
 
@@ -352,26 +329,14 @@ export default function ReportFilters({
         {showDocumentTypeSelect && onChangeDocumentTypeId && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <label style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Тип документа</label>
-            <select
-              value={documentTypeId}
-              onChange={(e) => onChangeDocumentTypeId(e.target.value)}
-              style={{
-                width: 240,
-                padding: "8px 12px",
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                fontSize: 13,
-                background: "#fff",
-                outline: "none"
-              }}
-            >
-              <option value="ALL">Все типы</option>
-              {docTypes.map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 240 }}>
+              <SearchableSelect
+                options={docTypes.map((type) => ({ value: type.id, label: type.name }))}
+                value={documentTypeId}
+                onChange={onChangeDocumentTypeId}
+                allOption={{ value: "ALL", label: "Все типы" }}
+              />
+            </div>
           </div>
         )}
 

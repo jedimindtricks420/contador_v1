@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react";
 import { Check, AlertCircle, RefreshCw, FileText, ArrowRight } from "lucide-react";
 import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
+
+const ADVANCE_RECEIVED_CODE = "6310";
 
 interface OpenItem {
   id: string;
@@ -15,8 +18,9 @@ interface OpenItem {
     name: string;
     inn?: string;
   };
-  // Подсказка для выданных авансов (4310): «товары» или «услуги» — из категории
-  // исходного платежа; null для полученных авансов (6310).
+  // Подсказка «товары» или «услуги»: для выданных авансов (4310) — из категории
+  // исходного платежа; для полученных авансов (6310) — дефолт "services"
+  // (надёжного сигнала из платежа клиента нет), бухгалтер может переопределить.
   suggestedReceiptKind?: "goods" | "services" | null;
 }
 
@@ -169,19 +173,27 @@ export default function Step7EInvoices({ periodId, onNext, onPrev }: Step7EInvoi
                       <td className="p-3 text-gray-400 text-[11px]">
                         {new Date(item.dateOpened).toLocaleDateString("ru-RU")}
                       </td>
-                      <td className="p-3">
+                      <td className="p-3 min-w-[220px]">
                         {item.suggestedReceiptKind ? (
-                          <select
+                          <SearchableSelect
+                            options={
+                              item.account.code === ADVANCE_RECEIVED_CODE
+                                ? [
+                                    { value: "services", label: "Услуги (выручка, 9030)" },
+                                    { value: "goods", label: "Товары (выручка, 9020)" },
+                                  ]
+                                : [
+                                    { value: "services", label: "Услуги (расход, 9420)" },
+                                    { value: "goods", label: "Товары (склад, 2910)" },
+                                  ]
+                            }
                             value={receiptKinds[item.id] ?? item.suggestedReceiptKind}
-                            onChange={(e) =>
-                              setReceiptKinds((prev) => ({ ...prev, [item.id]: e.target.value as "goods" | "services" }))
+                            onChange={(v) =>
+                              setReceiptKinds((prev) => ({ ...prev, [item.id]: v as "goods" | "services" }))
                             }
                             disabled={processingId !== null}
-                            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 text-gray-700 bg-white cursor-pointer hover:border-gray-400 focus:outline-none focus:border-black disabled:opacity-40"
-                          >
-                            <option value="services">Услуги (расход, 9420)</option>
-                            <option value="goods">Товары (склад, 2910)</option>
-                          </select>
+                            compact
+                          />
                         ) : (
                           <span className="text-[10px] text-gray-400 italic">выручка (ЭСФ)</span>
                         )}

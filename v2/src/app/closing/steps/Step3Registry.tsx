@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { CheckCircle2, AlertTriangle, RefreshCw, Pencil, X } from "lucide-react";
 import { formatSum } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface DocType {
   id: string;
@@ -241,16 +242,13 @@ export default function Step3Registry({ periodId, onNext, onPrev }: Step3Registr
                         {/* Uncategorized: always show select */}
                         {isUncategorized && (
                           <div className="flex items-center gap-1.5">
-                            <select
+                            <SearchableSelect
+                              options={docTypes.map((t) => ({ value: t.id, label: t.name, searchText: t.code }))}
                               value={selectedDocTypes[tx.id] || ""}
-                              onChange={(e) => setSelectedDocTypes((prev) => ({ ...prev, [tx.id]: e.target.value }))}
-                              className="bg-white border border-gray-200 rounded px-2 py-1 outline-hidden text-[10px] flex-1"
-                            >
-                              <option value="">— Выберите категорию —</option>
-                              {docTypes.map((t) => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                              ))}
-                            </select>
+                              onChange={(v) => setSelectedDocTypes((prev) => ({ ...prev, [tx.id]: v }))}
+                              placeholder="— Выберите категорию —"
+                              className="flex-1"
+                            />
                             {selectedDocTypes[tx.id] && (
                               <button
                                 onClick={() => handleClassify(tx.id, selectedDocTypes[tx.id])}
@@ -285,16 +283,13 @@ export default function Step3Registry({ periodId, onNext, onPrev }: Step3Registr
                         {/* Editing mode for AI-classified row */}
                         {!isUncategorized && isEditing && (
                           <div className="flex items-center gap-1.5">
-                            <select
+                            <SearchableSelect
+                              options={docTypes.map((t) => ({ value: t.id, label: t.name, searchText: t.code }))}
                               value={selectValue}
-                              onChange={(e) => setSelectedDocTypes((prev) => ({ ...prev, [tx.id]: e.target.value }))}
-                              className="bg-white border border-black rounded px-2 py-1 outline-hidden text-[10px] flex-1"
-                            >
-                              <option value="">— Выберите категорию —</option>
-                              {docTypes.map((t) => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                              ))}
-                            </select>
+                              onChange={(v) => setSelectedDocTypes((prev) => ({ ...prev, [tx.id]: v }))}
+                              placeholder="— Выберите категорию —"
+                              className="flex-1"
+                            />
                             <button
                               onClick={() => {
                                 const val = selectedDocTypes[tx.id] ?? currentTypeId;

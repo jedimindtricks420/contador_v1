@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Wrench, Pencil, Bot, X, Trash2, AlertTriangle, Zap } from "lucide-react";
-import ClientLayout from "@/components/Layout/ClientLayout";
 import { formatDate } from "@/lib/format";
+import SearchableSelect from "@/components/SearchableSelect";
 
 interface DocumentType {
   id: string;
@@ -564,7 +564,7 @@ export default function RulesPage() {
                             checked={selectedRuleIds.has(rule.id)}
                             onChange={(e) => {
                               const next = new Set(selectedRuleIds);
-                              e.target.checked ? next.add(rule.id) : next.delete(rule.id);
+                              if (e.target.checked) next.add(rule.id); else next.delete(rule.id);
                               setSelectedRuleIds(next);
                             }}
                             className="rounded cursor-pointer"
@@ -762,16 +762,16 @@ export default function RulesPage() {
               {/* Match Type */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500">Тип сопоставления</label>
-                <select
+                <SearchableSelect
+                  options={[
+                    { value: "INN", label: "ИНН контрагента" },
+                    { value: "KEYWORD", label: "Ключевое слово" },
+                    { value: "AMOUNT_RANGE", label: "Диапазон сумм" },
+                    { value: "TREASURY_ACCOUNT", label: "Казначейский счёт" },
+                  ]}
                   value={formType}
-                  onChange={(e) => setFormType(e.target.value as Rule["matchType"])}
-                  className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-hidden focus:border-black"
-                >
-                  <option value="INN">ИНН контрагента</option>
-                  <option value="KEYWORD">Ключевое слово</option>
-                  <option value="AMOUNT_RANGE">Диапазон сумм</option>
-                  <option value="TREASURY_ACCOUNT">Казначейский счёт</option>
-                </select>
+                  onChange={(v) => setFormType(v as Rule["matchType"])}
+                />
                 <p className="text-[10px] text-gray-400 font-medium">
                   {TYPE_LABELS[formType]?.desc}
                 </p>
@@ -799,15 +799,15 @@ export default function RulesPage() {
               {/* Direction filter */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500">Направление (опционально)</label>
-                <select
+                <SearchableSelect
+                  options={[
+                    { value: "CREDIT", label: "Только входящие (CREDIT)" },
+                    { value: "DEBIT", label: "Только исходящие (DEBIT)" },
+                  ]}
                   value={formDirection}
-                  onChange={(e) => setFormDirection(e.target.value as "" | "DEBIT" | "CREDIT")}
-                  className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-hidden focus:border-black"
-                >
-                  <option value="">Любое (входящие и исходящие)</option>
-                  <option value="CREDIT">Только входящие (CREDIT)</option>
-                  <option value="DEBIT">Только исходящие (DEBIT)</option>
-                </select>
+                  onChange={(v) => setFormDirection(v as "" | "DEBIT" | "CREDIT")}
+                  allOption={{ value: "", label: "Любое (входящие и исходящие)" }}
+                />
                 <p className="text-[10px] text-gray-400 font-medium">
                   Если задано, правило сработает только для операций нужного направления
                 </p>
@@ -816,18 +816,12 @@ export default function RulesPage() {
               {/* Document Type Category */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-500">Назначить категорию операции</label>
-                <select
+                <SearchableSelect
+                  options={categories.map((cat) => ({ value: cat.id, label: `${cat.name} (${cat.code})`, searchText: cat.code }))}
                   value={formCategory}
-                  onChange={(e) => setFormCategory(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-hidden focus:border-black"
-                  required
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name} ({cat.code})
-                    </option>
-                  ))}
-                </select>
+                  onChange={setFormCategory}
+                  placeholder="— Выберите категорию —"
+                />
               </div>
 
               {/* Footer Buttons */}
@@ -899,7 +893,7 @@ export default function RulesPage() {
                           checked={bulkSelected.has(tx.id)}
                           onChange={e => {
                             const next = new Set(bulkSelected);
-                            e.target.checked ? next.add(tx.id) : next.delete(tx.id);
+                            if (e.target.checked) next.add(tx.id); else next.delete(tx.id);
                             setBulkSelected(next);
                           }}
                           className="rounded"

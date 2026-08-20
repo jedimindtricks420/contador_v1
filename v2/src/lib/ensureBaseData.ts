@@ -1,6 +1,7 @@
 import prisma from "./prisma";
 import { TAX_RATES, ACCOUNTS } from "./constants";
 import { upsertAllAccounts } from "./seed-coa";
+import { validateTemplate } from "./posting/templateValidator";
 
 const vatDivisor = 1 + TAX_RATES.VAT; // 1.12
 
@@ -90,6 +91,13 @@ export const baseDocumentTypes = [
       ],
       opensItem: false,
       closesOpenItemByAccount: "6010",
+      // requireCloseMatch: этот тип погашает УЖЕ существующий долг (6010) за
+      // полученный товар. Если у поставщика нет открытой позиции на 6010 —
+      // это не погашение долга, а аванс до получения товара (категория
+      // ADVANCE_PAID, Дт 4310). Без этого флага движок раньше молча пропускал
+      // шаг закрытия и всё равно долбил 6010 в минус без какого-либо учёта —
+      // так GP TECH UNION накопил 3 таких неотслеживаемых аванса.
+      requireCloseMatch: true,
       requiresCounterparty: true
     }
   },
@@ -104,6 +112,7 @@ export const baseDocumentTypes = [
       ],
       opensItem: false,
       closesOpenItemByAccount: "6010",
+      requireCloseMatch: true, // см. комментарий у SUPPLIER_PAYMENT_GOODS выше
       requiresCounterparty: true
     }
   },
@@ -118,6 +127,7 @@ export const baseDocumentTypes = [
       ],
       opensItem: false,
       closesOpenItemByAccount: "6010",
+      requireCloseMatch: true, // см. комментарий у SUPPLIER_PAYMENT_GOODS выше
       requiresCounterparty: true
     }
   },
@@ -132,6 +142,7 @@ export const baseDocumentTypes = [
       ],
       opensItem: false,
       closesOpenItemByAccount: "6010",
+      requireCloseMatch: true, // см. комментарий у SUPPLIER_PAYMENT_GOODS выше
       requiresCounterparty: true
     }
   },
@@ -556,6 +567,40 @@ export const baseDocumentTypes = [
       lines: [
         { accountCode: "6310", side: "debit", expression: "amount" },
         { accountCode: "9030", side: "credit", expression: "amount - vatAmount" },
+        { accountCode: "6410", side: "credit", expression: "vatAmount", condition: "vatAmount > 0" }
+      ],
+      opensItem: false,
+      requiresCounterparty: true
+    }
+  },
+  // Товарные варианты INVOICE_CONFIRMED*: та же проводка, но выручка идёт на 9020
+  // (реализация товаров), а не 9030 (услуги) — нужно, чтобы себестоимость проданных
+  // товаров можно было списать через GOODS_SOLD (Дт9120/Кт2910) и чтобы pre-close
+  // проверка в closing.ts (сверка Кт9020 vs списанной себестоимости) вообще видела
+  // эту выручку. Выбор товар/услуга — see receiptKind.ts:saleDocTypeCode.
+  {
+    code: "INVOICE_CONFIRMED_GOODS",
+    name: "ЭСФ подтверждён — постоплата (товары)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "4010", side: "debit", expression: "amount" },
+        { accountCode: "9020", side: "credit", expression: "amount - vatAmount" },
+        { accountCode: "6410", side: "credit", expression: "vatAmount", condition: "vatAmount > 0" }
+      ],
+      opensItem: true,
+      itemAccountCode: "4010",
+      requiresCounterparty: true
+    }
+  },
+  {
+    code: "INVOICE_CONFIRMED_PREPAID_GOODS",
+    name: "ЭСФ подтверждён — зачёт аванса (товары)",
+    mode: "MANUAL_ONLY",
+    template: {
+      lines: [
+        { accountCode: "6310", side: "debit", expression: "amount" },
+        { accountCode: "9020", side: "credit", expression: "amount - vatAmount" },
         { accountCode: "6410", side: "credit", expression: "vatAmount", condition: "vatAmount > 0" }
       ],
       opensItem: false,
@@ -2739,6 +2784,28 @@ export const baseDocumentTypes = [
 export async function ensureBaseData() {
   const seedResult = await upsertAllAccounts(prisma);
   console.log(`[seed] Счета НСБУ: создано ${seedResult.created}, обновлено ${seedResult.updated}, всего ${seedResult.total}`);
+
+  // Structural sanity check for every template BEFORE writing any of them to the
+  // DB: a malformed template (bad expression syntax, missing accountCode, opensItem
+  // without itemAccountCode, etc.) should fail loudly at seed time, not silently
+  // reach postDocument() later where a broken template surfaces as a confusing
+  // runtime error against a real document. templateValidator.ts existed but was
+  // never wired in — this closes that gap.
+  // PERIOD_CLOSING — единственное намеренное исключение: технический маркер
+  // реформации баланса, его реальные проводки генерируются вручную в closing.ts,
+  // а не через template.lines (см. closing.ts:563-567 и комментарий там же).
+  const TEMPLATE_VALIDATION_EXEMPT = new Set(["PERIOD_CLOSING"]);
+  const templateErrors: string[] = [];
+  for (const doc of baseDocumentTypes) {
+    if (TEMPLATE_VALIDATION_EXEMPT.has(doc.code)) continue;
+    const errors = validateTemplate(doc.template);
+    if (errors.length > 0) {
+      templateErrors.push(`[${doc.code}] ${errors.join("; ")}`);
+    }
+  }
+  if (templateErrors.length > 0) {
+    throw new Error(`Некорректные шаблоны типов документов:\n${templateErrors.join("\n")}`);
+  }
 
   for (const doc of baseDocumentTypes) {
     await prisma.documentType.upsert({
