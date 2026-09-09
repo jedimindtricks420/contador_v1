@@ -268,10 +268,13 @@ describe("SSR output contains real content, not client-only", () => {
     expect(uzHtml).not.toContain("ishlab chiqilmoqda");
   });
 
-  it("Header (ru) includes the new services-companies nav entry (16)", () => {
+  it("Header (ru) keeps the spec's frozen 7-item menu and does NOT add topic 16", () => {
+    // §6 "Меню RU/UZ" fixes the menu literally; 16 isn't in that list (unlike
+    // 14/15, which are). Reviewed 2026-09-09: 16 stays reachable via
+    // relatedIds from 06/08/13 and the sitemap instead of a nav entry.
     const home = getTopicById("01")!;
     const html = renderToStaticMarkup(<Header topic={home} locale="ru" />);
-    expect(html).toContain("Для компаний услуг");
+    expect(html).not.toContain("Для компаний услуг");
   });
 
   it("Header and Footer render real nav labels and CTA text server-side", () => {
