@@ -1,0 +1,28 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY marketing/package*.json ./
+RUN npm ci
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY marketing/ .
+# Тот же жёсткий потолок памяти, что и в Dockerfile.v2 (см. комментарий там):
+# без него next build не ограничен ничем и один раз съел всю RAM хоста
+# (19.08.2026). 3GB heap + next.config.ts cpus:1 держат пик сборки предсказуемым.
+ENV NODE_OPTIONS="--max-old-space-size=3072"
+RUN npm run build
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+EXPOSE 3033
+ENV PORT=3033
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["node", "server.js"]

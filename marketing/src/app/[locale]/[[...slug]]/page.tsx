@@ -17,10 +17,19 @@ import { absoluteUrl } from "@/lib/site";
 import { breadcrumbJsonLd, organizationAndWebSiteJsonLd, webPageJsonLd } from "@/lib/jsonld";
 
 // Маршрут построен полностью из белого списка manifest (src/content/seo-pages.ts,
-// только contentStatus === "published") — TASK-0003 §4/§8. dynamicParams=false
-// означает: любая комбинация locale/slug, которой нет в generateStaticParams,
-// сразу отдаёт настоящий 404 вместо попытки динамического рендера.
-export const dynamicParams = false;
+// только contentStatus === "published") — TASK-0003 §4/§8.
+//
+// dynamicParams=false когда-то стоял здесь с намерением "неизвестный путь —
+// сразу 404 на уровне роутинга". На практике (обнаружено прямой проверкой
+// запущенного standalone-контейнера, 2026-09-09) в Next.js 16.2.1/Turbopack
+// generateStaticParams для опционального catch-all ([[...slug]]) не попадает
+// в prerender-манифест как разрешённые пути в этой конфигурации сборки — с
+// dynamicParams=false это превращало ЛЮБОЙ путь, включая существующие 60 URL,
+// в "NoFallbackError" (500-подобная ошибка в логах, 404 в ответе). Оставлен
+// дефолт (true): страница ниже сама вызывает notFound() для неизвестной
+// локали/слага через findTopicBySlug — реальный 404 для мусорных URL
+// обеспечивается кодом компонента, а не этим флагом.
+
 
 function isLocale(value: string): value is Locale {
   return (LOCALES as string[]).includes(value);

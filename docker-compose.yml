@@ -66,3 +66,30 @@ services:
     # сделала неограниченная сборка 19.08.2026 (см. Dockerfile.v2).
     mem_limit: 1g
     mem_reservation: 256m
+
+  marketing:
+    build:
+      context: .
+      dockerfile: Dockerfile.marketing
+    image: contador-marketing
+    container_name: contador-marketing
+    restart: always
+    ports:
+      - "3033:3033"
+    environment:
+      # Публичные SEO-страницы (TASK-0003): без Prisma, без сессий, без БД.
+      # Единственная сетевая зависимость — цена тарифа PRO на /ru/tarify/ и
+      # /uz/tariflar/, тем же способом, что и v2 (см. v2/.env ADMIN_API_URL) —
+      # по имени сервиса в contador-net, не localhost (внутри контейнера
+      # localhost — сам контейнер, не хост).
+      ADMIN_API_URL: http://admin:3031
+      NEXT_PUBLIC_SITE_ORIGIN: https://contador.uz
+    depends_on:
+      - admin
+    networks:
+      - contador-net
+    # Статический/ISR-контент без Prisma и без пула БД — заведомо легче v2;
+    # тот же принцип ограничения памяти (см. комментарий у v2 выше и
+    # Dockerfile.marketing/Dockerfile.v2 про инцидент 19.08.2026).
+    mem_limit: 512m
+    mem_reservation: 128m
