@@ -291,4 +291,142 @@ describe("SSR output contains real content, not client-only", () => {
     expect(html).toContain("Для руководителей");
     expect(html).toContain("Войти");
   });
+
+  // Фаза 4 (TASK-0003): +8 тем — хаб 18 и все 7 руководств (19, 20, 22, 23,
+  // 24, 25, 30). Та же техника: прямой вызов серверных компонентов из
+  // CONTENT_REGISTRY + renderToStaticMarkup (см. пояснение вверху файла).
+  it("Header (ru+uz) now includes 'Руководства'/'Qo‘llanmalar' — 18 IS in the spec's frozen 7-item menu, unlike topic 16", () => {
+    const home = getTopicById("01")!;
+    const ruHtml = renderToStaticMarkup(<Header topic={home} locale="ru" />);
+    expect(ruHtml).toContain("Руководства");
+
+    const uzHtml = renderToStaticMarkup(<Header topic={home} locale="uz" />);
+    expect(uzHtml).toContain("Qo‘llanmalar");
+  });
+
+  it("guides hub (18, ru+uz) cards all 7 built guides across its 3 groups server-side", async () => {
+    const topic = getTopicById("18")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["18"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    for (const id of ["19", "20", "21", "22", "23", "24", "25", "30"]) {
+      expect(ruHtml).toContain(getTopicById(id)!.locales.ru.h1);
+    }
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["18"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+    for (const id of ["19", "20", "21", "22", "23", "24", "25", "30"]) {
+      expect(uzHtml).toContain(getTopicById(id)!.locales.uz.h1);
+    }
+  });
+
+  it("prepare bank statement guide (19, ru+uz) renders H1, the real supported formats and the mistakes table server-side", async () => {
+    const topic = getTopicById("19")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["19"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain(".txt");
+    expect(ruHtml).toContain(".xlsx");
+    expect(ruHtml).toContain("откат импорта");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["19"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("checking AI classification guide (20, ru+uz) renders H1 and the 3 fictional examples, no chat-UI or invented confidence number", async () => {
+    const topic = getTopicById("20")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["20"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Перевод между своими счетами");
+    expect(ruHtml).toContain("Аванс поставщику");
+    expect(ruHtml).toContain("не диалоговый чат-интерфейс");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["20"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("profit vs cash flow guide (22, ru+uz) renders H1 and the deferred-payment example server-side", async () => {
+    const topic = getTopicById("22")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["22"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("10 000 000 сум");
+    expect(ruHtml).toContain("не учитывает налоги");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["22"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("reading OSV guide (23, ru+uz) renders H1 and the annotated own-data example server-side", async () => {
+    const topic = getTopicById("23")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["23"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Расчёты с покупателями");
+    expect(ruHtml).toContain("8 700 000");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["23"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("opening balances guide (24, ru+uz) renders H1, the real settings route reference and no full-1C-migration promise", async () => {
+    const topic = getTopicById("24")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["24"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("не переносит базу 1С");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["24"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("choosing a program guide (25, ru+uz) renders H1 and an empty self-scoring column, not a fabricated ranking", async () => {
+    const topic = getTopicById("25")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["25"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Ваша оценка");
+    // Explicit disclaimer text, not a fabricated ranking/scoreboard: no named
+    // competitors and no numbered "1 место"/"2 место" placement anywhere.
+    expect(ruHtml).toContain("не содержит сравнения с конкретными конкурентами");
+    expect(ruHtml).not.toMatch(/\d\s*место/);
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["25"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("transition from Excel guide (30, ru+uz) renders H1 and the transfer-scope table, no one-click conversion promise", async () => {
+    const topic = getTopicById("30")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["30"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("не автоматическая конвертация");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["30"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("pair cross-links (03↔19, 04↔20, 08↔22, 10↔23) render on both sides server-side", async () => {
+    const t03 = getTopicById("03")!;
+    const t19 = getTopicById("19")!;
+    const t04 = getTopicById("04")!;
+    const t20 = getTopicById("20")!;
+    const t08 = getTopicById("08")!;
+    const t22 = getTopicById("22")!;
+    const t10 = getTopicById("10")!;
+    const t23 = getTopicById("23")!;
+
+    const html03 = renderToStaticMarkup(await CONTENT_REGISTRY["03"].ru({ topic: t03 }));
+    expect(html03).toContain(t19.locales.ru.h1);
+    const html19 = renderToStaticMarkup(await CONTENT_REGISTRY["19"].ru({ topic: t19 }));
+    expect(html19).toContain(t03.locales.ru.h1);
+
+    const html04 = renderToStaticMarkup(await CONTENT_REGISTRY["04"].ru({ topic: t04 }));
+    expect(html04).toContain(t20.locales.ru.h1);
+    const html20 = renderToStaticMarkup(await CONTENT_REGISTRY["20"].ru({ topic: t20 }));
+    expect(html20).toContain(t04.locales.ru.h1);
+
+    const html08 = renderToStaticMarkup(await CONTENT_REGISTRY["08"].ru({ topic: t08 }));
+    expect(html08).toContain(t22.locales.ru.h1);
+    const html22 = renderToStaticMarkup(await CONTENT_REGISTRY["22"].ru({ topic: t22 }));
+    expect(html22).toContain(t08.locales.ru.h1);
+
+    const html10 = renderToStaticMarkup(await CONTENT_REGISTRY["10"].ru({ topic: t10 }));
+    expect(html10).toContain(t23.locales.ru.h1);
+    const html23 = renderToStaticMarkup(await CONTENT_REGISTRY["23"].ru({ topic: t23 }));
+    expect(html23).toContain(t10.locales.ru.h1);
+  });
 });

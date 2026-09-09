@@ -5,11 +5,14 @@
 //
 // Фаза 1: 7 тем из 30 будущих — 01, 02, 06, 17, 21, 26, 27.
 // Фаза 2: +7 тем — 03, 04, 05, 07, 08, 14, 15. Итого 14 тем / 28 URL.
-// Фаза 3 (эта задача): +6 тем — 09, 10, 11, 12, 13, 16. Итого 20 тем / 40 URL.
-// P0 теперь полностью построен, кроме хаба 18 (сознательно отложен — пустой
-// хаб не публикуется, пока не готовы темы 19–25/30, см. phase3-evidence.md).
-// Остальные 10 тем будут добавлены в фазе 4+ по той же схеме: одна запись
-// в TOPICS + тексты в src/content/{ru,uz}/<id>-<slug>.tsx + запись в registry.tsx.
+// Фаза 3: +6 тем — 09, 10, 11, 12, 13, 16. Итого 20 тем / 40 URL.
+// Фаза 4 (эта задача): +8 тем — хаб 18 и все 7 его дочерних руководств
+// (19, 20, 22, 23, 24, 25, 30). Итого 28 тем / 56 URL. Хаб 18 публикуется
+// сразу полным, т.к. все его дочерние темы построены в этой же фазе (в
+// отличие от хабов 02/26, которым пришлось ждать своих детей по фазам).
+// Оставшиеся 2 темы (28, 29 — калькуляторы безубыточности и запаса денег)
+// добавляются в фазе 5 по той же схеме: одна запись в TOPICS + тексты в
+// src/content/{ru,uz}/<id>-<slug>.tsx + запись в registry.tsx.
 //
 // relatedIds и parentId ссылаются ТОЛЬКО на темы, реально построенные к этой
 // фазе (проверяется validateManifest ниже) — так UI никогда не создаёт ссылку
@@ -164,7 +167,8 @@ export const TOPICS: Topic[] = [
     id: "03",
     type: "feature",
     parentId: "02",
-    relatedIds: ["04", "06"],
+    // Фаза 4: добавлена пара 19 — §6 "03 продаёт импорт / 19 учит подготовить файл".
+    relatedIds: ["04", "06", "19"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -237,7 +241,8 @@ export const TOPICS: Topic[] = [
     id: "04",
     type: "feature",
     parentId: "02",
-    relatedIds: ["05", "03"],
+    // Фаза 4: добавлена пара 20 — спец. §5 topic 04 relatedIds включают 20.
+    relatedIds: ["05", "03", "20"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -529,7 +534,8 @@ export const TOPICS: Topic[] = [
     id: "08",
     type: "feature",
     parentId: "02",
-    relatedIds: ["15", "09"],
+    // Фаза 4: добавлена пара 22 — §6 "08 показывает отчёт / 22 объясняет разницу с потоком денег".
+    relatedIds: ["15", "09", "22"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -659,7 +665,8 @@ export const TOPICS: Topic[] = [
     id: "10",
     type: "feature",
     parentId: "02",
-    relatedIds: ["12", "07"],
+    // Фаза 4: добавлена пара 23 — §6 "10 показывает ОСВ в продукте / 23 учит читать её".
+    relatedIds: ["12", "07", "23"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -1180,6 +1187,98 @@ export const TOPICS: Topic[] = [
     },
   },
   {
+    id: "18",
+    type: "hub",
+    relatedIds: ["19", "21", "22", "30"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Каталог-агрегатор; фаза 4 строит все 7 руководств (19,20,22,23,24,25,30) в этой же фазе, поэтому хаб публикуется сразу полным — карточками показаны 19–25 и 30, включая уже существующий чек-лист 21.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva",
+        title: "Инструкции по учёту и отчётам | Contador",
+        description:
+          "Разберитесь с банковскими выписками, закрытием месяца, ОСВ и финансовыми отчётами. Пошаговые материалы Contador с примерами для работы с учётом.",
+        h1: "Практические руководства по работе с учётом",
+        h2: ["Начало работы", "Проверки и закрытие", "Понимание отчётов"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar",
+        title: "Hisob va hisobotlar bo‘yicha qo‘llanmalar | Contador",
+        description:
+          "Bank ko‘chirmalari, oyni yopish, aylanma-saldo qaydnomasi va moliyaviy hisobotlarni o‘rganing. Contador qo‘llanmalaridagi amaliy misollar bilan tanishing.",
+        h1: "Hisob bilan ishlash bo‘yicha amaliy qo‘llanmalar",
+        h2: ["Ishni boshlash", "Tekshiruvlar va yopish", "Hisobotlarni tushunish"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "19",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["03", "20", "21"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Повторно использует evidence темы 03: v2/src/app/closing/steps/Step1Import.tsx:137,145,158 — форматы .txt/.xls/.xlsx, AUTO-определение; импорт доступен только на шаге 1 мастера закрытия — этот факт не переиначивается в обучающем тексте.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/podgotovka-bankovskoy-vypiski",
+        title: "Как подготовить банковскую выписку к импорту",
+        description:
+          "Узнайте, что проверить в банковской выписке перед импортом: формат, период, суммы и повторные операции. Практическая инструкция для загрузки в Contador.",
+        h1: "Подготовка банковской выписки: пошаговая инструкция",
+        h2: ["Проверьте формат и период", "Сопоставьте суммы", "Разберите ошибку загрузки"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/bank-kochirmasini-tayyorlash",
+        title: "Bank ko‘chirmasini importga qanday tayyorlash kerak",
+        description:
+          "Importdan oldin bank ko‘chirmasining formati, davri, summalari va takroriy operatsiyalarini tekshirishni o‘rganing. Contador uchun amaliy yo‘riqnoma.",
+        h1: "Bank ko‘chirmasini importga tayyorlash qo‘llanmasi",
+        h2: ["Format va davrni tekshiring", "Summalarni solishtiring", "Yuklash xatosini aniqlang"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "20",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["04", "05", "19"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Повторно использует evidence темы 04: v2/src/lib/constants.ts AI.CONFIDENCE_THRESHOLD=70, ClarificationQueue.tsx, rulesEngine.ts+aiClassifier.ts. Конкретное число порога не публикуется в тексте (как и на теме 04) — в UI пользователь видит очередь уточнения, а не цифру уверенности; нет чат-интерфейса.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/proverka-ai-klassifikacii",
+        title: "Как проверять AI-классификацию операций | Contador",
+        description:
+          "Разберите, как проверять категории операций, уточнять назначение платежа и исправлять неоднозначные результаты AI-классификации в Contador.",
+        h1: "Проверка операций после AI-классификации",
+        h2: ["Какие данные сверять", "Разбор неоднозначного платежа", "Подтверждение результата"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/ai-tasnifini-tekshirish",
+        title: "AI operatsiyalar tasnifini tekshirish | Contador",
+        description:
+          "Operatsiya toifalarini tekshirish, to‘lov maqsadini aniqlashtirish va AI tasnifidagi noaniq natijalarni tuzatishni Contador misolida o‘rganing.",
+        h1: "AI tasnifidan keyin operatsiyalarni tekshiring",
+        h2: ["Qaysi ma’lumotlarni solishtirish", "Noaniq to‘lovni tahlil qilish", "Natijani tasdiqlash"],
+        faq: [],
+      },
+    },
+  },
+  {
     id: "21",
     type: "checklist",
     relatedIds: ["06", "13", "10"],
@@ -1205,6 +1304,130 @@ export const TOPICS: Topic[] = [
           "Ko‘chirmalar, operatsiyalar, ochiq pozitsiyalar va hisobotlarni interaktiv ro‘yxat bilan tekshiring. Bajarilgan bandlarni belgilang va ro‘yxatni chop eting.",
         h1: "Hisobning oyni yopishga tayyorligini tekshiring",
         h2: ["Ma’lumotlarni tayyorlang", "Tugallanmagan operatsiyalarni tekshiring", "Hisobotlarni solishtiring"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "22",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["08", "09", "15"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Концептуальное объяснение с собственным примером; повторно использует evidence тем 08 (P&L, /v2/pnl) и 09 (ДДС, /v2/cashflow), уже построенных ранее. Числа в примере вымышленные, налоговый расчёт не выполняется и не заявляется.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/pribyl-i-denezhnyy-potok",
+        title: "Прибыль и денежный поток: в чём разница | Contador",
+        description:
+          "Разберите разницу между прибылью и денежным потоком на простом примере. Узнайте, зачем смотреть P&L и движение денег вместе при анализе бизнеса.",
+        h1: "Почему прибыль не равна деньгам на счёте",
+        h2: ["Два разных показателя", "Пример с отсрочкой оплаты", "Какие отчёты смотреть вместе"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/foyda-va-pul-oqimi-farqi",
+        title: "Foyda va pul oqimi: qanday farq bor | Contador",
+        description:
+          "Oddiy misolda foyda va pul oqimi o‘rtasidagi farqni o‘rganing. Biznesni tahlil qilishda foyda-zarar hisoboti va pul harakatini birga ko‘rish sabablarini biling.",
+        h1: "Nega foyda hisobdagi pulga teng emas",
+        h2: ["Ikki xil ko‘rsatkich", "Kechiktirilgan to‘lov misoli", "Qaysi hisobotlarni birga ko‘rish kerak"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "23",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["10", "12", "24"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Аннотированная собственная таблица (не реальные данные), сверенная со структурой отчёта на теме 10: v2/src/app/reports/osv/OSVClient.tsx + page.tsx. Правила активных/пассивных счетов изложены так же, как в FAQ темы 10, без противоречий.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/kak-chitat-osv",
+        title: "Как читать оборотно-сальдовую ведомость | Contador",
+        description:
+          "Изучите колонки ОСВ на понятном примере: начальное сальдо, дебет, кредит и остаток на конец периода. Разберитесь, какие данные нужно проверить.",
+        h1: "Как разобраться в оборотно-сальдовой ведомости",
+        h2: ["Что означает каждая колонка", "Пример движения по счёту", "Почему равенства итогов недостаточно"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/aylanma-saldo-qaydnomasini-oqish",
+        title: "Aylanma-saldo qaydnomasini qanday o‘qish kerak",
+        description:
+          "Boshlang‘ich saldo, debet, kredit va davr oxiridagi qoldiqni oddiy misolda o‘rganing. Aylanma-saldo qaydnomasida nimalarni tekshirish kerakligini biling.",
+        h1: "Aylanma-saldo qaydnomasini tushunish qo‘llanmasi",
+        h2: ["Har bir ustun nimani anglatadi", "Hisobvaraq harakati misoli", "Nega jami tengligi yetarli emas"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "24",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["07", "23", "30"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Реальный маршрут /v2/settings/opening-balance (подтверждён в phase-1 evidence). Автоматический перенос всей базы 1С не обещается — только разовый ручной ввод исходных остатков.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/nachalnye-ostatki",
+        title: "Начальные остатки: подготовка данных | Contador",
+        description:
+          "Узнайте, какие данные собрать для ввода начальных остатков в Contador. Проверьте дату начала учёта, счета и суммы перед дальнейшей работой с отчётами.",
+        h1: "Подготовьте начальные остатки для начала учёта",
+        h2: ["Выберите дату начала", "Соберите данные по счетам", "Проверьте введённые остатки"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/boshlangich-qoldiqlar",
+        title: "Boshlang‘ich qoldiqlarni tayyorlash | Contador",
+        description:
+          "Contador’da boshlang‘ich qoldiqlarni kiritish uchun kerakli ma’lumotlarni o‘rganing. Hisobotlar bilan ishlashdan oldin sana, hisobvaraqlar va summalarni tekshiring.",
+        h1: "Hisobni boshlash uchun qoldiqlarni tayyorlang",
+        h2: ["Boshlanish sanasini tanlang", "Hisobvaraqlar ma’lumotlarini yig‘ing", "Kiritilgan qoldiqlarni tekshiring"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "25",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["02", "17", "19"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Редакционная таблица критериев с пустой колонкой для самооценки читателя; явное авторство Contador, без вымышленного рейтинга и неподтверждённого сравнения конкурентов (спека прямо это запрещает).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/kak-vybrat-buhgalterskuyu-programmu",
+        title: "Как выбрать бухгалтерскую программу в Узбекистане",
+        description:
+          "Используйте список критериев для выбора бухгалтерской программы в Узбекистане: импорт, отчёты, проверка операций, доступы и стоимость обслуживания.",
+        h1: "Проверьте программу на задачах вашего бизнеса",
+        h2: ["Составьте список задач", "Проверьте сценарий на примере", "Сравните условия и ограничения"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/buxgalteriya-dasturini-tanlash",
+        title: "O‘zbekistonda buxgalteriya dasturini tanlash",
+        description:
+          "O‘zbekistonda buxgalteriya dasturini tanlash mezonlarini ko‘ring: import, hisobotlar, operatsiyalarni tekshirish, kirish huquqlari va xizmat narxi.",
+        h1: "Dasturni biznesingiz vazifalarida tekshiring",
+        h2: ["Vazifalar ro‘yxatini tuzing", "Jarayonni misolda tekshiring", "Shartlar va cheklovlarni solishtiring"],
         faq: [],
       },
     },
@@ -1266,6 +1489,37 @@ export const TOPICS: Topic[] = [
           "Marja va ustamani hisoblash uchun tannarx va sotuv narxini kiriting. Contador’ning bepul kalkulyatori, formulalar, izohlar va hisoblash misoli.",
         h1: "Narx va tannarx asosida marja va ustamani hisoblang",
         h2: ["Narx va tannarxni kiriting", "Foizlar o‘rtasidagi farq", "Formulalar va misol"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "30",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["24", "19", "25"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Повторно использует реальные форматы импорта темы 03 и маршрут начальных остатков темы 24. Не обещает конвертацию произвольной Excel-бухгалтерии одним кликом — только план подготовки данных.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/perehod-iz-excel",
+        title: "Как перейти от Excel к учёту в программе | Contador",
+        description:
+          "Составьте план перехода от таблиц к учёту в Contador: выберите дату, соберите остатки, подготовьте поддерживаемые выписки и проверьте первые отчёты.",
+        h1: "Подготовьте переход от таблиц к Contador",
+        h2: ["Определите границы переноса", "Подготовьте остатки и выписки", "Сверьте первый период"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/exceldan-otish",
+        title: "Excel’dan hisob dasturiga o‘tish | Contador",
+        description:
+          "Contador’ga o‘tish rejasini tuzing: sanani tanlang, qoldiqlarni yig‘ing, mos bank ko‘chirmalarini tayyorlang va dastlabki hisobotlarni tekshiring.",
+        h1: "Jadvallardan Contador’ga o‘tishni tayyorlang",
+        h2: ["Ko‘chirish chegaralarini belgilang", "Qoldiqlar va ko‘chirmalarni tayyorlang", "Birinchi davrni tekshiring"],
         faq: [],
       },
     },
