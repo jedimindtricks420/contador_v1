@@ -55,6 +55,10 @@ import Body26Ru from "./ru/26-instrumenty";
 import Body26Uz from "./uz/26-vositalar";
 import Body27Ru from "./ru/27-kalkulyator-marzhi-i-nacenki";
 import Body27Uz from "./uz/27-marja-va-ustama-kalkulyatori";
+import Body28Ru from "./ru/28-tochka-bezubytochnosti";
+import Body28Uz from "./uz/28-zararsizlik-nuqtasi";
+import Body29Ru from "./ru/29-zapas-denezhnyh-sredstv";
+import Body29Uz from "./uz/29-pul-zaxirasi-muddati";
 import Body30Ru from "./ru/30-perehod-iz-excel";
 import Body30Uz from "./uz/30-exceldan-otish";
 
@@ -96,5 +100,7 @@ export const CONTENT_REGISTRY: Record<string, Record<"ru" | "uz", BodyComponent>
   "25": { ru: Body25Ru, uz: Body25Uz },
   "26": { ru: Body26Ru, uz: Body26Uz },
   "27": { ru: Body27Ru, uz: Body27Uz },
+  "28": { ru: Body28Ru, uz: Body28Uz },
+  "29": { ru: Body29Ru, uz: Body29Uz },
   "30": { ru: Body30Ru, uz: Body30Uz },
 };

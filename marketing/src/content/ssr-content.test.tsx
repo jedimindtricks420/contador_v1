@@ -88,10 +88,19 @@ describe("SSR output contains real content, not client-only", () => {
     expect(html).toContain("маржа 20%, наценка 25%");
   });
 
-  it("tools hub (26, ru) still only links to topics actually built (27-29 not all built yet)", async () => {
+  it("tools hub (26, ru+uz) cards all 3 built calculators server-side (phase 5: no more 'скоро'/'tez orada' placeholders)", async () => {
     const tools = getTopicById("26")!;
-    const toolsHtml = renderToStaticMarkup(await CONTENT_REGISTRY["26"].ru({ topic: tools }));
-    expect(toolsHtml).toContain("скоро");
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["26"].ru({ topic: tools }));
+    for (const id of ["27", "28", "29"]) {
+      expect(ruHtml).toContain(getTopicById(id)!.locales.ru.h1);
+    }
+    expect(ruHtml).not.toContain("скоро");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["26"].uz({ topic: tools }));
+    for (const id of ["27", "28", "29"]) {
+      expect(uzHtml).toContain(getTopicById(id)!.locales.uz.h1);
+    }
+    expect(uzHtml).not.toContain("tez orada");
   });
 
   // Фаза 2 (TASK-0003): 7 новых тем — 03, 04, 05, 07, 08, 14, 15. Та же техника:
@@ -428,5 +437,56 @@ describe("SSR output contains real content, not client-only", () => {
     expect(html10).toContain(t23.locales.ru.h1);
     const html23 = renderToStaticMarkup(await CONTENT_REGISTRY["23"].ru({ topic: t23 }));
     expect(html23).toContain(t10.locales.ru.h1);
+  });
+
+  // Фаза 5 (TASK-0003, финальная): +2 темы — калькуляторы безубыточности (28)
+  // и запаса денежных средств (29). Завершает полную матрицу 30 тем / 60 URL.
+  // Та же техника: прямой вызов серверных компонентов из CONTENT_REGISTRY +
+  // renderToStaticMarkup (см. пояснение вверху файла).
+  it("breakeven calculator tool (28, ru) renders labels and both worked examples server-side", async () => {
+    const topic = getTopicById("28")!;
+    const Body = CONTENT_REGISTRY["28"].ru;
+    const element = await Body({ topic });
+    const html = renderToStaticMarkup(element);
+    expect(html).toContain(topic.locales.ru.h1);
+    expect(html).toContain("Постоянные расходы");
+    expect(html).toContain("20 единиц, выручка 3 000 000");
+    expect(html).toContain("20,5 единицы, округлённо 21 единица");
+  });
+
+  it("breakeven calculator tool (28, uz) renders H1 and body text in Uzbek server-side", async () => {
+    const topic = getTopicById("28")!;
+    const Body = CONTENT_REGISTRY["28"].uz;
+    const element = await Body({ topic });
+    const html = renderToStaticMarkup(element);
+    expect(html).toContain(topic.locales.uz.h1);
+    expect(html).toContain("Doimiy xarajatlar");
+  });
+
+  it("cash runway calculator tool (29, ru) renders labels and the worked example server-side", async () => {
+    const topic = getTopicById("29")!;
+    const Body = CONTENT_REGISTRY["29"].ru;
+    const element = await Body({ topic });
+    const html = renderToStaticMarkup(element);
+    expect(html).toContain(topic.locales.ru.h1);
+    expect(html).toContain("Доступные деньги");
+    expect(html).toContain("чистый отток 5 000 000, запас 6 месяцев");
+    expect(html).toContain("не персональная инвестиционная рекомендация");
+  });
+
+  it("cash runway calculator tool (29, uz) renders H1 and body text in Uzbek server-side", async () => {
+    const topic = getTopicById("29")!;
+    const Body = CONTENT_REGISTRY["29"].uz;
+    const element = await Body({ topic });
+    const html = renderToStaticMarkup(element);
+    expect(html).toContain(topic.locales.uz.h1);
+    expect(html).toContain("Mavjud pul");
+  });
+
+  it("margin calculator (27, ru+uz) now links to the breakeven calculator (28) via relatedIds", async () => {
+    const t27 = getTopicById("27")!;
+    const t28 = getTopicById("28")!;
+    const html27 = renderToStaticMarkup(await CONTENT_REGISTRY["27"].ru({ topic: t27 }));
+    expect(html27).toContain(t28.locales.ru.h1);
   });
 });

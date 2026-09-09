@@ -10,9 +10,10 @@
 // (19, 20, 22, 23, 24, 25, 30). Итого 28 тем / 56 URL. Хаб 18 публикуется
 // сразу полным, т.к. все его дочерние темы построены в этой же фазе (в
 // отличие от хабов 02/26, которым пришлось ждать своих детей по фазам).
-// Оставшиеся 2 темы (28, 29 — калькуляторы безубыточности и запаса денег)
-// добавляются в фазе 5 по той же схеме: одна запись в TOPICS + тексты в
-// src/content/{ru,uz}/<id>-<slug>.tsx + запись в registry.tsx.
+// Фаза 5 (эта задача): +2 темы — калькуляторы безубыточности (28) и запаса
+// денежных средств (29). Итого 30 тем / 60 URL — полная матрица TASK-0003.
+// Хаб 26 публикуется полным (карточки на все 3 инструмента 27-29 + чек-лист
+// 21), как хаб 18 в фазе 4.
 //
 // relatedIds и parentId ссылаются ТОЛЬКО на темы, реально построенные к этой
 // фазе (проверяется validateManifest ниже) — так UI никогда не создаёт ссылку
@@ -1435,11 +1436,11 @@ export const TOPICS: Topic[] = [
   {
     id: "26",
     type: "hub",
-    relatedIds: ["27", "21"],
+    relatedIds: ["27", "28", "29", "21"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
-      "Каталог-агрегатор; карточки ведут только на реально построенные инструменты (27) и чек-лист (21). Темы 28–29 добавляются в фазе 2.",
+      "Каталог-агрегатор; фаза 5: карточки ведут на все три реально построенных инструмента (27, 28, 29) и чек-лист (21) — хаб опубликован полным, как и хаб 18 в фазе 4.",
     primaryCta: "register",
     locales: {
       ru: {
@@ -1466,7 +1467,8 @@ export const TOPICS: Topic[] = [
     id: "27",
     type: "tool",
     parentId: "26",
-    relatedIds: ["26", "08"],
+    // Фаза 5: добавлена связь с 28 — §5 topic 27 relatedIds "28, 08, 26".
+    relatedIds: ["28", "08", "26"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -1489,6 +1491,68 @@ export const TOPICS: Topic[] = [
           "Marja va ustamani hisoblash uchun tannarx va sotuv narxini kiriting. Contador’ning bepul kalkulyatori, formulalar, izohlar va hisoblash misoli.",
         h1: "Narx va tannarx asosida marja va ustamani hisoblang",
         h2: ["Narx va tannarxni kiriting", "Foizlar o‘rtasidagi farq", "Formulalar va misol"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "28",
+    type: "tool",
+    parentId: "26",
+    relatedIds: ["27", "08", "26"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Самостоятельный калькулятор; формулы — TASK-0003 §7 «28. Безубыточность» (не зависит от кода продукта); реализация — src/lib/breakeven.ts",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "instrumenty/tochka-bezubytochnosti",
+        title: "Калькулятор точки безубыточности | Contador",
+        description:
+          "Укажите постоянные расходы, цену и переменные затраты на единицу. Рассчитайте точку безубыточности по упрощённой модели и изучите формулу расчёта.",
+        h1: "Рассчитайте объём продаж для безубыточности",
+        h2: ["Задайте исходные значения", "Продажи для покрытия расходов", "Ограничения модели"],
+        faq: [],
+      },
+      uz: {
+        path: "vositalar/zararsizlik-nuqtasi",
+        title: "Zararsizlik nuqtasi kalkulyatori | Contador",
+        description:
+          "Doimiy xarajatlar, birlik narxi va o‘zgaruvchan xarajatlarni kiriting. Soddalashtirilgan modelda zararsizlik nuqtasini hisoblab, formula bilan tanishing.",
+        h1: "Zararsizlik uchun zarur savdo hajmini hisoblang",
+        h2: ["Boshlang‘ich qiymatlarni kiriting", "Xarajatlarni qoplash uchun savdo", "Model cheklovlari"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "29",
+    type: "tool",
+    parentId: "26",
+    relatedIds: ["09", "22", "26"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Самостоятельный калькулятор; формулы — TASK-0003 §7 «29. Запас денег» (не зависит от кода продукта); реализация — src/lib/runway.ts",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "instrumenty/zapas-denezhnyh-sredstv",
+        title: "На сколько хватит денег бизнесу: калькулятор | Contador",
+        description:
+          "Введите доступные деньги, среднемесячные поступления и выплаты. Оцените срок до исчерпания запаса при неизменном денежном потоке и сравните сценарии.",
+        h1: "Рассчитайте запас денежных средств в месяцах",
+        h2: ["Деньги и ежемесячный поток", "Расчёт срока", "Что изменит результат"],
+        faq: [],
+      },
+      uz: {
+        path: "vositalar/pul-zaxirasi-muddati",
+        title: "Pul zaxirasi qancha vaqtga yetadi: kalkulyator | Contador",
+        description:
+          "Mavjud pul, o‘rtacha oylik tushum va chiqimlarni kiriting. Pul oqimi o‘zgarmasa, zaxira qancha vaqtga yetishini hisoblab, ssenariylarni solishtiring.",
+        h1: "Pul zaxirasi necha oyga yetishini hisoblang",
+        h2: ["Pul va oylik oqim", "Muddatni hisoblash", "Natijaga nima ta’sir qiladi"],
         faq: [],
       },
     },

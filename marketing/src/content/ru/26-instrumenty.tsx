@@ -3,11 +3,25 @@ import { CTA } from "@/components/marketing/CTA";
 import { getTopicById, urlFor } from "@/lib/manifest";
 import type { Topic } from "@/lib/manifest";
 
-// Тип hub, порядок блоков — TASK-0003 §6. Фаза 1: построены калькулятор
-// маржи и наценки (27) и чек-лист закрытия (21); безубыточность (28) и запас
-// денег (29) помечены "скоро" без ссылок.
+// Тип hub, порядок блоков — TASK-0003 §6. Фаза 5: все три инструмента (27, 28,
+// 29) построены — хаб публикуется полным карточками, как хаб 18 в фазе 4;
+// заглушки "скоро" убраны.
+function Card({ topic, locale }: { topic: Topic; locale: "ru" }) {
+  return (
+    <a
+      href={urlFor(topic, locale)}
+      className="block rounded border border-gray-200 p-4 hover:border-black transition-colors"
+    >
+      <p className="font-medium text-black">{topic.locales[locale].h1}</p>
+      <p className="mt-1 text-sm text-gray-600">{topic.locales[locale].description}</p>
+    </a>
+  );
+}
+
 export default function Body({ topic }: { topic: Topic }) {
   const margin = getTopicById("27");
+  const breakeven = getTopicById("28");
+  const runway = getTopicById("29");
   const checklist = getTopicById("21");
 
   return (
@@ -22,18 +36,8 @@ export default function Body({ topic }: { topic: Topic }) {
           Маржа и наценка
         </h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {margin && (
-            <a href={urlFor(margin, "ru")} className="block rounded border border-gray-200 p-4 hover:border-black transition-colors">
-              <p className="font-medium text-black">{margin.locales.ru.h1}</p>
-              <p className="mt-1 text-sm text-gray-600">{margin.locales.ru.description}</p>
-            </a>
-          )}
-          {checklist && (
-            <a href={urlFor(checklist, "ru")} className="block rounded border border-gray-200 p-4 hover:border-black transition-colors">
-              <p className="font-medium text-black">{checklist.locales.ru.h1}</p>
-              <p className="mt-1 text-sm text-gray-600">{checklist.locales.ru.description}</p>
-            </a>
-          )}
+          {margin && <Card topic={margin} locale="ru" />}
+          {checklist && <Card topic={checklist} locale="ru" />}
         </div>
       </section>
 
@@ -41,8 +45,8 @@ export default function Body({ topic }: { topic: Topic }) {
         <h2 id="h2-breakeven" className="text-xl font-semibold text-black">
           Безубыточность
         </h2>
-        <div className="mt-4 rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400">
-          Калькулятор точки безубыточности — скоро
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {breakeven && <Card topic={breakeven} locale="ru" />}
         </div>
       </section>
 
@@ -50,8 +54,8 @@ export default function Body({ topic }: { topic: Topic }) {
         <h2 id="h2-runway" className="text-xl font-semibold text-black">
           Запас денежных средств
         </h2>
-        <div className="mt-4 rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400">
-          Калькулятор запаса денежных средств — скоро
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {runway && <Card topic={runway} locale="ru" />}
         </div>
       </section>
 
