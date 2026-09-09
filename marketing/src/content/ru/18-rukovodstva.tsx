@@ -28,6 +28,8 @@ export default function Body({ topic }: { topic: Topic }) {
   const checklist = getTopicById("21");
   const profitCash = getTopicById("22");
   const readOsv = getTopicById("23");
+  const regimeChoice = getTopicById("36");
+  const latePenalty = getTopicById("37");
 
   return (
     <div className="space-y-12">
@@ -66,6 +68,16 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {profitCash && <Card topic={profitCash} locale="ru" />}
           {readOsv && <Card topic={readOsv} locale="ru" />}
+        </div>
+      </section>
+
+      <section aria-labelledby="h2-taxes">
+        <h2 id="h2-taxes" className="text-xl font-semibold text-black">
+          Налоги
+        </h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {regimeChoice && <Card topic={regimeChoice} locale="ru" />}
+          {latePenalty && <Card topic={latePenalty} locale="ru" />}
         </div>
       </section>
 

@@ -15,6 +15,18 @@
 // Хаб 26 публикуется полным (карточки на все 3 инструмента 27-29 + чек-лист
 // 21), как хаб 18 в фазе 4.
 //
+// TASK-0004 (Wave 2, эта задача): +7 тем — 31 (налоговый календарь), 32
+// (калькулятор налога с оборота), 33 (квартальный расчёт налога на прибыль),
+// 34 (аудитория: продавцы маркетплейсов), 35 (сверка с Soliq и ЭСФ), 36
+// (гайд: оборотный налог или НДС), 37 (гайд: штрафы за просрочку отчётности).
+// Итого 37 тем / 74 URL. Хабы 02/18/26 дополнены карточками на новые дочерние
+// темы (31/33/35 → 02, 36/37 → 18, 32 → 26) — та же дисциплина "только
+// реально построенные темы", что и в фазах 3-5 TASK-0003. Evidence для всех
+// 7 тем — TASK-0004-spec.md §1 (повторная проверка кода contador_v1 после
+// мержа TASK-0003, 2026-09-09), не переиспользует TASK-0003 evidence кроме
+// явно указанных пересечений (33 зеркалит форму темы 33 самостоятельно, 35
+// углубляет уже упомянутый в теме 06 шаг «Сверка с Soliq»).
+//
 // relatedIds и parentId ссылаются ТОЛЬКО на темы, реально построенные к этой
 // фазе (проверяется validateManifest ниже) — так UI никогда не создаёт ссылку
 // на ещё не существующую страницу. Полная матрица связей по всем 30 темам
@@ -150,7 +162,7 @@ export const TOPICS: Topic[] = [
         description:
           "Изучите возможности Contador: импорт выписок, классификация операций, проводки, закрытие месяца и отчёты. Выберите инструмент для своей задачи.",
         h1: "Возможности Contador для бухгалтерского учёта",
-        h2: ["Подготовка данных", "Учёт и проверки", "Отчёты"],
+        h2: ["Подготовка данных", "Учёт и проверки", "Отчёты", "Налоги"],
         faq: [],
       },
       uz: {
@@ -159,7 +171,7 @@ export const TOPICS: Topic[] = [
         description:
           "Bank ko‘chirmalari importi, operatsiyalar tasnifi, o‘tkazmalar, oyni yopish va hisobotlar bilan tanishing. Vazifangizga mos Contador imkoniyatini tanlang.",
         h1: "Contador buxgalteriya imkoniyatlari",
-        h2: ["Ma’lumotlarni tayyorlash", "Hisob va tekshiruvlar", "Hisobotlar"],
+        h2: ["Ma’lumotlarni tayyorlash", "Hisob va tekshiruvlar", "Hisobotlar", "Soliqlar"],
         faq: [],
       },
     },
@@ -389,7 +401,11 @@ export const TOPICS: Topic[] = [
     id: "06",
     type: "feature",
     parentId: "02",
-    relatedIds: ["21", "03", "10"],
+    // TASK-0004: добавлена связь с 34 — у аудиторной темы 34 (продавцы
+    // маркетплейсов, без родительского хаба) нет иного естественного входящего
+    // перелинковки, кроме sitemap; 06 тематически ближе всего (в мастере
+    // закрытия обрабатываются и операции от маркетплейс-контрагентов).
+    relatedIds: ["21", "03", "10", "34"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -1203,7 +1219,7 @@ export const TOPICS: Topic[] = [
         description:
           "Разберитесь с банковскими выписками, закрытием месяца, ОСВ и финансовыми отчётами. Пошаговые материалы Contador с примерами для работы с учётом.",
         h1: "Практические руководства по работе с учётом",
-        h2: ["Начало работы", "Проверки и закрытие", "Понимание отчётов"],
+        h2: ["Начало работы", "Проверки и закрытие", "Понимание отчётов", "Налоги"],
         faq: [],
       },
       uz: {
@@ -1212,7 +1228,7 @@ export const TOPICS: Topic[] = [
         description:
           "Bank ko‘chirmalari, oyni yopish, aylanma-saldo qaydnomasi va moliyaviy hisobotlarni o‘rganing. Contador qo‘llanmalaridagi amaliy misollar bilan tanishing.",
         h1: "Hisob bilan ishlash bo‘yicha amaliy qo‘llanmalar",
-        h2: ["Ishni boshlash", "Tekshiruvlar va yopish", "Hisobotlarni tushunish"],
+        h2: ["Ishni boshlash", "Tekshiruvlar va yopish", "Hisobotlarni tushunish", "Soliqlar"],
         faq: [],
       },
     },
@@ -1449,7 +1465,7 @@ export const TOPICS: Topic[] = [
         description:
           "Рассчитайте маржу, наценку, точку безубыточности и запас денежных средств. Бесплатные инструменты Contador с формулами и примерами без регистрации.",
         h1: "Полезные инструменты для расчётов бизнеса",
-        h2: ["Маржа и наценка", "Безубыточность", "Запас денежных средств"],
+        h2: ["Маржа и наценка", "Безубыточность", "Запас денежных средств", "Налог с оборота"],
         faq: [],
       },
       uz: {
@@ -1458,7 +1474,7 @@ export const TOPICS: Topic[] = [
         description:
           "Marja, ustama, zararsizlik nuqtasi va pul zaxirasining yetish muddatini hisoblang. Formulalar va misollar bilan bepul vositalar, ro‘yxatdan o‘tish shart emas.",
         h1: "Biznes hisob-kitoblari uchun foydali vositalar",
-        h2: ["Marja va ustama", "Zararsizlik nuqtasi", "Pul zaxirasi"],
+        h2: ["Marja va ustama", "Zararsizlik nuqtasi", "Pul zaxirasi", "Aylanma solig'i"],
         faq: [],
       },
     },
@@ -1584,6 +1600,358 @@ export const TOPICS: Topic[] = [
           "Contador’ga o‘tish rejasini tuzing: sanani tanlang, qoldiqlarni yig‘ing, mos bank ko‘chirmalarini tayyorlang va dastlabki hisobotlarni tekshiring.",
         h1: "Jadvallardan Contador’ga o‘tishni tayyorlang",
         h2: ["Ko‘chirish chegaralarini belgilang", "Qoldiqlar va ko‘chirmalarni tayyorlang", "Birinchi davrni tekshiring"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "31",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["32", "33", "06"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/app/settings/tax-calendar/page.tsx — реальные типы событий TAX_TYPES (VAT, TURNOVER_TAX, PROFIT_TAX, PERSONAL_INCOME_TAX, SOCIAL_TAX, STATISTICS) и периодичность FREQUENCIES (MONTHLY/QUARTERLY/ANNUALLY). Это персональные напоминания внутри Contador, настраиваемые пользователем — не официальный государственный календарь Soliq/ГНК.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/nalogovyy-kalendar",
+        title: "Налоговый календарь Узбекистана 2026 | Contador",
+        description:
+          "Настройте персональные напоминания о сроках НДС, налога с оборота, налога на прибыль и других отчётов в Contador. Отслеживайте дедлайны по своей организации.",
+        h1: "Не пропускайте сроки сдачи налоговой отчётности",
+        h2: ["Какие налоги отслеживает календарь", "Периодичность напоминаний", "Как настроить свои сроки"],
+        faq: [
+          {
+            q: "Это официальный налоговый календарь Soliq или ГНК?",
+            a: "Нет. Это персональные напоминания внутри Contador по срокам, которые настраивает ваша организация — не официальный государственный календарь. Актуальные сроки и требования всегда сверяйте на soliq.uz или lex.uz.",
+          },
+          {
+            q: "Какие налоги и отчёты можно отслеживать?",
+            a: "НДС, налог с оборота, налог на прибыль, НДФЛ, социальный налог и статистическую отчётность — эти типы событий доступны при настройке правил календаря.",
+          },
+          {
+            q: "С какой периодичностью можно настроить напоминание?",
+            a: "Ежемесячно, ежеквартально или ежегодно — периодичность указывается отдельно для каждого правила.",
+          },
+          {
+            q: "Можно ли указать своё число месяца для срока?",
+            a: "Да, число месяца задаётся вручную при создании или редактировании правила — сервис не подставляет и не меняет его без вашего участия.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/soliq-taqvimi",
+        title: "O'zbekiston soliq taqvimi 2026 | Contador",
+        description:
+          "Contador'da QQS, aylanma solig'i, foyda solig'i va boshqa hisobotlar bo'yicha shaxsiy eslatmalarni sozlang. Tashkilotingiz muddatlarini kuzating.",
+        h1: "Soliq hisobotini topshirish muddatlarini o'tkazib yubormang",
+        h2: ["Qaysi soliqlar kuzatiladi", "Eslatmalar davriyligi", "O'z muddatlaringizni qanday sozlash"],
+        faq: [
+          {
+            q: "Bu Soliq yoki DSQ'ning rasmiy soliq taqvimimi?",
+            a: "Yo'q. Bu Contador ichidagi shaxsiy eslatmalar bo'lib, ularni tashkilotingiz o'zi sozlaydi — rasmiy davlat taqvimi emas. Amaldagi muddat va talablarni doim soliq.uz yoki lex.uz saytida tekshiring.",
+          },
+          {
+            q: "Qaysi soliq va hisobotlarni kuzatish mumkin?",
+            a: "QQS, aylanma solig'i, foyda solig'i, JShDS, ijtimoiy soliq va statistik hisobot — taqvim qoidalarini sozlashda mavjud bo'lgan turlar.",
+          },
+          {
+            q: "Eslatmani qanday davriylik bilan sozlash mumkin?",
+            a: "Har oy, har chorak yoki har yil — davriylik har bir qoida uchun alohida ko'rsatiladi.",
+          },
+          {
+            q: "Muddat uchun o'z sonimni ko'rsatish mumkinmi?",
+            a: "Ha, oyning sanasi qoidani yaratish yoki tahrirlashda qo'lda kiritiladi — servis uni sizsiz o'zgartirmaydi.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "32",
+    type: "tool",
+    parentId: "26",
+    relatedIds: ["31", "26", "33"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/lib/constants.ts TURNOVER_TAX_RATE_MIN=0.01, TURNOVER_TAX_RATE_MAX=TAX_RATES.TURNOVER_TAX=0.04 — диапазон ставки настраивается в организации. Калькулятор реализует публичную статутную формулу Налогового кодекса (Оборот × Ставка / 100), НЕ имитирует внутреннюю бизнес-логику продукта — реализация src/lib/turnoverTax.ts.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "instrumenty/kalkulyator-naloga-s-oborota",
+        title: "Калькулятор налога с оборота онлайн | Contador",
+        description:
+          "Введите сумму оборота и ставку (1–4%), чтобы предварительно рассчитать налог с оборота. Бесплатный калькулятор Contador с формулой и примером.",
+        h1: "Рассчитайте налог с оборота по вашей ставке",
+        h2: ["Введите оборот и ставку", "Формула расчёта", "Ограничения расчёта"],
+        faq: [],
+      },
+      uz: {
+        path: "vositalar/aylanma-soliq-kalkulyatori",
+        title: "Aylanma solig'i kalkulyatori onlayn | Contador",
+        description:
+          "Aylanma summasi va stavkani (1–4%) kiriting — aylanma solig'ini oldindan hisoblab ko'ring. Contador'ning bepul kalkulyatori, formula va misol bilan.",
+        h1: "O'z stavkangiz bo'yicha aylanma solig'ini hisoblang",
+        h2: ["Aylanma va stavkani kiriting", "Hisoblash formulasi", "Hisob-kitob cheklovlari"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "33",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["08", "31", "17"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/app/tax-dashboard/TaxDashboardClient.tsx — реальные метки основной формы «Совокупный доход» (010), «Вычитаемые расходы» (020), «Налоговая база» (062), «Налог по ставке N%» (080, подпись «предварительно, до подтверждения»); реальные периоды «I квартал» / «II квартал (полугодие)» / «III квартал (9 месяцев)» / «IV квартал (год)»; статусы FILLED/NOT_APPLICABLE/NEEDS_DATA/ANNUAL_ONLY → «Заполнено»/«Не применимо (0)»/«Требует проверки»/«Только годовой отчёт». Зеркало формы my.soliq.uz (отчёт 10205_47) — расчёт/подготовка данных, НЕ прямая отправка в my.soliq.uz.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/raschet-naloga-na-pribyl",
+        title: "Расчёт налога на прибыль по кварталам | Contador",
+        description:
+          "Формируйте расчёт налога на прибыль в Contador по кварталам: совокупный доход, вычитаемые расходы, налоговая база и сумма налога. Проверьте данные перед подачей.",
+        h1: "Готовьте квартальный расчёт налога на прибыль",
+        h2: ["Из чего складывается расчёт", "Кварталы и отчётные периоды", "Проверка перед подачей"],
+        faq: [
+          {
+            q: "Этот расчёт заменяет подачу формы на my.soliq.uz?",
+            a: "Нет. Contador готовит и предварительно рассчитывает данные в формате, зеркалящем форму my.soliq.uz (отчёт 10205_47) — саму подачу вы выполняете на портале самостоятельно.",
+          },
+          {
+            q: "Что означает пометка «предварительно, до подтверждения» у налога?",
+            a: "Она стоит рядом с рассчитанной суммой налога и означает, что значение получено автоматически по введённым данным и требует проверки перед тем, как считать его окончательным.",
+          },
+          {
+            q: "За какие периоды можно сформировать расчёт?",
+            a: "За I квартал, II квартал (полугодие), III квартал (9 месяцев) и IV квартал (год) — данные считаются нарастающим итогом с начала года, как в форме my.soliq.uz.",
+          },
+          {
+            q: "Что означают статусы приложений вроде «Требует проверки» или «Только годовой отчёт»?",
+            a: "Это статус готовности данных: «Заполнено» — данные внесены, «Требует проверки» — нужна ручная проверка, «Только годовой отчёт» — приложение относится лишь к годовому отчёту, «Не применимо (0)» — показатель не относится к текущему периоду.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/foyda-solig-hisoboti",
+        title: "Foyda solig'ini choraklab hisoblash | Contador",
+        description:
+          "Contador'da jami daromad, chegiriladigan xarajatlar, soliq bazasi va soliq summasini choraklab hisoblang. Topshirishdan oldin ma'lumotlarni tekshiring.",
+        h1: "Choraklik foyda solig'i hisobotini tayyorlang",
+        h2: ["Hisob nimalardan tashkil topadi", "Choraklar va hisobot davrlari", "Topshirishdan oldin tekshirish"],
+        faq: [
+          {
+            q: "Bu hisob my.soliq.uz'dagi shaklni topshirishni almashtiradimi?",
+            a: "Yo'q. Contador my.soliq.uz shakliga (10205_47 hisoboti) o'xshash formatda ma'lumotlarni tayyorlaydi va oldindan hisoblaydi — topshirishning o'zini portalda mustaqil bajarasiz.",
+          },
+          {
+            q: "Soliq summasi yonidagi «предварительно, до подтверждения» belgisi nimani anglatadi?",
+            a: "Bu hisoblangan soliq summasi kiritilgan ma'lumotlar asosida avtomatik olinganini va yakuniy deb hisoblashdan oldin tekshirish kerakligini bildiradi.",
+          },
+          {
+            q: "Qaysi davrlar uchun hisob shakllantirish mumkin?",
+            a: "I chorak, II chorak (yarim yil), III chorak (9 oy) va IV chorak (yil) uchun — ma'lumotlar yil boshidan o'sish yig'indisi bilan hisoblanadi, my.soliq.uz shaklidagidek.",
+          },
+          {
+            q: "«Требует проверки» yoki «Только годовой отчёт» kabi ilova holatlari nimani anglatadi?",
+            a: "Bu ma'lumotlar tayyorligi holati: «Заполнено» — ma'lumot kiritilgan, «Требует проверки» — qo'lda tekshirish kerak, «Только годовой отчёт» — ilova faqat yillik hisobotga tegishli, «Не применимо (0)» — ko'rsatkich joriy davrga tegishli emas.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "34",
+    type: "audience",
+    relatedIds: ["03", "05", "06"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/lib/constants.ts MARKETPLACE_INNS (4 подтверждённых ИНН) + IMPORT.MARKETPLACE_NAME_KEYWORDS; v2/src/app/api/import/soliq/route.ts isMarketplace()/normalizeOrgName()/nameSimilarity() — реальное автоопределение маркетплейс-контрагентов при импорте Soliq-данных. НЕ заявляется прямая интеграция/API с Uzum/Wildberries — только распознавание по ИНН/названию при импорте. Проценты комиссии маркетплейсов не называются — не подтверждены кодом Contador (это относится к площадке).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "dlya-prodavcov-marketpleysov",
+        title: "Бухгалтерия для продавцов маркетплейсов | Contador",
+        description:
+          "Contador распознаёт платежи от маркетплейсов при импорте и помогает свести комиссии с выручкой. Изучите сценарий учёта для продавца маркетплейса.",
+        h1: "Ведите учёт продаж на маркетплейсах в одном месте",
+        h2: ["Как распознаются платежи маркетплейса", "Сверка комиссии и выручки", "Что дальше в учёте"],
+        faq: [
+          {
+            q: "Contador подключается к Uzum Market или другому маркетплейсу напрямую через API?",
+            a: "Нет, прямой интеграции нет. Контрагент-маркетплейс распознаётся по ИНН (или похожему названию) при импорте банковской выписки или данных Soliq — не через отдельное API-подключение к площадке.",
+          },
+          {
+            q: "Указаны ли в Contador проценты комиссии конкретных маркетплейсов?",
+            a: "Нет. Размер комиссии определяет площадка, и Contador его не публикует и не подтверждает — эти данные нужно смотреть в своём личном кабинете продавца на маркетплейсе.",
+          },
+          {
+            q: "Что происходит после того, как платёж маркетплейса распознан при импорте?",
+            a: "Операция размечается как поступление от известного контрагента и дальше обрабатывается как обычная выручка — с классификацией и дальнейшим учётом, как любая другая операция.",
+          },
+          {
+            q: "Нужно ли вручную указывать, что контрагент — маркетплейс?",
+            a: "Нет, если ИНН или название контрагента совпадает с уже известным списком — распознавание происходит автоматически на этапе импорта.",
+          },
+        ],
+      },
+      uz: {
+        path: "marketpleys-sotuvchilari-uchun",
+        title: "Marketpleys sotuvchilari uchun buxgalteriya | Contador",
+        description:
+          "Contador import paytida marketpleys to'lovlarini aniqlaydi va komissiyani daromad bilan solishtirishga yordam beradi. Sotuvchi uchun hisob ssenariysini ko'ring.",
+        h1: "Marketpleysdagi savdo hisobini bir joyda yuriting",
+        h2: ["Marketpleys to'lovlari qanday aniqlanadi", "Komissiya va daromadni solishtirish", "Hisobda keyingi qadam"],
+        faq: [
+          {
+            q: "Contador Uzum Market yoki boshqa marketpleysga to'g'ridan-to'g'ri API orqali ulanadimi?",
+            a: "Yo'q, to'g'ridan-to'g'ri integratsiya yo'q. Marketpleys-kontragent bank ko'chirmasi yoki Soliq ma'lumotlarini import qilishda INN (yoki o'xshash nom) bo'yicha aniqlanadi — platformaga alohida API ulanish orqali emas.",
+          },
+          {
+            q: "Contador'da aniq marketpleyslarning komissiya foizlari ko'rsatilganmi?",
+            a: "Yo'q. Komissiya miqdorini platforma belgilaydi, Contador uni e'lon qilmaydi va tasdiqlamaydi — bu ma'lumotni o'z sotuvchi shaxsiy kabinetingizda ko'rish kerak.",
+          },
+          {
+            q: "Import paytida marketpleys to'lovi aniqlangandan keyin nima bo'ladi?",
+            a: "Operatsiya ma'lum kontragentdan tushum sifatida belgilanadi va keyin oddiy daromad kabi qayta ishlanadi — tasnif va boshqa har qanday operatsiya kabi keyingi hisob bilan.",
+          },
+          {
+            q: "Kontragent marketpleys ekanini qo'lda ko'rsatish kerakmi?",
+            a: "Yo'q, agar kontragent INN yoki nomi ma'lum ro'yxatga mos kelsa — aniqlash import bosqichida avtomatik amalga oshadi.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "35",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["06", "03", "33"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/app/closing/steps/Step6Soliq.tsx — реальный шаг 6 мастера закрытия «Сверка с порталом my.soliq.uz» (сравнение ЭСФ и авансов), уже кратко упомянутый на теме 06; v2/src/app/api/import/soliq/route.ts — отдельный от банковского (тема 03) путь импорта Soliq-данных. НЕ заявляется автоматическая отправка/приём ЭСФ — только сверка уже загруженных данных.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/sverka-s-soliq",
+        title: "Сверка данных с Soliq и ЭСФ | Contador",
+        description:
+          "Загружайте данные Soliq в Contador и сверяйте их с банковскими операциями и авансами на шаге закрытия месяца. Находите расхождения до подачи отчётности.",
+        h1: "Сверяйте операции с данными Soliq",
+        h2: ["Что загружается из Soliq", "Сверка авансов и ЭСФ", "Когда это происходит в закрытии месяца"],
+        faq: [
+          {
+            q: "Сверка с Soliq устраняет расхождения автоматически?",
+            a: "Нет. Шаг сравнивает загруженные данные ЭСФ и авансов и показывает расхождения, но их устранение остаётся за пользователем.",
+          },
+          {
+            q: "Чем импорт Soliq-данных отличается от импорта банковской выписки?",
+            a: "Это отдельный путь импорта — данные Soliq загружаются отдельно от банковской выписки (см. тему «Импорт банковских выписок») на другом шаге мастера закрытия.",
+          },
+          {
+            q: "На каком шаге мастера закрытия происходит сверка?",
+            a: "На шаге 6 — «Сверка с порталом my.soliq.uz», после того как основные операции периода уже разнесены.",
+          },
+          {
+            q: "Contador отправляет или принимает ЭСФ напрямую через этот шаг?",
+            a: "Нет, автоматической отправки или приёма электронных счетов-фактур нет — сверяются данные, уже загруженные в Contador.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/soliq-bilan-solishtirish",
+        title: "Soliq va EHF ma'lumotlarini solishtirish | Contador",
+        description:
+          "Soliq ma'lumotlarini Contador'ga yuklang va ularni bank operatsiyalari hamda avanslar bilan oyni yopish bosqichida solishtiring. Hisobotdan oldin farqlarni toping.",
+        h1: "Operatsiyalarni Soliq ma'lumotlari bilan solishtiring",
+        h2: ["Soliq'dan nima yuklanadi", "Avanslar va EHF solishtiruvi", "Oyni yopishda qachon sodir bo'ladi"],
+        faq: [
+          {
+            q: "Soliq bilan solishtirish farqlarni avtomatik bartaraf etadimi?",
+            a: "Yo'q. Bosqich yuklangan EHF va avanslar ma'lumotlarini solishtiradi va farqlarni ko'rsatadi, lekin ularni bartaraf etish foydalanuvchi zimmasida qoladi.",
+          },
+          {
+            q: "Soliq ma'lumotlarini import qilish bank ko'chirmasini import qilishdan nimasi bilan farq qiladi?",
+            a: "Bu alohida import yo'li — Soliq ma'lumotlari bank ko'chirmasidan («Bank ko'chirmalarini import qilish» mavzusiga qarang) alohida, oyni yopish ustasining boshqa bosqichida yuklanadi.",
+          },
+          {
+            q: "Oyni yopish ustasining qaysi bosqichida solishtiruv sodir bo'ladi?",
+            a: "6-bosqichda — «my.soliq.uz portali bilan solishtirish», davrning asosiy operatsiyalari allaqachon taqsimlangandan keyin.",
+          },
+          {
+            q: "Contador shu bosqich orqali EHF'ni to'g'ridan-to'g'ri yuboradi yoki qabul qiladimi?",
+            a: "Yo'q, elektron hisob-fakturalarni avtomatik yuborish yoki qabul qilish yo'q — faqat Contador'ga allaqachon yuklangan ma'lumotlar solishtiriladi.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "36",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["32", "25", "31"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Общеобразовательный гайд на основе nsbu_and_soliq_codex/Налоговый-кодекс-Республики-Узбекистан_Lex.uz.md (реальный источник в репозитории) и v2/src/lib/constants.ts TAX_RATES (VAT=0.12, TURNOVER_TAX=0.04) / TURNOVER_TAX_RATE_MIN=0.01 — критерии выбора режима, без вымышленных чисел, не подтверждённых в этих источниках. Явная оговорка: не юридическая консультация.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/oborotnyy-nalog-ili-nds",
+        title: "Оборотный налог или НДС: как выбрать режим",
+        description:
+          "Разберитесь в критериях выбора между налогом с оборота и НДС в Узбекистане: оборот, вид деятельности, ставка. Общий гайд, не замена консультации специалиста.",
+        h1: "Выбирайте налоговый режим осознанно",
+        h2: ["Ключевые критерии выбора", "Оборот и ограничения режима", "Когда обратиться к специалисту"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/aylanma-soliq-yoki-qqs",
+        title: "Aylanma solig'i yoki QQS: qaysi rejimni tanlash",
+        description:
+          "O'zbekistonda aylanma solig'i va QQS o'rtasida tanlov mezonlarini o'rganing: aylanma, faoliyat turi, stavka. Umumiy qo'llanma, mutaxassis maslahati o'rnini bosmaydi.",
+        h1: "Soliq rejimini ongli ravishda tanlang",
+        h2: ["Asosiy tanlov mezonlari", "Aylanma va rejim cheklovlari", "Qachon mutaxassisga murojaat qilish"],
+        faq: [],
+      },
+    },
+  },
+  {
+    id: "37",
+    type: "guide",
+    parentId: "18",
+    relatedIds: ["31", "33", "36"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "nsbu_and_soliq_codex/Налоговый-кодекс-Республики-Узбекистан_Lex.uz.md, Статья 220 «Непредставление налоговой отчетности»: «За несвоевременное представление налоговой отчетности должностное лицо налогоплательщика — юридического лица или налогоплательщик — физическое лицо привлекается к административной ответственности» — БЕЗ конкретной суммы/процента штрафа в тексте этой статьи (мера ответственности отсылает к отдельному законодательству об административной ответственности, не входящему в этот файл). Поэтому текст темы намеренно не называет конкретных цифр — самый юридически чувствительный текст этой волны (см. критическое ограничение TASK-0004/wave2-metadata §37).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "rukovodstva/shtrafy-za-prosrochku-otchetnosti",
+        title: "Штрафы за просрочку налоговой отчётности",
+        description:
+          "Узнайте общие принципы ответственности за просрочку налоговой отчётности в Узбекистане и как заранее видеть свои сроки в Contador. Уточняйте актуальную редакцию кодекса.",
+        h1: "Что грозит за просрочку сдачи отчётности",
+        h2: ["Общие принципы ответственности", "Как не пропустить срок", "Где проверить актуальные нормы"],
+        faq: [],
+      },
+      uz: {
+        path: "qollanmalar/hisobot-kechikishi-uchun-jarima",
+        title: "Hisobot kechikishi uchun jarima va javobgarlik",
+        description:
+          "O'zbekistonda soliq hisobotini kechiktirish uchun javobgarlikning umumiy tamoyillarini bilib oling va Contador'da muddatlaringizni oldindan ko'ring. Kodeksning amaldagi tahririni tekshiring.",
+        h1: "Hisobotni kechiktirish nimaga olib keladi",
+        h2: ["Javobgarlikning umumiy tamoyillari", "Muddatni qanday o'tkazib yubormaslik", "Amaldagi normalarni qayerdan tekshirish"],
         faq: [],
       },
     },

@@ -27,6 +27,9 @@ export default function Body({ topic }: { topic: Topic }) {
   const journalTopic = getTopicById("11");
   const accountCardTopic = getTopicById("12");
   const openPositionsTopic = getTopicById("13");
+  const taxCalendarTopic = getTopicById("31");
+  const profitTaxTopic = getTopicById("33");
+  const soliqReconcileTopic = getTopicById("35");
 
   return (
     <div className="space-y-12">
@@ -64,6 +67,17 @@ export default function Body({ topic }: { topic: Topic }) {
           {pnlTopic && <Card topic={pnlTopic} locale="uz" />}
           {cashflowTopic && <Card topic={cashflowTopic} locale="uz" />}
           {osvTopic && <Card topic={osvTopic} locale="uz" />}
+        </div>
+      </section>
+
+      <section aria-labelledby="h2-taxes">
+        <h2 id="h2-taxes" className="text-xl font-semibold text-black">
+          Soliqlar
+        </h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {taxCalendarTopic && <Card topic={taxCalendarTopic} locale="uz" />}
+          {profitTaxTopic && <Card topic={profitTaxTopic} locale="uz" />}
+          {soliqReconcileTopic && <Card topic={soliqReconcileTopic} locale="uz" />}
         </div>
       </section>
 

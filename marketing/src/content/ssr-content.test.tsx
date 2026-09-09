@@ -5,6 +5,17 @@ import { getTopicById } from "@/lib/manifest";
 import { Header } from "@/components/marketing/Header";
 import { Footer } from "@/components/marketing/Footer";
 
+// Wave 2 (TASK-0004): several new UZ manifest strings (title/h1/description,
+// used verbatim from wave2-metadata.md) contain a plain ASCII apostrophe ('),
+// unlike the rest of the UZ content in this project, which by convention uses
+// a typographic curly apostrophe (’) specifically to avoid this exact issue —
+// React's renderToStaticMarkup HTML-escapes a literal ' in text nodes to
+// "&#x27;" (correct, harmless, renders as a normal apostrophe in every real
+// browser), so a raw string-equality check against the un-escaped source
+// string fails even though the real HTTP output is fine. This helper mirrors
+// that escaping so SSR assertions check what actually lands in the HTML.
+const apos = (s: string) => s.replace(/'/g, "&#x27;");
+
 // Прямая проверка требования из отчёта задачи: H1/description/тело страницы
 // должны присутствовать в исходном серверном HTML, а не только в клиентском
 // рендере. В Next 16.2.1 конкретные пререндеренные .html для маршрутов на
@@ -488,5 +499,146 @@ describe("SSR output contains real content, not client-only", () => {
     const t28 = getTopicById("28")!;
     const html27 = renderToStaticMarkup(await CONTENT_REGISTRY["27"].ru({ topic: t27 }));
     expect(html27).toContain(t28.locales.ru.h1);
+  });
+
+  // Wave 2 (TASK-0004): +7 тем — 31 (налоговый календарь), 32 (калькулятор
+  // налога с оборота), 33 (квартальный расчёт налога на прибыль), 34
+  // (аудитория: продавцы маркетплейсов), 35 (сверка с Soliq и ЭСФ), 36 (гайд:
+  // оборотный налог или НДС), 37 (гайд: штрафы за просрочку отчётности). Та же
+  // техника: прямой вызов серверных компонентов из CONTENT_REGISTRY +
+  // renderToStaticMarkup (см. пояснение вверху файла).
+  it("tax calendar (31, ru+uz) renders H1, real event types and the not-an-official-calendar disclaimer server-side", async () => {
+    const topic = getTopicById("31")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["31"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Налог с оборота");
+    expect(ruHtml).toContain("Статистическая отчётность");
+    expect(ruHtml).toContain("не официальный государственный календарь");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["31"].uz({ topic }));
+    expect(uzHtml).toContain(apos(topic.locales.uz.h1));
+    expect(uzHtml).toContain("Aylanma solig’i");
+    expect(uzHtml).toContain("rasmiy davlat taqvimi emas");
+  });
+
+  it("turnover tax calculator (32, ru+uz) renders labels, the worked example and the mandatory disclaimer server-side", async () => {
+    const topic = getTopicById("32")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["32"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Оборот за период");
+    expect(ruHtml).toContain("2 000 000 сум");
+    expect(ruHtml).toContain("не официальная декларация, не учитывает льготы и вычеты");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["32"].uz({ topic }));
+    expect(uzHtml).toContain(apos(topic.locales.uz.h1));
+    expect(uzHtml).toContain("rasmiy deklaratsiya emas");
+  });
+
+  it("quarterly profit tax (33, ru+uz) renders H1 and the real form line labels/quarters server-side", async () => {
+    const topic = getTopicById("33")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["33"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Совокупный доход");
+    expect(ruHtml).toContain("Вычитаемые расходы");
+    expect(ruHtml).toContain("Налоговая база");
+    expect(ruHtml).toContain("предварительно, до подтверждения");
+    expect(ruHtml).toContain("II квартал (полугодие)");
+    expect(ruHtml).toContain("сервис её не отправляет");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["33"].uz({ topic }));
+    expect(uzHtml).toContain(apos(topic.locales.uz.h1));
+    expect(uzHtml).toContain("III chorak (9 oy)");
+  });
+
+  it("marketplace sellers (34, ru+uz) renders H1, the fictional demo example and no invented commission percentage server-side", async () => {
+    const topic = getTopicById("34")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["34"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Гулбахор Трейд");
+    expect(ruHtml).toContain("не публикует и не подтверждает");
+    expect(ruHtml).not.toMatch(/\d+\s?%\s*комисси/i);
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["34"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("Soliq/ESF reconciliation (35, ru+uz) renders H1, the real closing-wizard step reference and no auto-submit claim server-side", async () => {
+    const topic = getTopicById("35")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["35"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Сверка с порталом my.soliq.uz");
+    expect(ruHtml).toContain("не отправляет и не принимает");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["35"].uz({ topic }));
+    expect(uzHtml).toContain(apos(topic.locales.uz.h1));
+  });
+
+  it("turnover tax vs VAT guide (36, ru+uz) renders H1 and the statutory 1 billion sum threshold from Article 461 server-side", async () => {
+    const topic = getTopicById("36")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["36"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("один миллиард сумов");
+    expect(ruHtml).toContain("статья 461");
+    expect(ruHtml).toContain("не юридическая");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["36"].uz({ topic }));
+    expect(uzHtml).toContain(apos(topic.locales.uz.h1));
+    expect(uzHtml).toContain("bir milliard so’m");
+  });
+
+  it("late-filing penalty guide (37, ru+uz) cites Article 220 but names NO specific fine amount/percentage — highest legal-risk page in this wave", async () => {
+    const topic = getTopicById("37")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["37"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Статья 220");
+    expect(ruHtml).toContain("административной ответственности");
+    expect(ruHtml).toContain("не указываем здесь конкретную сумму");
+    // No digit-percent pattern anywhere near "штраф"/"пен" — guards against a
+    // future edit accidentally introducing an unconfirmed fine number.
+    expect(ruHtml).not.toMatch(/\d+([.,]\d+)?\s?%/);
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["37"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+    expect(uzHtml).toContain("220-moddasi");
+    expect(uzHtml).not.toMatch(/\d+([.,]\d+)?\s?%/);
+  });
+
+  it("hub 02 (ru+uz) now cards the new tax feature group (31, 33, 35)", async () => {
+    const topic = getTopicById("02")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["02"].ru({ topic }));
+    for (const id of ["31", "33", "35"]) {
+      expect(ruHtml).toContain(getTopicById(id)!.locales.ru.h1);
+    }
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["02"].uz({ topic }));
+    for (const id of ["31", "33", "35"]) {
+      expect(uzHtml).toContain(apos(getTopicById(id)!.locales.uz.h1));
+    }
+  });
+
+  it("hub 18 (ru+uz) now cards the new tax guides (36, 37)", async () => {
+    const topic = getTopicById("18")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["18"].ru({ topic }));
+    for (const id of ["36", "37"]) {
+      expect(ruHtml).toContain(getTopicById(id)!.locales.ru.h1);
+    }
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["18"].uz({ topic }));
+    for (const id of ["36", "37"]) {
+      expect(uzHtml).toContain(getTopicById(id)!.locales.uz.h1);
+    }
+  });
+
+  it("hub 26 (ru+uz) now cards the new turnover tax calculator (32)", async () => {
+    const topic = getTopicById("26")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["26"].ru({ topic }));
+    expect(ruHtml).toContain(getTopicById("32")!.locales.ru.h1);
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["26"].uz({ topic }));
+    expect(uzHtml).toContain(apos(getTopicById("32")!.locales.uz.h1));
+  });
+
+  it("marketplace sellers (34) is reachable via an inbound relatedIds link from topic 06 (no orphan audience page)", async () => {
+    const t06 = getTopicById("06")!;
+    const t34 = getTopicById("34")!;
+    const html06 = renderToStaticMarkup(await CONTENT_REGISTRY["06"].ru({ topic: t06 }));
+    expect(html06).toContain(t34.locales.ru.h1);
   });
 });
