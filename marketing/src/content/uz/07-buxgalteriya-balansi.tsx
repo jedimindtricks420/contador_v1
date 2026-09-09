@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
@@ -60,7 +59,6 @@ export default function Body({ topic }: { topic: Topic }) {
         <p className="mt-2 text-xs text-gray-500">Summalar so‘mda, demo ma’lumotlar 30.09.2026 shartli sanaga misol.</p>
       </section>
 
-      <ProductScreenshot alt="Balans bo‘limi: tanlangan sanadagi aktivlar va majburiyatlar" />
 
       <section aria-labelledby="h2-date">
         <h2 id="h2-date" className="text-xl font-semibold text-black">

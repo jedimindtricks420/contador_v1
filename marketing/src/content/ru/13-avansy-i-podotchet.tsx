@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
@@ -28,7 +27,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="Список открытых позиций: авансы и подотчётные суммы со статусами и сроками" />
 
       <section aria-labelledby="h2-status">
         <h2 id="h2-status" className="text-xl font-semibold text-black">

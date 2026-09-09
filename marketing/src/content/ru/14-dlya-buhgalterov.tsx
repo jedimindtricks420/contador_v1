@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { CTA } from "@/components/marketing/CTA";
 import { getTopicById, urlFor } from "@/lib/manifest";
@@ -35,7 +34,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="Мастер закрытия месяца со стороны бухгалтера: список операций периода" />
 
       <section aria-labelledby="h2-check">
         <h2 id="h2-check" className="text-xl font-semibold text-black">

@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FeatureSteps } from "@/components/marketing/FeatureSteps";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
@@ -41,7 +40,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </div>
       </section>
 
-      <ProductScreenshot alt="Oyni yopish ustasi: bosqichlar holati ko‘rsatilgan yon navigatsiya" />
 
       <section aria-labelledby="h2-pending">
         <h2 id="h2-pending" className="text-xl font-semibold text-black">

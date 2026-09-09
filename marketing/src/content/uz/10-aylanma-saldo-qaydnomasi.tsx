@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
@@ -57,7 +56,6 @@ export default function Body({ topic }: { topic: Topic }) {
         <p className="mt-2 text-xs text-gray-500">Summalar so‘mda, shartli 2026-yil sentyabr uchun demo-misol.</p>
       </section>
 
-      <ProductScreenshot alt="Aylanma-saldo qaydnomasi: boshlang‘ich qoldiq, aylanmalar va davr oxiridagi saldo ustunlari" />
 
       <section aria-labelledby="h2-turnover">
         <h2 id="h2-turnover" className="text-xl font-semibold text-black">

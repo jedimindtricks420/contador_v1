@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
@@ -41,7 +40,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="Yakuniy moliyaviy natija bilan foyda va zarar hisoboti" />
 
       <section aria-labelledby="h2-questions">
         <h2 id="h2-questions" className="text-xl font-semibold text-black">

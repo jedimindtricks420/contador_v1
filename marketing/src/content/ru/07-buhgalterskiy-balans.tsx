@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
@@ -61,7 +60,6 @@ export default function Body({ topic }: { topic: Topic }) {
         <p className="mt-2 text-xs text-gray-500">Суммы в сумах, пример на демо-данных на условную дату 30.09.2026.</p>
       </section>
 
-      <ProductScreenshot alt="Раздел баланса: активы и обязательства на выбранную дату" />
 
       <section aria-labelledby="h2-date">
         <h2 id="h2-date" className="text-xl font-semibold text-black">

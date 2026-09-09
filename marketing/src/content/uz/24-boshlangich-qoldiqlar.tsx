@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
 import type { Topic } from "@/lib/manifest";
@@ -43,7 +42,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="«Boshlang‘ich qoldiqlar» sozlamalar bo‘limi: hisob boshlanish sanasidagi summalarni kiritish maydonlari bilan hisobvaraqlar ro‘yxati" />
 
       <section aria-labelledby="h2-collect">
         <h2 id="h2-collect" className="text-xl font-semibold text-black">

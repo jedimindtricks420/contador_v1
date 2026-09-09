@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
 import type { Topic } from "@/lib/manifest";
@@ -42,7 +41,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="Раздел настроек «Начальные остатки»: список счетов с полями для ввода сумм на дату начала учёта" />
 
       <section aria-labelledby="h2-collect">
         <h2 id="h2-collect" className="text-xl font-semibold text-black">

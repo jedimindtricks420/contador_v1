@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FeatureSteps } from "@/components/marketing/FeatureSteps";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
@@ -81,7 +80,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="Шаг 1 мастера закрытия месяца: загрузка файла банковской выписки" priority />
 
       <section aria-labelledby="h2-upload">
         <h2 id="h2-upload" className="text-xl font-semibold text-black">

@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FeatureSteps } from "@/components/marketing/FeatureSteps";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
@@ -34,7 +33,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </div>
       </section>
 
-      <ProductScreenshot alt="Contador shaxsiy kabineti: ko‘chirma import qilingandan keyingi operatsiyalar ro‘yxati" priority />
 
       <section aria-labelledby="h2-features">
         <h2 id="h2-features" className="text-xl font-semibold text-black">

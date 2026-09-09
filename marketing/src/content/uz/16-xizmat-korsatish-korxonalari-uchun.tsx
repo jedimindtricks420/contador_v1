@@ -1,5 +1,4 @@
 import { Hero } from "@/components/marketing/Hero";
-import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { CTA } from "@/components/marketing/CTA";
 import { getTopicById, urlFor } from "@/lib/manifest";
@@ -30,7 +29,6 @@ export default function Body({ topic }: { topic: Topic }) {
         </p>
       </section>
 
-      <ProductScreenshot alt="Xizmat ko‘rsatish korxonasining ochiq pozitsiyalari: buyurtmachi va pudratchi avanslari" />
 
       <section aria-labelledby="h2-advances">
         <h2 id="h2-advances" className="text-xl font-semibold text-black">
