@@ -23,6 +23,7 @@ export default function Body({ topic }: { topic: Topic }) {
   const breakeven = getTopicById("28");
   const runway = getTopicById("29");
   const checklist = getTopicById("21");
+  const turnoverTax = getTopicById("32");
 
   return (
     <div className="space-y-12">
@@ -56,6 +57,15 @@ export default function Body({ topic }: { topic: Topic }) {
         </h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {runway && <Card topic={runway} locale="ru" />}
+        </div>
+      </section>
+
+      <section aria-labelledby="h2-turnover-tax">
+        <h2 id="h2-turnover-tax" className="text-xl font-semibold text-black">
+          Налог с оборота
+        </h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {turnoverTax && <Card topic={turnoverTax} locale="ru" />}
         </div>
       </section>
 

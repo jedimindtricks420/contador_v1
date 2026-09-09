@@ -61,6 +61,20 @@ import Body29Ru from "./ru/29-zapas-denezhnyh-sredstv";
 import Body29Uz from "./uz/29-pul-zaxirasi-muddati";
 import Body30Ru from "./ru/30-perehod-iz-excel";
 import Body30Uz from "./uz/30-exceldan-otish";
+import Body31Ru from "./ru/31-nalogovyy-kalendar";
+import Body31Uz from "./uz/31-soliq-taqvimi";
+import Body32Ru from "./ru/32-kalkulyator-naloga-s-oborota";
+import Body32Uz from "./uz/32-aylanma-soliq-kalkulyatori";
+import Body33Ru from "./ru/33-raschet-naloga-na-pribyl";
+import Body33Uz from "./uz/33-foyda-solig-hisoboti";
+import Body34Ru from "./ru/34-dlya-prodavcov-marketpleysov";
+import Body34Uz from "./uz/34-marketpleys-sotuvchilari-uchun";
+import Body35Ru from "./ru/35-sverka-s-soliq";
+import Body35Uz from "./uz/35-soliq-bilan-solishtirish";
+import Body36Ru from "./ru/36-oborotnyy-nalog-ili-nds";
+import Body36Uz from "./uz/36-aylanma-soliq-yoki-qqs";
+import Body37Ru from "./ru/37-shtrafy-za-prosrochku-otchetnosti";
+import Body37Uz from "./uz/37-hisobot-kechikishi-uchun-jarima";
 
 // Тело страницы (уникальный контент темы) может быть асинхронным серверным
 // компонентом (например, тема 17 — цена запрашивается на сервере), поэтому
@@ -103,4 +117,11 @@ export const CONTENT_REGISTRY: Record<string, Record<"ru" | "uz", BodyComponent>
   "28": { ru: Body28Ru, uz: Body28Uz },
   "29": { ru: Body29Ru, uz: Body29Uz },
   "30": { ru: Body30Ru, uz: Body30Uz },
+  "31": { ru: Body31Ru, uz: Body31Uz },
+  "32": { ru: Body32Ru, uz: Body32Uz },
+  "33": { ru: Body33Ru, uz: Body33Uz },
+  "34": { ru: Body34Ru, uz: Body34Uz },
+  "35": { ru: Body35Ru, uz: Body35Uz },
+  "36": { ru: Body36Ru, uz: Body36Uz },
+  "37": { ru: Body37Ru, uz: Body37Uz },
 };
