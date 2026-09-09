@@ -17,10 +17,22 @@ import Body07Ru from "./ru/07-buhgalterskiy-balans";
 import Body07Uz from "./uz/07-buxgalteriya-balansi";
 import Body08Ru from "./ru/08-otchet-o-pribylyah-i-ubytkah";
 import Body08Uz from "./uz/08-foyda-va-zarar-hisoboti";
+import Body09Ru from "./ru/09-dvizhenie-denezhnyh-sredstv";
+import Body09Uz from "./uz/09-pul-oqimi";
+import Body10Ru from "./ru/10-oborotno-saldovaya-vedomost";
+import Body10Uz from "./uz/10-aylanma-saldo-qaydnomasi";
+import Body11Ru from "./ru/11-zhurnal-provodok";
+import Body11Uz from "./uz/11-otkazmalar-jurnali";
+import Body12Ru from "./ru/12-kartochka-scheta";
+import Body12Uz from "./uz/12-hisobvaraq-kartochkasi";
+import Body13Ru from "./ru/13-avansy-i-podotchet";
+import Body13Uz from "./uz/13-avanslar-va-hisobdor-summalar";
 import Body14Ru from "./ru/14-dlya-buhgalterov";
 import Body14Uz from "./uz/14-buxgalterlar-uchun";
 import Body15Ru from "./ru/15-dlya-rukovoditeley";
 import Body15Uz from "./uz/15-rahbarlar-uchun";
+import Body16Ru from "./ru/16-dlya-kompaniy-uslug";
+import Body16Uz from "./uz/16-xizmat-korsatish-korxonalari-uchun";
 import Body17Ru from "./ru/17-tarify";
 import Body17Uz from "./uz/17-tariflar";
 import Body21Ru from "./ru/21-chek-list-zakrytiya-mesyaca";
@@ -49,8 +61,14 @@ export const CONTENT_REGISTRY: Record<string, Record<"ru" | "uz", BodyComponent>
   "06": { ru: Body06Ru, uz: Body06Uz },
   "07": { ru: Body07Ru, uz: Body07Uz },
   "08": { ru: Body08Ru, uz: Body08Uz },
+  "09": { ru: Body09Ru, uz: Body09Uz },
+  "10": { ru: Body10Ru, uz: Body10Uz },
+  "11": { ru: Body11Ru, uz: Body11Uz },
+  "12": { ru: Body12Ru, uz: Body12Uz },
+  "13": { ru: Body13Ru, uz: Body13Uz },
   "14": { ru: Body14Ru, uz: Body14Uz },
   "15": { ru: Body15Ru, uz: Body15Uz },
+  "16": { ru: Body16Ru, uz: Body16Uz },
   "17": { ru: Body17Ru, uz: Body17Uz },
   "21": { ru: Body21Ru, uz: Body21Uz },
   "26": { ru: Body26Ru, uz: Body26Uz },

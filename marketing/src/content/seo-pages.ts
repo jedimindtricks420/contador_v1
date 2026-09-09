@@ -4,8 +4,11 @@
 // заголовков или description в компонентах не дублируется руками.
 //
 // Фаза 1: 7 тем из 30 будущих — 01, 02, 06, 17, 21, 26, 27.
-// Фаза 2 (эта задача): +7 тем — 03, 04, 05, 07, 08, 14, 15. Итого 14 тем / 28 URL.
-// Остальные 16 тем будут добавлены в фазе 3+ по той же схеме: одна запись
+// Фаза 2: +7 тем — 03, 04, 05, 07, 08, 14, 15. Итого 14 тем / 28 URL.
+// Фаза 3 (эта задача): +6 тем — 09, 10, 11, 12, 13, 16. Итого 20 тем / 40 URL.
+// P0 теперь полностью построен, кроме хаба 18 (сознательно отложен — пустой
+// хаб не публикуется, пока не готовы темы 19–25/30, см. phase3-evidence.md).
+// Остальные 10 тем будут добавлены в фазе 4+ по той же схеме: одна запись
 // в TOPICS + тексты в src/content/{ru,uz}/<id>-<slug>.tsx + запись в registry.tsx.
 //
 // relatedIds и parentId ссылаются ТОЛЬКО на темы, реально построенные к этой
@@ -134,7 +137,7 @@ export const TOPICS: Topic[] = [
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
-      "Каталог-агрегатор; в фазе 2 карточками показаны реально построенные темы 03, 04, 05, 06, 07, 08. Остальные темы группы (09–13) добавляются позже.",
+      "Каталог-агрегатор; в фазе 3 карточками показаны все реально построенные темы группы 03–13 (полный набор возможностей).",
     primaryCta: "register",
     locales: {
       ru: {
@@ -307,11 +310,11 @@ export const TOPICS: Topic[] = [
     id: "05",
     type: "feature",
     parentId: "02",
-    relatedIds: ["04"],
+    relatedIds: ["04", "10", "11"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
-      "v2/src/app/documents/DocumentsClient.tsx — список документов с фильтрами по периоду (месяц/год) и типу документа; статусы POSTED «Проведён» и VOIDED «Аннулирован». Проводки формируются по документам; отдельная сквозная страница-журнал всех проводок (тема 11) в этой фазе не построена.",
+      "v2/src/app/documents/DocumentsClient.tsx — список документов с фильтрами по периоду (месяц/год) и типу документа; статусы POSTED «Проведён» и VOIDED «Аннулирован». Проводки формируются по документам; фаза 3 добавила отдельную сквозную страницу-журнал всех проводок (тема 11, v2/src/app/reports/journal), текст ниже обновлён — журнал больше не описывается как «в разработке».",
     primaryCta: "register",
     locales: {
       ru: {
@@ -340,7 +343,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Есть ли отдельный сквозной журнал всех проводок?",
-            a: "Сейчас проводки просматриваются вместе с документами, которые их породили; отдельная объединённая страница-журнал по всем проводкам сразу в разработке.",
+            a: "Да, журнал проводок показывает записи по всем документам сразу, независимо от того, где создан документ — это отдельная страница помимо списка документов.",
           },
         ],
       },
@@ -370,7 +373,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Barcha o‘tkazmalar uchun alohida umumiy jurnal bormi?",
-            a: "Hozircha o‘tkazmalar ularni yaratgan hujjatlar bilan birga ko‘riladi; barcha o‘tkazmalarni birlashtirgan alohida jurnal sahifasi ishlab chiqilmoqda.",
+            a: "Ha, o‘tkazmalar jurnali hujjat qayerda yaratilganidan qat’i nazar, barcha hujjatlar bo‘yicha yozuvlarni ko‘rsatadi — bu hujjatlar ro‘yxatidan alohida sahifa.",
           },
         ],
       },
@@ -380,7 +383,7 @@ export const TOPICS: Topic[] = [
     id: "06",
     type: "feature",
     parentId: "02",
-    relatedIds: ["21", "03"],
+    relatedIds: ["21", "03", "10"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -461,7 +464,7 @@ export const TOPICS: Topic[] = [
     id: "07",
     type: "feature",
     parentId: "02",
-    relatedIds: ["08"],
+    relatedIds: ["08", "10"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -526,7 +529,7 @@ export const TOPICS: Topic[] = [
     id: "08",
     type: "feature",
     parentId: "02",
-    relatedIds: ["15"],
+    relatedIds: ["15", "09"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -582,6 +585,339 @@ export const TOPICS: Topic[] = [
           {
             q: "Foydani pul harakati bilan solishtirish kerak bo‘lsa nima qilish kerak?",
             a: "Foyda va zarar hisobotini shu davrdagi bank hisobvaraqlari ma’lumotlari bilan birga ko‘rish kerak — bular bir biznesning turli qirralari.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "09",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["08"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Маршрут /v2/cashflow (phase3-evidence.md, подтверждён вместе с темой 08 в фазе 2). Отчёт отражает только уже проведённые операции; функции прогнозирования денежного потока не найдено ни в одном доступном аудите — не заявляется.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/dvizhenie-denezhnyh-sredstv",
+        title: "Движение денежных средств бизнеса | Contador",
+        description:
+          "Изучайте движение денежных средств в Contador: поступления, выплаты и данные выбранного периода. Сопоставляйте денежный поток с финансовыми результатами.",
+        h1: "Следите за поступлениями и выплатами",
+        h2: ["Поступления и выплаты", "Период и банковские счета", "Связь с прибылью"],
+        faq: [
+          {
+            q: "За какой период показывается движение денежных средств?",
+            a: "За период, который вы выбираете в фильтре отчёта — поступления и выплаты рассчитываются по банковским операциям за это время.",
+          },
+          {
+            q: "Отчёт показывает будущие поступления и выплаты?",
+            a: "Нет. Отчёт отражает только уже проведённые операции за прошедший период; функции прогнозирования денежного потока в сервисе нет.",
+          },
+          {
+            q: "Чем движение денег отличается от отчёта о прибылях и убытках?",
+            a: "ДДС показывает фактические поступления и выплаты по банковским счетам, а отчёт о прибылях и убытках — учётный финансовый результат периода; эти показатели не обязаны совпадать.",
+          },
+          {
+            q: "По каким банковским счетам можно посмотреть движение денег?",
+            a: "По счетам организации, операции которых загружены и разнесены в Contador за выбранный период.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/pul-oqimi",
+        title: "Biznes pul oqimini kuzatish | Contador",
+        description:
+          "Contador’da tanlangan davrdagi pul tushumlari va chiqimlarini ko‘ring. Pul oqimini moliyaviy natijalar bilan solishtirib, biznes hisobini tahlil qiling.",
+        h1: "Pul tushumlari va chiqimlarini kuzating",
+        h2: ["Pul tushumlari va chiqimlari", "Davr va bank hisobvaraqlari", "Foyda bilan bog‘liqlik"],
+        faq: [
+          {
+            q: "Pul oqimi hisoboti qaysi davr uchun ko‘rsatiladi?",
+            a: "Hisobot filtrida siz tanlagan davr uchun — pul tushumlari va chiqimlari shu davrdagi bank operatsiyalari asosida hisoblanadi.",
+          },
+          {
+            q: "Hisobot kelajakdagi tushum va chiqimlarni ko‘rsatadimi?",
+            a: "Yo‘q. Hisobot faqat o‘tgan davrda amalga oshirilgan operatsiyalarni aks ettiradi, pul oqimini prognoz qilish funksiyasi servisda yo‘q.",
+          },
+          {
+            q: "Pul oqimi foyda va zarar hisobotidan nimasi bilan farq qiladi?",
+            a: "Pul oqimi bank hisobvaraqlaridagi haqiqiy tushum va chiqimlarni ko‘rsatadi, foyda va zarar hisoboti esa davrning hisob natijasini; bu ko‘rsatkichlar mos kelishi shart emas.",
+          },
+          {
+            q: "Qaysi bank hisobvaraqlari bo‘yicha pul oqimini ko‘rish mumkin?",
+            a: "Tanlangan davrda operatsiyalari Contador’ga yuklangan va taqsimlangan tashkilot hisobvaraqlari bo‘yicha.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "10",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["12", "07"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/app/reports/osv/OSVClient.tsx + page.tsx — отчёт ОСВ в кабинете (phase3-evidence.md).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/oborotno-saldovaya-vedomost",
+        title: "Оборотно-сальдовая ведомость онлайн | Contador",
+        description:
+          "Формируйте оборотно-сальдовую ведомость в Contador. Просматривайте начальные остатки, обороты и итоговое сальдо для проверки данных бухгалтерского учёта.",
+        h1: "Проверяйте остатки и обороты по счетам",
+        h2: ["Остатки на начало периода", "Дебетовые и кредитовые обороты", "Сальдо на конец периода"],
+        faq: [
+          {
+            q: "Что показывает начальный остаток по счёту в ОСВ?",
+            a: "Остаток по счёту на начало выбранного периода — по данным, введённым как начальные остатки или перенесённым из предыдущих периодов.",
+          },
+          {
+            q: "Что такое дебетовый и кредитовый обороты?",
+            a: "Суммы всех проводок по счёту за период отдельно по дебету и по кредиту — они показывают движение, а не остаток.",
+          },
+          {
+            q: "Как получается сальдо на конец периода?",
+            a: "Начальный остаток плюс обороты за период, с учётом правил активных и пассивных счетов.",
+          },
+          {
+            q: "Если итоги по дебету и кредиту совпадают, значит ли это, что весь учёт верный?",
+            a: "Нет. Равенство итогов подтверждает баланс двойной записи, но не проверяет полноту и корректность каждой операции — например, если начальные остатки по счёту не введены, ОСВ покажет заниженные значения, хотя итоговое равенство сохранится.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/aylanma-saldo-qaydnomasi",
+        title: "Aylanma-saldo qaydnomasi onlayn | Contador",
+        description:
+          "Contador’da aylanma-saldo qaydnomasini shakllantiring. Hisobni tekshirish uchun boshlang‘ich qoldiqlar, aylanmalar va yakuniy saldoni ko‘rib chiqing.",
+        h1: "Hisobvaraqlar qoldiqlari va aylanmalarini tekshiring",
+        h2: ["Davr boshidagi qoldiqlar", "Debet va kredit aylanmalari", "Davr oxiridagi saldo"],
+        faq: [
+          {
+            q: "ASQda hisobvaraqning boshlang‘ich qoldig‘i nimani ko‘rsatadi?",
+            a: "Tanlangan davr boshidagi hisobvaraq qoldig‘ini — boshlang‘ich qoldiq sifatida kiritilgan yoki oldingi davrdan ko‘chirilgan ma’lumotlar bo‘yicha.",
+          },
+          {
+            q: "Debet va kredit aylanmalari nima?",
+            a: "Davr davomida hisobvaraq bo‘yicha barcha o‘tkazmalarning debet va kredit summalari alohida — ular qoldiqni emas, harakatni ko‘rsatadi.",
+          },
+          {
+            q: "Davr oxiridagi saldo qanday hisoblanadi?",
+            a: "Boshlang‘ich qoldiq va davr aylanmalari asosida, faol va passiv hisobvaraqlar qoidalariga ko‘ra.",
+          },
+          {
+            q: "Debet va kredit itog‘lari teng bo‘lsa, butun hisob to‘g‘ri degani-mi?",
+            a: "Yo‘q. Itog‘lar tengligi ikki tomonlama yozuv balansini tasdiqlaydi, lekin har bir operatsiyaning to‘liqligi va to‘g‘riligini tekshirmaydi — masalan, hisobvaraq uchun boshlang‘ich qoldiq kiritilmagan bo‘lsa, ASQ pasaytirilgan qiymatlarni ko‘rsatadi, biroq itog‘lar tengligi saqlanadi.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "11",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["05", "12", "10"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/app/reports/journal/JournalClient.tsx — журнал проводок в кабинете (phase3-evidence.md).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/zhurnal-provodok",
+        title: "Журнал бухгалтерских проводок | Contador",
+        description:
+          "Проверяйте бухгалтерские записи в журнале проводок Contador. Изучайте даты, суммы и счета, чтобы разбирать операции и контролировать отражение документов.",
+        h1: "Просматривайте проводки в едином журнале",
+        h2: ["Какие записи видны в журнале", "Как проверить операцию", "Переход к отчётам"],
+        faq: [
+          {
+            q: "Что показывает журнал проводок?",
+            a: "Список бухгалтерских записей за период: дату, документ, счета и суммы по дебету и кредиту.",
+          },
+          {
+            q: "Можно ли фильтровать журнал?",
+            a: "Да, по периоду и другим доступным фильтрам — так же, как в списке документов.",
+          },
+          {
+            q: "Это неизменяемый юридический аудиторский журнал?",
+            a: "Нет. Это журнал учётных проводок, отражающий текущее состояние документов, а не отдельный неизменяемый юридический реестр.",
+          },
+          {
+            q: "Как проверить конкретную операцию в журнале?",
+            a: "Найти нужную запись по дате, счёту или сумме и открыть связанный документ, чтобы увидеть детали операции.",
+          },
+          {
+            q: "Куда перейти из журнала для более широкой картины?",
+            a: "К отчётам — например, к оборотно-сальдовой ведомости или карточке счёта: они построены на тех же проводках.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/otkazmalar-jurnali",
+        title: "Buxgalteriya o‘tkazmalari jurnali | Contador",
+        description:
+          "Contador o‘tkazmalar jurnalida buxgalteriya yozuvlarini tekshiring. Operatsiyalarni tushunish uchun sana, summa va hisobvaraqlarni ko‘rib chiqing.",
+        h1: "O‘tkazmalarni yagona jurnalda ko‘ring",
+        h2: ["Jurnalda qanday yozuvlar ko‘rinadi", "Operatsiyani tekshirish", "Hisobotlarga o‘tish"],
+        faq: [
+          {
+            q: "O‘tkazmalar jurnali nimani ko‘rsatadi?",
+            a: "Davr uchun buxgalteriya yozuvlari ro‘yxatini: sana, hujjat, debet va kredit hisobvaraqlari hamda summalarni.",
+          },
+          {
+            q: "Jurnalni filtrlash mumkinmi?",
+            a: "Ha, davr va boshqa mavjud filtrlar bo‘yicha — xuddi hujjatlar ro‘yxatidagidek.",
+          },
+          {
+            q: "Bu o‘zgarmas huquqiy audit jurnalimi?",
+            a: "Yo‘q. Bu hujjatlarning joriy holatini aks ettiruvchi o‘tkazmalar jurnali, alohida o‘zgarmas huquqiy reestr emas.",
+          },
+          {
+            q: "Jurnalda muayyan operatsiyani qanday tekshirish mumkin?",
+            a: "Kerakli yozuvni sana, hisobvaraq yoki summa bo‘yicha topib, operatsiya tafsilotlarini ko‘rish uchun bog‘liq hujjatni ochish kerak.",
+          },
+          {
+            q: "Jurnaldan keyin qayerga o‘tish mumkin?",
+            a: "Hisobotlarga — masalan, aylanma-saldo qaydnomasi yoki hisobvaraq kartochkasiga: ular xuddi shu o‘tkazmalar asosida shakllanadi.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "12",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["10", "11"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/src/app/reports/account-card/AccountCardClient.tsx — карточка счёта в кабинете (phase3-evidence.md).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/kartochka-scheta",
+        title: "Карточка бухгалтерского счёта онлайн | Contador",
+        description:
+          "Открывайте карточку счёта в Contador для проверки движений за период. Изучайте записи и суммы, чтобы понимать, как сформировались показатели учёта.",
+        h1: "Разбирайте операции по отдельному счёту",
+        h2: ["Выбор счёта и периода", "Движения по счёту", "Проверка итогов"],
+        faq: [
+          {
+            q: "Чем карточка счёта отличается от банковского счёта?",
+            a: "Карточка счёта показывает движения по счёту плана счетов (бухгалтерский учётный счёт), а не выписку конкретного банковского расчётного счёта организации — термин «счёт» совпадает, но это разные понятия.",
+          },
+          {
+            q: "Что показывает карточка счёта?",
+            a: "Начальный остаток, все проводки по выбранному счёту за период и итоговые суммы по дебету и кредиту.",
+          },
+          {
+            q: "Как выбрать счёт и период?",
+            a: "На странице карточки счёта указываются счёт плана счетов и период — движения формируются по этим параметрам.",
+          },
+          {
+            q: "Можно ли выгрузить карточку счёта в файл?",
+            a: "Отдельная функция экспорта карточки счёта сейчас не подтверждена — карточка доступна для просмотра в кабинете.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/hisobvaraq-kartochkasi",
+        title: "Buxgalteriya hisobvarag‘i kartochkasi | Contador",
+        description:
+          "Contador’da hisobvaraq kartochkasini ochib, davr harakatlarini tekshiring. Hisob ko‘rsatkichlari qanday shakllanganini yozuvlar va summalar orqali ko‘ring.",
+        h1: "Alohida hisobvaraq operatsiyalarini ko‘rib chiqing",
+        h2: ["Hisobvaraq va davrni tanlash", "Hisobvaraq harakatlari", "Natijalarni tekshirish"],
+        faq: [
+          {
+            q: "Hisobvaraq kartochkasi bank hisobvarag‘idan nimasi bilan farq qiladi?",
+            a: "Hisobvaraq kartochkasi hisobvaraqlar rejasidagi buxgalteriya hisobvarag‘i bo‘yicha harakatlarni ko‘rsatadi, tashkilotning aniq bank hisob-raqami ko‘chirmasi emas — atama bir xil bo‘lsa-da, bular turli tushunchalar.",
+          },
+          {
+            q: "Hisobvaraq kartochkasi nimani ko‘rsatadi?",
+            a: "Tanlangan hisobvaraq bo‘yicha boshlang‘ich qoldiqni, davr uchun barcha o‘tkazmalarni va debet-kredit bo‘yicha yakuniy summalarni.",
+          },
+          {
+            q: "Hisobvaraq va davrni qanday tanlash mumkin?",
+            a: "Hisobvaraq kartochkasi sahifasida hisobvaraqlar rejasidagi hisobvaraq va davr ko‘rsatiladi — harakatlar shu parametrlar bo‘yicha shakllanadi.",
+          },
+          {
+            q: "Hisobvaraq kartochkasini faylga eksport qilish mumkinmi?",
+            a: "Alohida eksport funksiyasi hozircha tasdiqlanmagan — kartochka kabinetda ko‘rish uchun mavjud.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "13",
+    type: "feature",
+    parentId: "02",
+    relatedIds: ["06", "21", "15"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "v2/open-positions — раздел открытых позиций (авансы, подотчётные суммы) в кабинете (подтверждено в phase-1 evidence, повторно сверено в phase3-evidence.md). Автоматических напоминаний/уведомлений не найдено ни в одном доступном аудите — не заявляется.",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "vozmozhnosti/avansy-i-podotchet",
+        title: "Учёт авансов и подотчётных сумм | Contador",
+        description:
+          "Просматривайте открытые позиции в Contador: авансы, подотчётные суммы и сроки. Проверяйте незакрытые операции и следите за их состоянием в учёте.",
+        h1: "Контролируйте авансы и подотчётные суммы",
+        h2: ["Какие позиции остаются открытыми", "Сроки и статусы", "Проверка перед закрытием"],
+        faq: [
+          {
+            q: "Что считается открытой позицией?",
+            a: "Аванс, подотчётная сумма или другая операция, которая ещё не закрыта встречной операцией — например, авансовым отчётом или возвратом.",
+          },
+          {
+            q: "Как открытая позиция закрывается?",
+            a: "Встречной операцией на ту же сумму (или её часть) — после этого позиция перестаёт считаться открытой.",
+          },
+          {
+            q: "Отправляет ли сервис автоматические напоминания о просроченных позициях?",
+            a: "Нет, автоматических напоминаний нет — проверка сроков и статусов сейчас выполняется вручную в разделе открытых позиций.",
+          },
+          {
+            q: "Что нужно проверить перед закрытием месяца?",
+            a: "Список открытых позиций за период — не осталось ли авансов или подотчётных сумм без движения, которые нужно закрыть или перенести.",
+          },
+        ],
+      },
+      uz: {
+        path: "imkoniyatlar/avanslar-va-hisobdor-summalar",
+        title: "Avanslar va hisobdor summalar hisobi | Contador",
+        description:
+          "Contador’da ochiq pozitsiyalar, avanslar, hisobdor summalar va muddatlarni ko‘ring. Yopilmagan operatsiyalarni tekshirib, hisobdagi holatini kuzating.",
+        h1: "Avanslar va hisobdor summalarni nazorat qiling",
+        h2: ["Qaysi pozitsiyalar ochiq qoladi", "Muddatlar va holatlar", "Yopishdan oldin tekshirish"],
+        faq: [
+          {
+            q: "Ochiq pozitsiya deb nima hisoblanadi?",
+            a: "Hali qarshi operatsiya bilan yopilmagan avans, hisobdor summa yoki boshqa operatsiya — masalan, avans hisoboti yoki qaytarish bilan yopiladi.",
+          },
+          {
+            q: "Ochiq pozitsiya qanday yopiladi?",
+            a: "Xuddi shu summaga (yoki uning bir qismiga) qarshi operatsiya bilan — shundan keyin pozitsiya ochiq hisoblanmaydi.",
+          },
+          {
+            q: "Servis muddati o‘tgan pozitsiyalar haqida avtomatik eslatma yuboradimi?",
+            a: "Yo‘q, avtomatik eslatmalar yo‘q — muddat va holatlarni tekshirish hozircha ochiq pozitsiyalar bo‘limi orqali qo‘lda amalga oshiriladi.",
+          },
+          {
+            q: "Oyni yopishdan oldin nimani tekshirish kerak?",
+            a: "Davr uchun ochiq pozitsiyalar ro‘yxatini — harakatsiz qolgan avans yoki hisobdor summalar yopilishi yoki keyingi davrga o‘tkazilishi kerakmi.",
           },
         ],
       },
@@ -654,7 +990,7 @@ export const TOPICS: Topic[] = [
   {
     id: "15",
     type: "audience",
-    relatedIds: ["08"],
+    relatedIds: ["08", "09"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
@@ -710,6 +1046,70 @@ export const TOPICS: Topic[] = [
           {
             q: "Contador byudjet prognozi yoki bir nechta kompaniya bo‘yicha konsolidatsiyalangan hisobot beradimi?",
             a: "Yo‘q, bu servisning hozirgi imkoniyatlariga kirmaydi.",
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: "16",
+    type: "audience",
+    relatedIds: ["13", "08", "06"],
+    contentStatus: "published",
+    updatedAt: "2026-09-09",
+    featureEvidence:
+      "Сценарная страница аудитории; ссылается только на реально построенные темы 13 (открытые позиции), 08 (P&L) и 06 (закрытие месяца).",
+    primaryCta: "register",
+    locales: {
+      ru: {
+        path: "dlya-kompaniy-uslug",
+        title: "Учёт для компаний сферы услуг | Contador",
+        description:
+          "Работайте с банковскими операциями, доходами, расходами и авансами сервисной компании. Изучите подходящий сценарий учёта и отчётности в Contador.",
+        h1: "Ведите учёт сервисной компании в Contador",
+        h2: ["Оплата услуг и расходы", "Работа с авансами", "Проверка результата за месяц"],
+        faq: [
+          {
+            q: "Чем учёт сервисной компании отличается от учёта товарного бизнеса?",
+            a: "Меньше операций со складом и товарными остатками, больше внимания к оплате услуг, расходам и авансам от заказчиков и подрядчикам.",
+          },
+          {
+            q: "Можно ли отслеживать полученные и выданные авансы?",
+            a: "Да, через раздел открытых позиций — авансы и подотчётные суммы видны как незакрытые операции, пока встречная операция не закроет их.",
+          },
+          {
+            q: "Какой отчёт покажет результат месяца?",
+            a: "Отчёт о прибылях и убытках — доходы, расходы и финансовый результат за выбранный период.",
+          },
+          {
+            q: "Есть ли отраслевые функции для сервисных компаний — CRM, тайм-трекинг, склад?",
+            a: "Нет, это не входит в текущие возможности Contador — сервис охватывает банковские операции, проводки, закрытие месяца и отчёты.",
+          },
+        ],
+      },
+      uz: {
+        path: "xizmat-korsatish-korxonalari-uchun",
+        title: "Xizmat ko‘rsatish korxonalari hisobi | Contador",
+        description:
+          "Contador’da xizmat ko‘rsatish korxonasining bank operatsiyalari, daromad, xarajat va avanslari bilan ishlash hamda hisobot imkoniyatlarini ko‘ring.",
+        h1: "Xizmat ko‘rsatish korxonasi hisobini yuriting",
+        h2: ["Xizmat to‘lovlari va xarajatlar", "Avanslar bilan ishlash", "Oy natijasini tekshirish"],
+        faq: [
+          {
+            q: "Xizmat ko‘rsatish korxonasi hisobi tovar biznesi hisobidan nimasi bilan farq qiladi?",
+            a: "Ombor va tovar qoldiqlari bilan ishlash kamroq, xizmat to‘lovlari, xarajatlar hamda buyurtmachilar va pudratchilar bilan avanslarga ko‘proq e’tibor beriladi.",
+          },
+          {
+            q: "Olingan va berilgan avanslarni kuzatish mumkinmi?",
+            a: "Ha, ochiq pozitsiyalar bo‘limi orqali — avanslar va hisobdor summalar qarshi operatsiya ularni yopmaguncha yopilmagan operatsiya sifatida ko‘rinadi.",
+          },
+          {
+            q: "Qaysi hisobot oy natijasini ko‘rsatadi?",
+            a: "Foyda va zarar hisoboti — tanlangan davr uchun daromad, xarajat va moliyaviy natija.",
+          },
+          {
+            q: "Xizmat ko‘rsatish korxonalari uchun alohida CRM, vaqt hisobi yoki ombor funksiyalari bormi?",
+            a: "Yo‘q, bu Contador’ning hozirgi imkoniyatlariga kirmaydi — servis bank operatsiyalari, o‘tkazmalar, oyni yopish va hisobotlarni qamrab oladi.",
           },
         ],
       },
@@ -782,7 +1182,7 @@ export const TOPICS: Topic[] = [
   {
     id: "21",
     type: "checklist",
-    relatedIds: ["06"],
+    relatedIds: ["06", "13", "10"],
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:

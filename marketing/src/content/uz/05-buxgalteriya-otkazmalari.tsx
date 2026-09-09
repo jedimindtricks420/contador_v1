@@ -3,10 +3,14 @@ import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
+import { getTopicById, urlFor } from "@/lib/manifest";
 import type { Topic } from "@/lib/manifest";
 
+// Фаза 3: o‘tkazmalar jurnali (tema 11) qurildi — quyidagi matn uni endi
+// "ishlab chiqilmoqda" deb ta’riflamaydi (fazadagi holat fazaga mos yangilandi).
 export default function Body({ topic }: { topic: Topic }) {
   const faq = topic.locales.uz.faq;
+  const journalTopic = getTopicById("11");
   return (
     <div className="space-y-12">
       <Hero
@@ -50,10 +54,18 @@ export default function Body({ topic }: { topic: Topic }) {
           Jurnalda ko‘rish
         </h2>
         <p className="mt-3 text-sm text-gray-600">
-          Hozircha o‘tkazmalar ularni yaratgan hujjatlar bilan birga — davr va tur bo‘yicha filtrlanadigan
-          hujjatlar ro‘yxatida ko‘riladi. Barcha o‘tkazmalarni bitta joyda birlashtiradigan alohida jurnal sahifasi
-          hujjatlar ro‘yxatidan alohida ishlab chiqilmoqda.
+          O‘tkazmalarni ularni yaratgan hujjatlar bilan birga — davr va tur bo‘yicha filtrlanadigan hujjatlar
+          ro‘yxatida ko‘rish mumkin. Barcha o‘tkazmalarni hujjat turidan qat’i nazar bitta joyda ko‘rish uchun
+          alohida o‘tkazmalar jurnali bor.
         </p>
+        {journalTopic && (
+          <a
+            href={urlFor(journalTopic, "uz")}
+            className="mt-3 inline-block rounded border border-gray-200 p-4 font-medium text-black hover:border-black transition-colors"
+          >
+            {journalTopic.locales.uz.h1}
+          </a>
+        )}
         <p className="mt-3 text-sm text-gray-600">
           Contador tizimda allaqachon hujjat turi va shabloni mavjud bo‘lgan operatsiyalar uchun o‘tkazmalarni
           qo‘llab-quvvatlaydi — bu istalgan xo‘jalik operatsiyasi uchun universal o‘tkazma muharriri emas.

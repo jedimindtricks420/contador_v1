@@ -4,9 +4,8 @@ import { getTopicById, urlFor } from "@/lib/manifest";
 import type { Topic } from "@/lib/manifest";
 
 // Тип hub, порядок блоков — TASK-0003 §6: H1 и пояснение → полезные категории
-// → дочерние карточки. Фаза 2: из тем 03–13 построены 03, 04, 05, 06, 07, 08 —
-// их карточки показаны в своих группах; остальные группы (09–13) по-прежнему
-// помечены "скоро"/"tez orada" без ссылок на ещё не существующие страницы.
+// → дочерние карточки. Фаза 3: вся группа 03–13 построена — карточки
+// показаны в своих группах, "скоро"-заглушек больше нет.
 function Card({ topic, locale }: { topic: Topic; locale: "ru" }) {
   return (
     <a
@@ -26,6 +25,11 @@ export default function Body({ topic }: { topic: Topic }) {
   const closingTopic = getTopicById("06");
   const balanceTopic = getTopicById("07");
   const pnlTopic = getTopicById("08");
+  const cashflowTopic = getTopicById("09");
+  const osvTopic = getTopicById("10");
+  const journalTopic = getTopicById("11");
+  const accountCardTopic = getTopicById("12");
+  const openPositionsTopic = getTopicById("13");
 
   return (
     <div className="space-y-12">
@@ -48,9 +52,9 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {postingsTopic && <Card topic={postingsTopic} locale="ru" />}
           {closingTopic && <Card topic={closingTopic} locale="ru" />}
-          <div className="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400">
-            Журнал проводок, карточка счёта и открытые позиции — скоро
-          </div>
+          {journalTopic && <Card topic={journalTopic} locale="ru" />}
+          {accountCardTopic && <Card topic={accountCardTopic} locale="ru" />}
+          {openPositionsTopic && <Card topic={openPositionsTopic} locale="ru" />}
         </div>
       </section>
 
@@ -61,9 +65,8 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {balanceTopic && <Card topic={balanceTopic} locale="ru" />}
           {pnlTopic && <Card topic={pnlTopic} locale="ru" />}
-          <div className="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400">
-            Движение денежных средств и ОСВ — скоро
-          </div>
+          {cashflowTopic && <Card topic={cashflowTopic} locale="ru" />}
+          {osvTopic && <Card topic={osvTopic} locale="ru" />}
         </div>
       </section>
 

@@ -3,6 +3,7 @@ import { ProductScreenshot } from "@/components/marketing/ProductScreenshot";
 import { FAQ } from "@/components/marketing/FAQ";
 import { RelatedPages } from "@/components/marketing/RelatedPages";
 import { CTA } from "@/components/marketing/CTA";
+import { getTopicById, urlFor } from "@/lib/manifest";
 import type { Topic } from "@/lib/manifest";
 
 // Evidence: v2/src/app/documents/DocumentsClient.tsx — список документов с
@@ -10,8 +11,12 @@ import type { Topic } from "@/lib/manifest";
 // намеренно не называются конкретными кодами в этом тексте — AGENTS.md
 // проекта прямо предупреждает, что коды счетов нельзя подставлять по памяти
 // без сверки с ensureBaseData.ts/constants.ts; здесь описание качественное.
+// Фаза 3: журнал проводок (тема 11, v2/src/app/reports/journal) построен —
+// текст ниже больше не описывает его как "в разработке" (было верно в фазе 2,
+// устарело сейчас).
 export default function Body({ topic }: { topic: Topic }) {
   const faq = topic.locales.ru.faq;
+  const journalTopic = getTopicById("11");
   return (
     <div className="space-y-12">
       <Hero
@@ -55,10 +60,18 @@ export default function Body({ topic }: { topic: Topic }) {
           Просмотр в журнале
         </h2>
         <p className="mt-3 text-sm text-gray-600">
-          Сейчас проводки просматриваются вместе с документами, которые их породили, — в списке документов с
-          фильтрами по периоду и типу. Отдельная объединённая страница-журнал по всем проводкам сразу — в разработке,
-          отдельно от списка документов.
+          Проводки можно смотреть вместе с документами, которые их породили, — в списке документов с фильтрами по
+          периоду и типу. Для сквозного взгляда по всем проводкам сразу, независимо от документа, есть отдельный
+          журнал проводок.
         </p>
+        {journalTopic && (
+          <a
+            href={urlFor(journalTopic, "ru")}
+            className="mt-3 inline-block rounded border border-gray-200 p-4 font-medium text-black hover:border-black transition-colors"
+          >
+            {journalTopic.locales.ru.h1}
+          </a>
+        )}
         <p className="mt-3 text-sm text-gray-600">
           Contador поддерживает проводки по операциям, для которых уже есть тип документа и шаблон в системе —
           это не универсальный редактор проводок для произвольных хозяйственных операций.

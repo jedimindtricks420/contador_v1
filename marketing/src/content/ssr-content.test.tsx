@@ -88,14 +88,10 @@ describe("SSR output contains real content, not client-only", () => {
     expect(html).toContain("маржа 20%, наценка 25%");
   });
 
-  it("hub pages (26 ru, 02 uz) only link to topics actually built in phase 1", async () => {
+  it("tools hub (26, ru) still only links to topics actually built (27-29 not all built yet)", async () => {
     const tools = getTopicById("26")!;
     const toolsHtml = renderToStaticMarkup(await CONTENT_REGISTRY["26"].ru({ topic: tools }));
     expect(toolsHtml).toContain("скоро");
-
-    const features = getTopicById("02")!;
-    const featuresHtml = renderToStaticMarkup(await CONTENT_REGISTRY["02"].uz({ topic: features }));
-    expect(featuresHtml).toContain("tez orada");
   });
 
   // Фаза 2 (TASK-0003): 7 новых тем — 03, 04, 05, 07, 08, 14, 15. Та же техника:
@@ -175,17 +171,107 @@ describe("SSR output contains real content, not client-only", () => {
     expect(uzHtml).toContain(topic.locales.uz.h1);
   });
 
-  it("hub 02 (ru+uz) cards all 6 features built by phase 2 (03-08)", async () => {
+  it("hub 02 (ru+uz) cards the full built group 03-13 (phase 3: no more 'скоро' placeholders)", async () => {
     const topic = getTopicById("02")!;
     const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["02"].ru({ topic }));
-    for (const id of ["03", "04", "05", "06", "07", "08"]) {
+    for (const id of ["03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"]) {
       expect(ruHtml).toContain(getTopicById(id)!.locales.ru.h1);
     }
+    expect(ruHtml).not.toContain("скоро");
 
     const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["02"].uz({ topic }));
-    for (const id of ["03", "04", "05", "06", "07", "08"]) {
+    for (const id of ["03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13"]) {
       expect(uzHtml).toContain(getTopicById(id)!.locales.uz.h1);
     }
+    expect(uzHtml).not.toContain("tez orada");
+  });
+
+  // Фаза 3 (TASK-0003): 6 новых тем — 09, 10, 11, 12, 13, 16. Та же техника:
+  // прямой вызов серверных компонентов из CONTENT_REGISTRY + renderToStaticMarkup,
+  // без роутинга Next.js и без запущенного сервера (см. пояснение вверху файла).
+  it("cash flow (09, ru+uz) renders H1 and the real demo inflow/outflow figures server-side", async () => {
+    const topic = getTopicById("09")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["09"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Оплата от покупателей");
+    expect(ruHtml).toContain("прогнозирования будущих поступлений и выплат в сервисе нет");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["09"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("OSV (10, ru+uz) renders H1 and the demo turnover table server-side", async () => {
+    const topic = getTopicById("10")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["10"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Денежные средства на счетах");
+    expect(ruHtml).toContain("Начало");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["10"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("posting journal (11, ru+uz) renders H1, 3 demo entries and the not-a-legal-audit disclaimer server-side", async () => {
+    const topic = getTopicById("11")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["11"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("Банковское поступление");
+    expect(ruHtml).toContain("Банковское списание");
+    expect(ruHtml).toContain("Авансовый отчёт");
+    expect(ruHtml).toContain("неизменяемый");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["11"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("account card (12, ru+uz) renders H1 and distinguishes ledger account from bank account server-side", async () => {
+    const topic = getTopicById("12")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["12"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("не о конкретном банковском расчётном счёте");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["12"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("open positions (13, ru+uz) renders H1, the advance example and no auto-reminder claim server-side", async () => {
+    const topic = getTopicById("13")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["13"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain("800 000");
+    expect(ruHtml).toContain("Автоматических напоминаний");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["13"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("for services companies (16, ru+uz) renders H1 and links to real feature topics server-side", async () => {
+    const topic = getTopicById("16")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["16"].ru({ topic }));
+    expect(ruHtml).toContain(topic.locales.ru.h1);
+    expect(ruHtml).toContain(getTopicById("13")!.locales.ru.h1);
+    expect(ruHtml).toContain(getTopicById("08")!.locales.ru.h1);
+    expect(ruHtml).toContain(getTopicById("06")!.locales.ru.h1);
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["16"].uz({ topic }));
+    expect(uzHtml).toContain(topic.locales.uz.h1);
+  });
+
+  it("postings (05, ru+uz) now links to the real posting journal (11) instead of 'coming soon' text", async () => {
+    const topic = getTopicById("05")!;
+    const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["05"].ru({ topic }));
+    expect(ruHtml).toContain(getTopicById("11")!.locales.ru.h1);
+    expect(ruHtml).not.toContain("в разработке");
+
+    const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["05"].uz({ topic }));
+    expect(uzHtml).toContain(getTopicById("11")!.locales.uz.h1);
+    expect(uzHtml).not.toContain("ishlab chiqilmoqda");
+  });
+
+  it("Header (ru) includes the new services-companies nav entry (16)", () => {
+    const home = getTopicById("01")!;
+    const html = renderToStaticMarkup(<Header topic={home} locale="ru" />);
+    expect(html).toContain("Для компаний услуг");
   });
 
   it("Header and Footer render real nav labels and CTA text server-side", () => {

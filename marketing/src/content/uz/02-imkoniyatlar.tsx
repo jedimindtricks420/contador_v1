@@ -22,6 +22,11 @@ export default function Body({ topic }: { topic: Topic }) {
   const closingTopic = getTopicById("06");
   const balanceTopic = getTopicById("07");
   const pnlTopic = getTopicById("08");
+  const cashflowTopic = getTopicById("09");
+  const osvTopic = getTopicById("10");
+  const journalTopic = getTopicById("11");
+  const accountCardTopic = getTopicById("12");
+  const openPositionsTopic = getTopicById("13");
 
   return (
     <div className="space-y-12">
@@ -44,9 +49,9 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {postingsTopic && <Card topic={postingsTopic} locale="uz" />}
           {closingTopic && <Card topic={closingTopic} locale="uz" />}
-          <div className="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400">
-            O‘tkazmalar jurnali, hisobvaraq kartochkasi va ochiq pozitsiyalar — tez orada
-          </div>
+          {journalTopic && <Card topic={journalTopic} locale="uz" />}
+          {accountCardTopic && <Card topic={accountCardTopic} locale="uz" />}
+          {openPositionsTopic && <Card topic={openPositionsTopic} locale="uz" />}
         </div>
       </section>
 
@@ -57,9 +62,8 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {balanceTopic && <Card topic={balanceTopic} locale="uz" />}
           {pnlTopic && <Card topic={pnlTopic} locale="uz" />}
-          <div className="rounded border border-dashed border-gray-300 p-4 text-sm text-gray-400">
-            Pul oqimi va aylanma-saldo qaydnomasi — tez orada
-          </div>
+          {cashflowTopic && <Card topic={cashflowTopic} locale="uz" />}
+          {osvTopic && <Card topic={osvTopic} locale="uz" />}
         </div>
       </section>
 
