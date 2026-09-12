@@ -9,15 +9,17 @@ import Decimal from "decimal.js";
 
 const mockGetCharterCapitalDebt = vi.fn();
 vi.mock("@/lib/charterCapital", () => ({ getCharterCapitalDebt: mockGetCharterCapitalDebt }));
+vi.mock("@/lib/closing", () => ({ upsertTaxCalendarEventsForPeriod: vi.fn().mockResolvedValue(undefined) }));
 
 describe("postDocument — CAPITAL_CONTRIBUTION charter-capital guard", () => {
   const mockTx: any = {
+    $queryRaw: vi.fn(),
     document: { findUnique: vi.fn(), update: vi.fn() },
     period: { findUnique: vi.fn() },
     organization: { findUnique: vi.fn() },
     counterparty: { findFirst: vi.fn(), create: vi.fn() },
     account: { findUnique: vi.fn() },
-    journalEntry: { create: vi.fn(), createMany: vi.fn() },
+    journalEntry: { findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn() },
     openItem: { findMany: vi.fn().mockResolvedValue([]), update: vi.fn() },
     auditLog: { create: vi.fn() },
   };
@@ -27,6 +29,7 @@ describe("postDocument — CAPITAL_CONTRIBUTION charter-capital guard", () => {
     orgId: "org-1",
     periodId: "period-1",
     status: "POSTED",
+    date: new Date("2026-09-10T00:00:00Z"),
     payload: { amount: 1_000_000, counterpartyInn: "123456789" },
     type: {
       code: "CAPITAL_CONTRIBUTION",
@@ -43,7 +46,7 @@ describe("postDocument — CAPITAL_CONTRIBUTION charter-capital guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTx.document.findUnique.mockResolvedValue(baseDoc);
-    mockTx.period.findUnique.mockResolvedValue({ id: "period-1", status: "OPEN", lockDate: null });
+    mockTx.period.findUnique.mockResolvedValue({ id: "period-1", orgId: "org-1", year: 2026, month: 9, status: "OPEN", lockDate: null });
     mockTx.counterparty.findFirst.mockResolvedValue({ id: "cp-1" });
     mockTx.account.findUnique.mockResolvedValue({ id: "acc-1", code: "5110" });
   });

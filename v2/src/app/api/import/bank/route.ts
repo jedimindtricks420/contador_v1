@@ -1,28 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveOrgId } from "@/lib/context";
+import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
+import Decimal from "decimal.js";
+import { assertAccountingWriteRole } from "@/lib/posting/documentPolicy";
+import { bankImportFingerprint } from "@/lib/bankImportFingerprint";
+import { assertStatementAccount, BankStatementValidationError } from "@/lib/bankStatementValidation";
+import { BANK_UPLOAD_MAX_FILE_BYTES, BankUploadError, readBankUpload } from "@/lib/bankUpload";
 
 import { parse1CExchange } from "@/lib/parsers/parser1c";
-import { parseBankExcel } from "@/lib/parsers/parserBankExcel";
 import { ParsedTransaction } from "@/lib/parsers/types";
-import { Prisma } from "@prisma/client";
-import { AMOUNT_TOLERANCE } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
   try {
 
-    const orgId = await getActiveOrgId();
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const bankAccountId = formData.get("bankAccountId") as string | null;
-    const parserType = formData.get("parserType") as string | null; // "1C", "Asaka", "Kapital", "IpakYoli", "AUTO"
+    const membership = await getActiveMembership();
+    assertAccountingWriteRole(membership.role);
+    const orgId = membership.orgId;
+    const formData = await readBankUpload(req);
+    const file = formData.get("file");
+    const bankAccountId = formData.get("bankAccountId");
+    const parserType = formData.get("parserType");
 
     const url = new URL(req.url);
     const isPreview = url.searchParams.get("preview") === "true";
 
-    if (!file || !bankAccountId) {
+    if (!(file instanceof File) || typeof bankAccountId !== "string" || !bankAccountId.trim() ||
+        formData.getAll("file").length !== 1 || formData.getAll("bankAccountId").length !== 1 ||
+        formData.getAll("parserType").length > 1 ||
+        (parserType !== null && (typeof parserType !== "string" || !["1C", "AUTO", "Asaka", "Kapital", "IpakYoli"].includes(parserType)))) {
       return NextResponse.json({ error: "file и bankAccountId обязательны" }, { status: 400 });
+    }
+    if (file.size === 0 || file.size > BANK_UPLOAD_MAX_FILE_BYTES) {
+      return NextResponse.json({ error: "Размер выписки должен быть от 1 байта до 5 МиБ" }, { status: file.size === 0 ? 400 : 413 });
     }
 
     const bankAccount = await prisma.bankAccount.findFirst({
@@ -36,31 +46,34 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     let parsed: ParsedTransaction[] = [];
-    let statementOpeningBalance: number | undefined;
-    let statementClosingBalance: number | undefined;
+    let statementOpeningBalance: number | string | undefined;
+    let statementClosingBalance: number | string | undefined;
+    let statementAccountNumber: string | undefined;
     let usedParser = "";
 
     // Format detection: check ASCII prefix of the buffer (works for both UTF-8 and CP1251)
     const headerSnippet = buffer.slice(0, 64).toString("latin1");
     const is1CHeader = headerSnippet.includes("1CClientBankExchange");
 
-    if (parserType === "1C" || (parserType !== "Asaka" && parserType !== "Kapital" && parserType !== "IpakYoli" && is1CHeader)) {
+    if (is1CHeader && (parserType === "1C" || parserType === "AUTO" || parserType === null)) {
       const result = parse1CExchange(buffer);
       parsed = result.transactions;
       statementOpeningBalance = result.openingBalance;
       statementClosingBalance = result.closingBalance;
+      statementAccountNumber = result.accountNumber;
       usedParser = "1CClientBankExchange";
     } else {
-      const result = parseBankExcel(buffer);
-      parsed = result.transactions;
-      statementOpeningBalance = result.openingBalance;
-      statementClosingBalance = result.closingBalance;
-      usedParser = "Excel Parser";
+      return NextResponse.json({
+        error: "Формат выписки не подтверждает номер счёта и контрольные итоги. Требуется проверенный формат 1CClientBankExchange",
+        code: "BANK_STATEMENT_UNSUPPORTED",
+      }, { status: 422 });
     }
 
     if (parsed.length === 0) {
       return NextResponse.json({ error: "Нет транзакций в файле или неподдерживаемый формат" }, { status: 422 });
     }
+
+    assertStatementAccount(statementAccountNumber, bankAccount.accountNumber);
 
     // Preview mode: return the parsed results without saving to DB
     if (isPreview) {
@@ -80,43 +93,72 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    return await prisma.$transaction(async (database) => {
+    const [lockedAccount] = await database.$queryRaw<{ lastBalance: string; lastSyncedAt: Date | null; currency: string; accountNumber: string | null }[]>`
+      SELECT "lastBalance"::text, "lastSyncedAt", "currency", "accountNumber" FROM "BankAccount"
+      WHERE id = ${bankAccountId} AND "orgId" = ${orgId} FOR NO KEY UPDATE
+    `;
+    if (!lockedAccount) throw new Error("Банковский счёт не найден");
+    const confirmedAccountNumber = assertStatementAccount(statementAccountNumber, lockedAccount.accountNumber);
     let imported = 0;
     let duplicates = 0;
     let locked = 0;
-    let netDelta = 0;
+    let netDeltaCents = BigInt(0);
     const importBatchId = crypto.randomUUID();
 
-    for (const tx of parsed) {
-      const year = tx.date.getFullYear();
-      const month = tx.date.getMonth() + 1;
+    for (const tx of [...parsed].sort((first, second) => first.date.getTime() - second.date.getTime())) {
+      const amount = new Decimal(tx.amount);
+      if (!amount.isFinite() || !amount.gt(0) || amount.decimalPlaces() > 2 || amount.gte("1000000000000000000")) {
+        throw new Error("Некорректная сумма банковской операции");
+      }
+      if (!["CREDIT", "DEBIT"].includes(tx.direction)) throw new Error("Некорректное направление банковской операции");
+      const dateParts = new Intl.DateTimeFormat("en", {
+        timeZone: "Asia/Tashkent", year: "numeric", month: "numeric",
+      }).formatToParts(tx.date);
+      const year = Number(dateParts.find((part) => part.type === "year")?.value);
+      const month = Number(dateParts.find((part) => part.type === "month")?.value);
 
       // Find or create accounting period (upsert is race-safe: @@unique([orgId, year, month]))
-      const period = await prisma.period.upsert({
+      const period = await database.period.upsert({
         where: { orgId_year_month: { orgId, year, month } },
         create: { orgId, year, month, mode: "ACTIVE", status: "OPEN" },
         update: {}
       });
 
       // Skip transactions whose period is already closed — they cannot be classified
-      if (period.status === "CLOSED") {
+      await database.$queryRaw`SELECT "id" FROM "Period" WHERE "id" = ${period.id} FOR NO KEY UPDATE`;
+      const currentPeriod = await database.period.findUniqueOrThrow({ where: { id: period.id } });
+      if (currentPeriod.status === "CLOSED" || currentPeriod.lockDate !== null) {
         locked++;
         continue;
       }
 
-      // SHA-256 for deduplication
-      const hash = crypto
+      const legacyHash: string = crypto
         .createHash("sha256")
-        .update(`${orgId}:${bankAccountId}:${tx.date.toISOString()}:${tx.amount}:${tx.description}`)
+        .update(`${orgId}:${bankAccountId}:${tx.date.toISOString()}:${Number(tx.amount)}:${tx.description}`)
         .digest("hex");
+      const legacy = await database.stagedTransaction.findUnique({
+        where: { orgId_hash: { orgId, hash: legacyHash } },
+      });
+      if (legacy && legacy.bankAccountId === bankAccountId && legacy.direction === tx.direction &&
+          legacy.date.getTime() === tx.date.getTime() && amount.eq(legacy.amount.toString()) &&
+          legacy.description === tx.description) {
+        duplicates += 1;
+        continue;
+      }
+      const hash = crypto.createHash("sha256").update(JSON.stringify([
+        "bank-v2", orgId, bankAccountId, lockedAccount.currency, tx.date.toISOString(),
+        tx.direction, amount.toFixed(2), tx.description,
+      ])).digest("hex");
 
-      try {
-        await prisma.stagedTransaction.create({
+        const inserted = await database.stagedTransaction.createMany({
+          skipDuplicates: true,
           data: {
             orgId,
             bankAccountId,
             periodId: period.id,
             date: tx.date,
-            amount: tx.amount,
+            amount: amount.toFixed(2),
             direction: tx.direction,
             description: tx.description,
             counterpartyHint: tx.counterpartyHint || null,
@@ -126,51 +168,53 @@ export async function POST(req: NextRequest) {
             importBatchId,
           },
         });
-        imported++;
-        netDelta += tx.direction === "CREDIT" ? tx.amount : -tx.amount;
-      } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-          duplicates++;
+        if (inserted.count === 0) {
+          duplicates += 1;
         } else {
-          throw e;
+          imported += 1;
+          const cents = BigInt(amount.toFixed(2).replace(".", ""));
+          netDeltaCents += tx.direction === "CREDIT" ? cents : -cents;
         }
-      }
     }
 
     // Update bank balance.
     // If the statement provides an opening balance AND the account has never been synced
     // (lastBalance === 0 and lastSyncedAt is null), seed lastBalance from the statement.
     // This ensures the first import correctly reflects the real bank opening position.
-    // Wrapped in a transaction with a row lock (FOR UPDATE) — without it, two
-    // concurrent imports for the same bank account both read the same lastBalance
-    // and the second write silently clobbers the first one's delta.
+    let newBalance = new Decimal(lockedAccount.lastBalance);
     if (imported > 0) {
-      await prisma.$transaction(async (tx) => {
-        const [locked] = await tx.$queryRaw<{ lastBalance: string; lastSyncedAt: Date | null }[]>`
-          SELECT "lastBalance"::text, "lastSyncedAt" FROM "BankAccount" WHERE id = ${bankAccountId} FOR UPDATE
-        `;
-        const isFirstSync = !locked?.lastSyncedAt && Number(locked?.lastBalance ?? 0) === 0;
+        const isFirstSync = !lockedAccount.lastSyncedAt && newBalance.isZero();
         const baseBalance = (isFirstSync && statementOpeningBalance !== undefined)
-          ? statementOpeningBalance
-          : Number(locked?.lastBalance ?? 0);
-        const newBalance = baseBalance + netDelta;
-        await tx.bankAccount.update({
+          ? new Decimal(statementOpeningBalance)
+          : newBalance;
+        if (!baseBalance.isFinite() || baseBalance.decimalPlaces() > 2) {
+          throw new Error("Некорректный начальный банковский остаток");
+        }
+        const baseCents = BigInt(baseBalance.toFixed(2).replace(".", ""));
+        newBalance = new Decimal((baseCents + netDeltaCents).toString()).div(100);
+        if (!newBalance.isFinite() || newBalance.decimalPlaces() > 2 || newBalance.abs().gte("1000000000000000000")) {
+          throw new Error("Остаток банковского счёта не представим без потери точности");
+        }
+        const syncedAt = new Date();
+        const sourceRows = await database.stagedTransaction.findMany({ where: { orgId, importBatchId } });
+        await database.bankAccount.update({
           where: { id: bankAccountId },
-          data: { lastSyncedAt: new Date(), lastBalance: newBalance }
+          data: { lastSyncedAt: syncedAt, lastBalance: newBalance.toFixed(2) }
         });
-      });
+        await database.auditLog.create({ data: {
+          orgId, userId: membership.userId, action: "IMPORT_BANK", entityType: "BankAccount", entityId: bankAccountId,
+          oldValue: { lastBalance: lockedAccount.lastBalance, lastSyncedAt: lockedAccount.lastSyncedAt?.toISOString() ?? null, currency: lockedAccount.currency, accountNumber: confirmedAccountNumber },
+          newValue: {
+            lastBalance: newBalance.toFixed(2), lastSyncedAt: syncedAt.toISOString(), currency: lockedAccount.currency, accountNumber: confirmedAccountNumber,
+            imported, duplicates, locked, importBatchId, rollbackVersion: 2, sourceHash: bankImportFingerprint(sourceRows),
+          },
+        } });
     }
 
-    // Warn if the statement closing balance doesn't match what we computed
-    let balanceDiscrepancy: number | null = null;
     if (statementClosingBalance !== undefined && imported > 0) {
-      const finalAccount = await prisma.bankAccount.findUnique({
-        where: { id: bankAccountId },
-        select: { lastBalance: true }
-      });
-      const computed = Number(finalAccount?.lastBalance ?? 0);
-      const diff = Math.abs(computed - statementClosingBalance);
-      if (diff > AMOUNT_TOLERANCE) balanceDiscrepancy = diff;
+      if (!newBalance.eq(statementClosingBalance)) {
+        throw new BankStatementValidationError("Конечный остаток выписки не совпадает с состоянием счёта после импорта. Требуется сверка последовательности выписок");
+      }
     }
 
     return NextResponse.json({
@@ -178,10 +222,17 @@ export async function POST(req: NextRequest) {
       importBatchId: imported > 0 ? importBatchId : null,
       openingBalance: statementOpeningBalance ?? null,
       closingBalance: statementClosingBalance ?? null,
-      balanceDiscrepancy
+      balanceDiscrepancy: null
     });
+    }, { maxWait: 5000, timeout: 30000 });
   } catch (err: any) {
+    if (err instanceof BankUploadError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    }
+    if (err instanceof BankStatementValidationError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: 422 });
+    }
     console.error("BANK STATEMENT IMPORT ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Internal error" }, { status: ["FORBIDDEN", "NO_ACTIVE_ORG"].includes(err.message) ? 403 : 500 });
   }
 }

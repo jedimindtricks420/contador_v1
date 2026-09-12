@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import Decimal from "decimal.js";
+import { Prisma } from "@prisma/client";
 import { BANK_ACCOUNT_CODES, BANK_USD_CODES, BANK_UZS_CODES } from "@/lib/constants";
+import { InvalidReportPeriod, reportPeriod } from "@/lib/reports/reportPeriod";
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,35 +15,55 @@ export async function GET(req: NextRequest) {
     const toParam = searchParams.get("to");
     const accountId = searchParams.get("accountId");
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
+    const { startDate, endExclusive, months } = reportPeriod(fromParam, toParam);
 
-    const startDate = fromParam ? new Date(fromParam) : new Date(currentYear, 0, 1);
-    const endDate = toParam ? new Date(toParam) : new Date(currentYear, 11, 31, 23, 59, 59);
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return NextResponse.json({ error: "Неверный формат даты (from/to)" }, { status: 400 });
-    }
-
-    let accountCodes = [...BANK_ACCOUNT_CODES];
+    return await prisma.$transaction(async (tx) => {
+    const accountCodes = [...BANK_ACCOUNT_CODES];
+    let bankScope: Prisma.DocumentWhereInput = {};
+    let bankScopeSql = Prisma.empty;
     if (accountId && accountId !== "ALL") {
-      const bankAccount = await prisma.bankAccount.findFirst({
+      const bankAccount = await tx.bankAccount.findFirst({
         where: { id: accountId, orgId }
       });
-      if (bankAccount) {
-        accountCodes = bankAccount.currency === "USD" ? [...BANK_USD_CODES] : [...BANK_UZS_CODES];
+      if (!bankAccount) {
+        return NextResponse.json({ error: "Банковский счёт не найден" }, { status: 404 });
       }
+      const selectedSource = { orgId, bankAccountId: accountId, bankAccount: { orgId } };
+      bankScope = { stagedTransactions: { some: selectedSource } };
+      const ambiguousEntry = await tx.journalEntry.findFirst({
+        where: {
+          account: { code: { in: accountCodes } },
+          document: {
+            orgId, status: "POSTED", date: { lt: endExclusive },
+            OR: [
+              { stagedTransactions: { none: { orgId, bankAccount: { orgId } } } },
+              { AND: [bankScope, { stagedTransactions: { some: { NOT: selectedSource } } }] },
+            ],
+          },
+        },
+        select: { id: true },
+      });
+      if (ambiguousEntry) {
+        return NextResponse.json({ error: "ДДС по отдельному счёту требует однозначной привязки всех банковских проводок. Есть документы без банковского источника или с источниками разных счетов." }, { status: 409 });
+      }
+      bankScopeSql = Prisma.sql`AND EXISTS (
+        SELECT 1 FROM "StagedTransaction" st
+        JOIN "BankAccount" ba ON ba.id = st."bankAccountId"
+        WHERE st."documentId" = d.id AND st."orgId" = ${orgId}
+          AND ba."orgId" = ${orgId} AND st."bankAccountId" = ${accountId}
+      )`;
     }
 
     // Get journal entries
-    const entries = await prisma.journalEntry.findMany({
+    const entries = await tx.journalEntry.findMany({
       where: {
         document: {
           orgId,
           status: "POSTED",
+          ...bankScope,
           date: {
             gte: startDate,
-            lte: endDate
+            lt: endExclusive
           }
         },
         account: {
@@ -59,16 +81,6 @@ export async function GET(req: NextRequest) {
         date: "asc"
       }
     });
-
-    // Generate list of months in YYYY-MM format
-    const months: string[] = [];
-    const curr = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-    const last = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-    while (curr <= last) {
-      const key = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, "0")}`;
-      months.push(key);
-      curr.setMonth(curr.getMonth() + 1);
-    }
 
     // Define categories
     const incomeCategories = [
@@ -110,6 +122,9 @@ export async function GET(req: NextRequest) {
     }
 
     const netFlow = Array(months.length).fill(null).map(() => new Decimal(0));
+    const monthFormatter = new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit",
+    });
 
     // Process entries
     for (const entry of entries) {
@@ -119,13 +134,14 @@ export async function GET(req: NextRequest) {
       // effect on cash is zero, it's money moving between own accounts, not real flow).
       if (doc.type.code === "INTERNAL_TRANSFER" || doc.type.code === "INTERNAL_TRANSFER_RECEIVED") continue;
 
+      const dateParts = monthFormatter.formatToParts(doc.date);
+      const dateStr = `${dateParts.find(part => part.type === "year")!.value}-${dateParts.find(part => part.type === "month")!.value}`;
+      const monthIdx = months.indexOf(dateStr);
+      if (monthIdx === -1) continue;
+
       // FX_DIFFERENCE entries affect the bank balance (5210) — include as separate category
       // so that openingBalance + netFlow = closingBalance.
       if (doc.type.code === "FX_DIFFERENCE") {
-        const dateStr = `${doc.date.getFullYear()}-${String(doc.date.getMonth() + 1).padStart(2, "0")}`;
-        const monthIdx = months.indexOf(dateStr);
-        if (monthIdx === -1) continue;
-
         const debit = new Decimal(entry.debit.toString());
         const credit = new Decimal(entry.credit.toString());
 
@@ -139,10 +155,6 @@ export async function GET(req: NextRequest) {
         }
         continue;
       }
-
-      const dateStr = `${doc.date.getFullYear()}-${String(doc.date.getMonth() + 1).padStart(2, "0")}`;
-      const monthIdx = months.indexOf(dateStr);
-      if (monthIdx === -1) continue;
 
       const debit = new Decimal(entry.debit.toString());
       const credit = new Decimal(entry.credit.toString());
@@ -246,13 +258,13 @@ export async function GET(req: NextRequest) {
 
     // Остатки на начало и конец периода по кассовым счетам
     type BalRow = { total: string };
-    const orgBankAccounts = await prisma.bankAccount.findMany({ where: { orgId } });
-    const hasMixedCurrencies = accountId === "ALL"
+    const orgBankAccounts = await tx.bankAccount.findMany({ where: { orgId } });
+    const hasMixedCurrencies = !accountId || accountId === "ALL"
       ? orgBankAccounts.some(a => a.currency !== "USD") && orgBankAccounts.some(a => a.currency === "USD")
-      : accountCodes.some(c => BANK_UZS_CODES.includes(c as any)) && accountCodes.some(c => BANK_USD_CODES.includes(c as any));
+      : false;
 
     const [openRows, closeRows, openRowsUZS, closeRowsUZS, openRowsUSD, closeRowsUSD] = await Promise.all([
-      prisma.$queryRaw<BalRow[]>`
+      tx.$queryRaw<BalRow[]>`
         SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS total
         FROM "JournalEntry" je
         JOIN "Document" d ON d.id = je."documentId"
@@ -260,17 +272,19 @@ export async function GET(req: NextRequest) {
         WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
           AND d.date < ${startDate}
           AND a.code = ANY(${accountCodes}::text[])
+          ${bankScopeSql}
       `,
-      prisma.$queryRaw<BalRow[]>`
+      tx.$queryRaw<BalRow[]>`
         SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS total
         FROM "JournalEntry" je
         JOIN "Document" d ON d.id = je."documentId"
         JOIN "Account" a ON a.id = je."accountId"
         WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
-          AND d.date <= ${endDate}
+          AND d.date < ${endExclusive}
           AND a.code = ANY(${accountCodes}::text[])
+          ${bankScopeSql}
       `,
-      prisma.$queryRaw<BalRow[]>`
+      tx.$queryRaw<BalRow[]>`
         SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS total
         FROM "JournalEntry" je
         JOIN "Document" d ON d.id = je."documentId"
@@ -278,17 +292,19 @@ export async function GET(req: NextRequest) {
         WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
           AND d.date < ${startDate}
           AND a.code = ANY(${[...BANK_UZS_CODES]}::text[])
+          ${bankScopeSql}
       `,
-      prisma.$queryRaw<BalRow[]>`
+      tx.$queryRaw<BalRow[]>`
         SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS total
         FROM "JournalEntry" je
         JOIN "Document" d ON d.id = je."documentId"
         JOIN "Account" a ON a.id = je."accountId"
         WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
-          AND d.date <= ${endDate}
+          AND d.date < ${endExclusive}
           AND a.code = ANY(${[...BANK_UZS_CODES]}::text[])
+          ${bankScopeSql}
       `,
-      prisma.$queryRaw<BalRow[]>`
+      tx.$queryRaw<BalRow[]>`
         SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS total
         FROM "JournalEntry" je
         JOIN "Document" d ON d.id = je."documentId"
@@ -296,15 +312,17 @@ export async function GET(req: NextRequest) {
         WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
           AND d.date < ${startDate}
           AND a.code = ANY(${[...BANK_USD_CODES]}::text[])
+          ${bankScopeSql}
       `,
-      prisma.$queryRaw<BalRow[]>`
+      tx.$queryRaw<BalRow[]>`
         SELECT COALESCE(SUM(je.debit - je.credit), 0)::text AS total
         FROM "JournalEntry" je
         JOIN "Document" d ON d.id = je."documentId"
         JOIN "Account" a ON a.id = je."accountId"
         WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
-          AND d.date <= ${endDate}
+          AND d.date < ${endExclusive}
           AND a.code = ANY(${[...BANK_USD_CODES]}::text[])
+          ${bankScopeSql}
       `
     ]);
 
@@ -321,7 +339,11 @@ export async function GET(req: NextRequest) {
       openingBalanceUSD: Number(openRowsUSD[0]?.total || 0),
       closingBalanceUSD: Number(closeRowsUSD[0]?.total || 0)
     });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 5000, timeout: 15000 });
   } catch (err: any) {
+    if (err instanceof InvalidReportPeriod) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

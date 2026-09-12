@@ -1,4 +1,8 @@
 import * as XLSX from "xlsx";
+import Decimal from "decimal.js";
+import { tashkentDate } from "@/lib/accountingDate";
+
+export class SoliqParseError extends Error {}
 
 export interface SoliqEsf {
   date: Date;
@@ -29,31 +33,35 @@ export interface SoliqParsedData {
 }
 
 function parseExcelDate(val: any): Date | null {
-  if (val instanceof Date) return val;
+  let year: number;
+  let month: number;
+  let day: number;
   if (typeof val === "number") {
-    return new Date(Math.round((val - 25569) * 86400 * 1000));
-  }
-  if (typeof val === "string") {
-    const trimmed = val.trim();
-    const parts = trimmed.split(/[./]/);
-    if (parts.length === 3) {
-      const [d, m, y] = parts.map(Number);
-      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) return new Date(y, m - 1, d);
-    }
-    const parsed = new Date(trimmed);
-    if (!isNaN(parsed.getTime())) return parsed;
-  }
-  return null;
+    const parts = Number.isFinite(val) && XLSX.SSF.parse_date_code(val);
+    if (!parts) return null;
+    year = parts.y; month = parts.m; day = parts.d;
+  } else if (typeof val === "string") {
+    const local = /^(\d{2})[./](\d{2})[./](\d{4})$/.exec(val.trim());
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val.trim());
+    if (local) { day = Number(local[1]); month = Number(local[2]); year = Number(local[3]); }
+    else if (iso) { year = Number(iso[1]); month = Number(iso[2]); day = Number(iso[3]); }
+    else return null;
+  } else return null;
+  if (year < 1900 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = tashkentDate(year, month - 1, day);
+  const local = new Date(date.getTime() + 5 * 60 * 60 * 1000);
+  return local.getUTCFullYear() === year && local.getUTCMonth() + 1 === month && local.getUTCDate() === day ? date : null;
 }
 
-function parseExcelAmount(val: any): number {
-  if (typeof val === "number") return val;
-  if (typeof val === "string") {
-    const cleaned = val.replace(/\s/g, "").replace(/,/g, ".").replace(/[^\d.\-]/g, "");
-    const parsed = parseFloat(cleaned);
-    return isNaN(parsed) ? 0 : parsed;
+function parseExcelAmount(val: any, location: string): number {
+  if (val === "" || val === null || val === undefined) return 0;
+  const text = typeof val === "string" ? val.trim().replace(/[\s\u00a0]/g, "").replace(/,/g, ".") : String(val);
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) throw new SoliqParseError(`${location}: некорректная сумма`);
+  const amount = new Decimal(text);
+  if (amount.times(100).gt(Number.MAX_SAFE_INTEGER)) {
+    throw new SoliqParseError(`${location}: сумма вне допустимого диапазона`);
   }
-  return 0;
+  return amount.toNumber();
 }
 
 // Find the row that contains sequential column-number labels [1, 2, 3, 4, ...].
@@ -87,6 +95,7 @@ function expandRef(sheet: XLSX.WorkSheet): void {
   const ref = sheet["!ref"];
   if (!ref) return;
   const range = XLSX.utils.decode_range(ref);
+  if (range.e.r > 10000 || range.e.c > 100) throw new SoliqParseError("Лист Soliq превышает допустимый размер");
   range.e.r = Math.max(range.e.r, 10000);
   range.e.c = Math.max(range.e.c, 25);
   sheet["!ref"] = XLSX.utils.encode_range(range);
@@ -98,6 +107,7 @@ function expandRef(sheet: XLSX.WorkSheet): void {
 //   [5]=amount_ex_vat  [6]=vat_amount
 function parseExpenseSheet(sheet: XLSX.WorkSheet): SheetParseResult {
   expandRef(sheet);
+  const firstRow = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]).s.r : 0;
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
   const numberingRow = findNumberingRow(rows);
   const dataStart = numberingRow !== -1 ? numberingRow + 1 : FALLBACK_DATA_START;
@@ -111,15 +121,18 @@ function parseExpenseSheet(sheet: XLSX.WorkSheet): SheetParseResult {
     const num = row[0];
     if (typeof num !== "number" || num < 1) continue;
 
-    const inn = String(row[2] || "").replace(/\D/g, "");
-    if (!inn || inn.length < 9) continue;
-
-    const amount = parseExcelAmount(row[5]);
-    const vat = parseExcelAmount(row[6]);
+    if (row.slice(1, 7).every(value => value === "")) continue;
+    const location = `list01, строка ${firstRow + i + 1}`;
+    const inn = String(row[2] || "").trim();
+    if (!/^\d{9}(?:\d{5})?$/.test(inn)) throw new SoliqParseError(`${location}: некорректный ИНН`);
+    const date = parseExcelDate(row[4]);
+    if (!date) throw new SoliqParseError(`${location}: некорректная дата`);
+    const amount = parseExcelAmount(row[5], location);
+    const vat = parseExcelAmount(row[6], location);
     if (amount === 0 && vat === 0) continue;
 
     items.push({
-      date: parseExcelDate(row[4]) || new Date(),
+      date,
       inn,
       counterpartyName: String(row[1] || "").trim(),
       amount,
@@ -136,6 +149,7 @@ function parseExpenseSheet(sheet: XLSX.WorkSheet): SheetParseResult {
 //   [6]=amount_ex_vat  [7]=vat_amount  [8]=amount_with_vat
 function parseRevenueSheet(sheet: XLSX.WorkSheet): SheetParseResult {
   expandRef(sheet);
+  const firstRow = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]).s.r : 0;
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as any[][];
   const numberingRow = findNumberingRow(rows);
   const dataStart = numberingRow !== -1 ? numberingRow + 1 : FALLBACK_DATA_START;
@@ -149,17 +163,25 @@ function parseRevenueSheet(sheet: XLSX.WorkSheet): SheetParseResult {
     const num = row[1];
     if (typeof num !== "number" || num < 1) continue;
 
-    const inn = String(row[3] || "").replace(/\D/g, "");
-    if (!inn || inn.length < 9) continue;
-
-    const amount = parseExcelAmount(row[6]);
-    // column I [8] = "Стоимость с НДС" — authoritative total; avoids floating-point drift from [6]+[7]
-    const totalWithVat = parseExcelAmount(row[8]);
-    const vat = totalWithVat > 0 ? totalWithVat - amount : parseExcelAmount(row[7]);
+    if (row.slice(2, 9).every(value => value === "")) continue;
+    const location = `list02, строка ${firstRow + i + 1}`;
+    const inn = String(row[3] || "").trim();
+    if (!/^\d{9}(?:\d{5})?$/.test(inn)) throw new SoliqParseError(`${location}: некорректный ИНН`);
+    const date = parseExcelDate(row[5]);
+    if (!date) throw new SoliqParseError(`${location}: некорректная дата`);
+    const amount = parseExcelAmount(row[6], location);
+    const totalWithVat = parseExcelAmount(row[8], location);
+    const suppliedVat = parseExcelAmount(row[7], location);
+    const hasTotal = row[8] !== "" && row[8] !== undefined && row[8] !== null;
+    const vatDecimal = hasTotal ? new Decimal(totalWithVat).minus(amount) : new Decimal(suppliedVat);
+    if (vatDecimal.lt(0) || (row[7] !== "" && row[7] !== undefined && row[7] !== null && !vatDecimal.eq(suppliedVat))) {
+      throw new SoliqParseError(`${location}: сумма, НДС и итог не совпадают`);
+    }
+    const vat = vatDecimal.toNumber();
     if (amount === 0 && vat === 0) continue;
 
     items.push({
-      date: parseExcelDate(row[5]) || new Date(),
+      date,
       inn,
       counterpartyName: String(row[2] || "").trim(),
       amount,
@@ -177,7 +199,8 @@ function findSheet(workbook: XLSX.WorkBook, name: string, fallbackIndex: number)
 }
 
 export function parseSoliqExcel(buffer: Buffer): SoliqParsedData {
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
+  if (workbook.Workbook?.WBProps?.date1904) throw new SoliqParseError("Система дат Excel 1904 не поддерживается");
 
   // my.soliq.uz exports list01 (expenses) and list02 (revenues). Prefer name-based lookup
   // so the order of sheets doesn't matter if Soliq adds extra sheets in future exports.
@@ -190,8 +213,8 @@ export function parseSoliqExcel(buffer: Buffer): SoliqParsedData {
   const revenues = revenueResult.items;
   const esfItems = [...expenses, ...revenues];
 
-  const inputVat = expenses.reduce((sum, e) => sum + e.vatAmount, 0);
-  const outputVat = revenues.reduce((sum, e) => sum + e.vatAmount, 0);
+  const inputVat = expenses.reduce((sum, item) => sum.plus(item.vatAmount), new Decimal(0));
+  const outputVat = revenues.reduce((sum, item) => sum.plus(item.vatAmount), new Decimal(0));
 
   return {
     expenses,
@@ -199,9 +222,9 @@ export function parseSoliqExcel(buffer: Buffer): SoliqParsedData {
     esfItems,
     templateRecognized: expenseResult.recognized || revenueResult.recognized,
     taxSummary: {
-      vat: outputVat - inputVat,
-      outputVat,
-      inputVat,
+      vat: outputVat.minus(inputVat).toNumber(),
+      outputVat: outputVat.toNumber(),
+      inputVat: inputVat.toNumber(),
       turnoverTax: 0,
       incomeTax: 0,
     },

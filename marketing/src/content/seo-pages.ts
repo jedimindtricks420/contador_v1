@@ -106,7 +106,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Какие данные нужны, чтобы начать работу?",
-            a: "Банковские выписки в поддерживаемых форматах (Excel, 1CClientBankExchange) и начальные остатки по счетам на дату начала учёта.",
+            a: "Банковские выписки 1CClientBankExchange (.txt) и начальные остатки по счетам на дату начала учёта.",
           },
           {
             q: "Можно ли начать без оплаты?",
@@ -132,7 +132,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Ishni boshlash uchun qanday ma’lumotlar kerak?",
-            a: "Qo‘llab-quvvatlanadigan formatdagi bank ko‘chirmalari (Excel, 1CClientBankExchange) va hisobni boshlash sanasidagi boshlang‘ich qoldiqlar.",
+            a: "1CClientBankExchange (.txt) bank ko‘chirmalari va hisobni boshlash sanasidagi boshlang‘ich qoldiqlar.",
           },
           {
             q: "To‘lovsiz boshlash mumkinmi?",
@@ -185,14 +185,14 @@ export const TOPICS: Topic[] = [
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
-      "v2/src/app/closing/steps/Step1Import.tsx:137,145,158 — реальные поддерживаемые форматы .txt/.xls/.xlsx, AUTO-определение парсера (.txt соответствует 1CClientBankExchange); v2/src/app/api/import/bank/route.ts и api/import/bank/rollback/route.ts — импорт и откат. Импорт доступен ТОЛЬКО как шаг 1 мастера закрытия месяца, отдельного самостоятельного экрана импорта в кабинете нет.",
+      "v2/src/app/closing/steps/Step1Import.tsx и api/import/bank/route.ts — только 1CClientBankExchange (.txt), до 5 МиБ/1000 операций; Excel отклоняется 422. Импорт на шаге 1 мастера закрытия; api/import/bank/rollback/route.ts — ограниченный откат OWNER/ADMIN; batches — сохранённый архив и экспорт.",
     primaryCta: "register",
     locales: {
       ru: {
         path: "vozmozhnosti/import-bankovskih-vypisok",
         title: "Импорт банковских выписок в бухгалтерию | Contador",
         description:
-          "Импортируйте поддерживаемые выписки Excel и 1CClientBankExchange в Contador. Проверьте операции после загрузки и подготовьте данные для дальнейшего учёта.",
+          "Импортируйте выписки 1CClientBankExchange (.txt) в Contador. Проверьте операции после загрузки и подготовьте данные для дальнейшего учёта.",
         h1: "Загружайте банковские выписки в Contador",
         h2: ["Какие файлы поддерживаются", "Загрузка и проверка операций", "Что делать с повторным импортом"],
         faq: [
@@ -202,7 +202,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Какие форматы файлов поддерживаются?",
-            a: ".txt (1CClientBankExchange), .xls и .xlsx. Формат определяется автоматически при загрузке файла.",
+            a: "Только 1CClientBankExchange (.txt), до 5 МиБ и 1000 операций. Банковские таблицы Excel сейчас не принимаются.",
           },
           {
             q: "Что происходит с операциями сразу после загрузки?",
@@ -210,7 +210,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Что делать, если выписка загружена по ошибке или дважды?",
-            a: "Используйте откат импорта: он убирает операции именно этой загрузки, не затрагивая остальные данные периода.",
+            a: "Сначала проверьте результат и протокол загрузки. OWNER/ADMIN может отменить только необработанную партию, если проверки периода, счёта и зависимостей разрешают откат. Исходный файл и архив партии сохраняются.",
           },
           {
             q: "Можно ли подключить банк напрямую, без загрузки файла?",
@@ -222,7 +222,7 @@ export const TOPICS: Topic[] = [
         path: "imkoniyatlar/bank-kochirmalarini-import-qilish",
         title: "Bank ko‘chirmalarini import qilish | Contador",
         description:
-          "Qo‘llab-quvvatlanadigan Excel va 1CClientBankExchange ko‘chirmalarini Contador’ga yuklang. Operatsiyalarni tekshirib, keyingi hisob bosqichiga tayyorlang.",
+          "1CClientBankExchange (.txt) ko‘chirmalarini Contador’ga yuklang. Operatsiyalarni tekshirib, keyingi hisob bosqichiga tayyorlang.",
         h1: "Bank ko‘chirmalarini Contador’ga yuklang",
         h2: ["Qaysi fayllar qo‘llab-quvvatlanadi", "Yuklash va tekshirish", "Takroriy import bilan ishlash"],
         faq: [
@@ -232,7 +232,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Qaysi fayl formatlari qo‘llab-quvvatlanadi?",
-            a: ".txt (1CClientBankExchange), .xls va .xlsx. Format fayl yuklanganda avtomatik aniqlanadi.",
+            a: "Faqat 1CClientBankExchange (.txt), 5 MiB va 1000 ta operatsiyagacha. Bankning Excel jadvallari hozir qabul qilinmaydi.",
           },
           {
             q: "Yuklashdan keyin operatsiyalarga nima bo‘ladi?",
@@ -240,7 +240,7 @@ export const TOPICS: Topic[] = [
           },
           {
             q: "Ko‘chirma xato yoki ikki marta yuklansa nima qilish kerak?",
-            a: "Importni bekor qilish (rollback) funksiyasidan foydalaning — u faqat shu yuklashdagi operatsiyalarni olib tashlaydi, davrning boshqa ma’lumotlariga ta’sir qilmaydi.",
+            a: "Avval yuklash natijasi va protokolini tekshiring. OWNER/ADMIN faqat ishlov berilmagan partiyani davr, hisobvaraq va bog‘liqlik tekshiruvlari ruxsat bersa bekor qilishi mumkin. Asl fayl va partiya arxivi saqlanadi.",
           },
           {
             q: "Bankka faylsiz, to‘g‘ridan-to‘g‘ri ulanish mumkinmi?",
@@ -1241,7 +1241,7 @@ export const TOPICS: Topic[] = [
     contentStatus: "published",
     updatedAt: "2026-09-09",
     featureEvidence:
-      "Повторно использует evidence темы 03: v2/src/app/closing/steps/Step1Import.tsx:137,145,158 — форматы .txt/.xls/.xlsx, AUTO-определение; импорт доступен только на шаге 1 мастера закрытия — этот факт не переиначивается в обучающем тексте.",
+      "Evidence темы 03: Step1Import.tsx и api/import/bank/route.ts — только 1CClientBankExchange (.txt), до 5 МиБ/1000 операций; импорт на шаге 1, без отдельного фильтра дат; банковский Excel отклоняется.",
     primaryCta: "register",
     locales: {
       ru: {

@@ -58,6 +58,7 @@ model Organization {
   bankAccounts              BankAccount[]
   classificationJobs        ClassificationJob[]
   closingJobs               ClosingJob[]
+  soliqImportBatches        SoliqImportBatch[]
   counterparties            Counterparty[]
   documents                 Document[]
   openItems                 OpenItem[]
@@ -113,7 +114,9 @@ model Period {
   stagedTransactions StagedTransaction[]
   taxEvents          TaxCalendarEvent[]
   closingJobs        ClosingJob[]
+  soliqImportBatches  SoliqImportBatch[]
 
+  @@unique([id, orgId])
   @@unique([orgId, year, month])
   @@index([orgId])
 }
@@ -561,6 +564,29 @@ enum TaxAppendixCode {
 enum TaxReportColumn {
   TOTAL
   NON_DEDUCTIBLE
+}
+
+model SoliqImportBatch {
+  id             String       @id @default(uuid())
+  orgId          String
+  periodId       String
+  sourceName     String
+  sourceHash     String
+  sourceData     Bytes
+  parserVersion  String
+  rows           Json
+  totals         Json
+  status         String       @default("READY")
+  createdBy      String
+  createdAt      DateTime     @default(now())
+  postedBy       String?
+  postedAt       DateTime?
+  result         Json?
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  period         Period       @relation(fields: [periodId, orgId], references: [id, orgId], onDelete: Cascade)
+
+  @@unique([orgId, periodId, sourceHash])
+  @@index([orgId, periodId, status])
 }
 
 model ClosingJob {

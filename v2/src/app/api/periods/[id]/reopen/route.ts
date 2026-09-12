@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { getActiveOrgId } from "@/lib/context";
+import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
-import { clearClosingState } from "@/lib/closing";
+import { assertAccountingWriteRole } from "@/lib/posting/documentPolicy";
+
+class ReopenError extends Error {
+  constructor(message: string, readonly status: number = 400) { super(message); }
+}
 
 const CLOSING_DOC_CODES = [
   "PERIOD_CLOSING",
   "YEAR_END_CLOSE",
   "SALARY_ACCRUAL",
+  "SALARY_OFFSET",
   "DEPRECIATION_ACCRUAL",
   "RENT_ACCRUAL",
   "FX_DIFFERENCE",
@@ -24,30 +29,38 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const orgId = await getActiveOrgId();
+    const membership = await getActiveMembership();
+    assertAccountingWriteRole(membership.role);
+    const orgId = membership.orgId;
 
-    const period = await prisma.period.findFirst({ where: { id, orgId } });
+    await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Period" WHERE "orgId" = ${orgId} ORDER BY "year", "month" FOR NO KEY UPDATE`;
+    const period = await tx.period.findFirst({ where: { id, orgId } });
     if (!period) {
-      return NextResponse.json({ error: "Период не найден" }, { status: 404 });
+      throw new ReopenError("Период не найден", 404);
     }
     if (period.status !== "CLOSED") {
-      return NextResponse.json({ error: "Период не закрыт" }, { status: 400 });
+      throw new ReopenError("Период не закрыт");
     }
+
+    const laterClosed = await tx.period.findFirst({
+      where: { orgId, status: "CLOSED", OR: [
+        { year: { gt: period.year } }, { year: period.year, month: { gt: period.month } },
+      ] },
+      orderBy: [{ year: "asc" }, { month: "asc" }],
+    });
+    if (laterClosed) throw new ReopenError("Сначала переоткройте последующие закрытые периоды, начиная с последнего");
 
     // Проверка: нельзя переоткрыть если уже выполнен перенос остатков на следующий год
     const hasYearEndFollower = period.month === 12
-      ? await prisma.document.findFirst({
+      ? await tx.document.findFirst({
           where: { orgId, periodId: id, type: { code: "YEAR_END_CLOSE" } },
         })
       : null;
     if (hasYearEndFollower) {
-      return NextResponse.json(
-        { error: "Нельзя переоткрыть: уже выполнен перенос остатков на следующий год." },
-        { status: 400 }
-      );
+      throw new ReopenError("Нельзя переоткрыть: уже выполнен перенос остатков на следующий год.");
     }
 
-    await prisma.$transaction(async (tx) => {
       // 1. Найти системные документы закрытия
       const closingDocs = await tx.document.findMany({
         where: {
@@ -60,18 +73,21 @@ export async function POST(
       const closingDocIds = closingDocs.map((d) => d.id);
 
       if (closingDocIds.length > 0) {
-        // 2. Удалить OpenItem, привязанные к системным документам закрытия
+        const settledItem = await tx.openItem.findFirst({ where: {
+          orgId, openingDocumentId: { in: closingDocIds },
+          closingDocumentId: { not: null, notIn: closingDocIds },
+        } });
+        if (settledItem) throw new ReopenError("Сначала отмените погашения задолженностей, созданных закрытием периода");
+        await tx.openItem.updateMany({
+          where: { orgId, closingDocumentId: { in: closingDocIds }, openingDocumentId: { notIn: closingDocIds } },
+          data: { status: "OPEN", closingDocumentId: null, dateClosed: null },
+        });
         await tx.openItem.deleteMany({
-          where: {
-            OR: [
-              { openingDocumentId: { in: closingDocIds } },
-              { closingDocumentId: { in: closingDocIds } },
-            ],
-          },
+          where: { orgId, openingDocumentId: { in: closingDocIds } },
         });
         // JournalEntry удалятся каскадом вместе с Document
         await tx.document.deleteMany({
-          where: { id: { in: closingDocIds } },
+          where: { orgId, id: { in: closingDocIds } },
         });
       }
 
@@ -84,28 +100,19 @@ export async function POST(
       // переоткрытие месяца меняет базу своего квартала и всех последующих. Удаляем
       // начисления/сторно этого и последующих кварталов года — при повторном закрытии
       // квартальных месяцев дельта пересчитается заново (accruedSoFar это учитывает).
-      const reopenedQuarter = Math.ceil(period.month / 3);
       const affectedPtaxDocs = await tx.document.findMany({
         where: {
           orgId,
           type: { code: { in: PROFIT_TAX_DOC_CODES } },
-          date: {
-            gte: new Date(period.year, 0, 1),
-            lt: new Date(period.year + 1, 0, 1),
-          },
+          period: { orgId, status: "OPEN", year: period.year, month: { gt: period.month } },
         },
         select: { id: true, periodId: true, payload: true, date: true },
       });
-      const staleDocs = affectedPtaxDocs.filter((d) => {
-        // Документы без quarter в payload — начисления старой (помесячной) логики;
-        // их квартал выводим из даты документа.
-        const q = (d.payload as any)?.quarter ?? Math.ceil((d.date.getMonth() + 1) / 3);
-        return q >= reopenedQuarter;
-      });
+      const staleDocs = affectedPtaxDocs;
       if (staleDocs.length > 0) {
         const staleIds = staleDocs.map((d) => d.id);
         const stalePeriodIds = [...new Set(staleDocs.map((d) => d.periodId))];
-        await tx.document.deleteMany({ where: { id: { in: staleIds } } });
+        await tx.document.deleteMany({ where: { orgId, id: { in: staleIds } } });
         await tx.taxCalendarEvent.deleteMany({
           where: {
             orgId,
@@ -125,17 +132,19 @@ export async function POST(
           closingData: Prisma.DbNull,
         },
       });
-    });
-
-    // 5. Сбросить ClosingJob из БД
-    await clearClosingState(id, orgId);
+      await tx.closingJob.deleteMany({ where: { periodId: id, orgId } });
+      await tx.auditLog.create({ data: {
+        orgId, userId: membership.userId, action: "REOPEN_PERIOD", entityType: "Period", entityId: id,
+        oldValue: { status: "CLOSED" }, newValue: { status: "OPEN", removedDocumentCount: closingDocIds.length + staleDocs.length },
+      } });
+    }, { maxWait: 5000, timeout: 30000 });
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error("REOPEN PERIOD ERROR:", err);
     return NextResponse.json(
       { error: err.message || "Internal error" },
-      { status: 500 }
+      { status: err instanceof ReopenError ? err.status : ["FORBIDDEN", "NO_ACTIVE_ORG"].includes(err.message) ? 403 : 500 }
     );
   }
 }

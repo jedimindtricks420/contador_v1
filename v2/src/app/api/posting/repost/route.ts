@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActiveMembership, badRequest } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { repostDocument } from "@/lib/posting/postingEngine";
+import { assertAccountingWriteRole, isSystemDocumentType } from "@/lib/posting/documentPolicy";
 
 export async function POST(req: NextRequest) {
   try {
     const membership = await getActiveMembership();
+    assertAccountingWriteRole(membership.role);
 
     const { documentId, newDocumentTypeId } = await req.json();
     if (!documentId || !newDocumentTypeId) {
@@ -13,12 +15,13 @@ export async function POST(req: NextRequest) {
     }
 
     const doc = await prisma.document.findFirst({
-      where: { id: documentId, orgId: membership.orgId }
+      where: { id: documentId, orgId: membership.orgId }, include: { type: true }
     });
 
     if (!doc) {
       return badRequest("Документ не найден в вашей организации");
     }
+    if (isSystemDocumentType(doc.type.code)) return badRequest("Системный документ требует специализированного процесса");
 
     // Verify document type exists
     const docType = await prisma.documentType.findUnique({
@@ -28,6 +31,7 @@ export async function POST(req: NextRequest) {
     if (!docType) {
       return badRequest("Указанный тип документа не найден");
     }
+    if (isSystemDocumentType(docType.code)) return badRequest("Системный тип нельзя назначить через перепроведение");
 
     const result = await prisma.$transaction(async (tx) => {
       return repostDocument(documentId, newDocumentTypeId, tx, membership.userId);

@@ -10,15 +10,17 @@ import Decimal from "decimal.js";
 // No charterCapital import needed for VAT_OFFSET, but postingEngine imports it
 // dynamically for CAPITAL_CONTRIBUTION — keep the module mockable/harmless here.
 vi.mock("@/lib/charterCapital", () => ({ getCharterCapitalDebt: vi.fn().mockResolvedValue(new Decimal(0)) }));
+vi.mock("@/lib/closing", () => ({ upsertTaxCalendarEventsForPeriod: vi.fn().mockResolvedValue(undefined) }));
 
 describe("postDocument — VAT_OFFSET Soliq-backed guard", () => {
   const mockTx: any = {
+    $queryRaw: vi.fn(),
     document: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     period: { findUnique: vi.fn() },
     organization: { findUnique: vi.fn() },
     counterparty: { findFirst: vi.fn(), create: vi.fn() },
     account: { findUnique: vi.fn() },
-    journalEntry: { create: vi.fn(), createMany: vi.fn(), aggregate: vi.fn() },
+    journalEntry: { findFirst: vi.fn(), create: vi.fn(), createMany: vi.fn(), aggregate: vi.fn() },
     openItem: { findMany: vi.fn().mockResolvedValue([]), update: vi.fn() },
     auditLog: { create: vi.fn() },
   };
@@ -28,6 +30,7 @@ describe("postDocument — VAT_OFFSET Soliq-backed guard", () => {
     orgId: "org-1",
     periodId: "period-1",
     status: "POSTED",
+    date: new Date("2026-09-10T00:00:00Z"),
     payload: { vatAmount: 1_000_000 },
     type: {
       code: "VAT_OFFSET",
@@ -44,7 +47,7 @@ describe("postDocument — VAT_OFFSET Soliq-backed guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockTx.document.findUnique.mockResolvedValue(baseDoc);
-    mockTx.period.findUnique.mockResolvedValue({ id: "period-1", status: "OPEN", lockDate: null });
+    mockTx.period.findUnique.mockResolvedValue({ id: "period-1", orgId: "org-1", year: 2026, month: 9, status: "OPEN", lockDate: null });
     mockTx.organization.findUnique.mockResolvedValue({ id: "org-1", isVatPayer: true, charterCapitalDeclaredAt: null });
     mockTx.account.findUnique.mockResolvedValue({ id: "acc-1", code: "6410" });
     mockTx.journalEntry.aggregate.mockResolvedValue({ _sum: { credit: null } });
@@ -90,5 +93,6 @@ describe("postDocument — VAT_OFFSET Soliq-backed guard", () => {
     const { postDocument } = await import("@/lib/posting/postingEngine");
     const result = await postDocument("doc-1", mockTx);
     expect(result.journalEntries.length).toBe(2);
+    expect(mockTx.openItem.findMany).not.toHaveBeenCalled();
   });
 });

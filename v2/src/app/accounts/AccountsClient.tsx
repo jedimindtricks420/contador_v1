@@ -77,15 +77,19 @@ export default function AccountsClient() {
     const isEdit = !!editingAccount;
     const url = isEdit ? `/v2/api/bank-accounts/${editingAccount.id}` : "/v2/api/bank-accounts";
     const method = isEdit ? "PUT" : "POST";
+    const payload = editingAccount
+      ? Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== String(editingAccount[key as keyof BankAccount] ?? "")))
+      : form;
+    if (Object.keys(payload).length === 0) {
+      setShowAddEdit(false);
+      return;
+    }
 
     try {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          lastBalance: parseFloat(form.lastBalance) || 0
-        })
+        body: JSON.stringify(payload)
       });
 
       if (res.ok) {
@@ -300,9 +304,12 @@ export default function AccountsClient() {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-gray-500 mb-1">Текущий баланс</label>
+                  <label htmlFor="bank-account-balance" className="block font-semibold text-gray-500 mb-1">Текущий баланс</label>
                   <input
-                    type="number"
+                    id="bank-account-balance"
+                    type="text"
+                    inputMode="decimal"
+                    maxLength={64}
                     value={form.lastBalance}
                     onChange={(e) => setForm(prev => ({ ...prev, lastBalance: e.target.value }))}
                     className="w-full bg-gray-50 border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"
@@ -326,6 +333,8 @@ export default function AccountsClient() {
                 <input
                   type="text"
                   placeholder="20208000600001234567"
+                  required={!editingAccount}
+                  maxLength={64}
                   value={form.accountNumber}
                   onChange={(e) => setForm(prev => ({ ...prev, accountNumber: e.target.value }))}
                   className="w-full bg-gray-50 border border-gray-200 rounded px-3 py-2 text-sm text-gray-700 outline-hidden focus:border-black"

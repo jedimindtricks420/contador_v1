@@ -122,11 +122,31 @@ describe("SSR output contains real content, not client-only", () => {
     const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["03"].ru({ topic }));
     expect(ruHtml).toContain(topic.locales.ru.h1);
     expect(ruHtml).toContain(".txt");
-    expect(ruHtml).toContain(".xlsx");
+    expect(ruHtml).not.toContain(".xls");
 
     const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["03"].uz({ topic }));
     expect(uzHtml).toContain(topic.locales.uz.h1);
     expect(uzHtml).toContain("1CClientBankExchange");
+  });
+
+  it.each(["ru", "uz"] as const)("bank rollback FAQ preserves role and lifecycle limits in %s", locale => {
+    const answer = getTopicById("03")!.locales[locale].faq[3].a;
+    expect(answer).toContain("OWNER/ADMIN");
+    expect(answer).toContain(locale === "ru" ? "необработанную" : "ishlov berilmagan");
+    expect(answer).toContain(locale === "ru" ? "проверки периода" : "davr, hisobvaraq");
+    expect(answer).toContain(locale === "ru" ? "сохраняются" : "saqlanadi");
+  });
+
+  it.each(["01", "03", "19", "30"])("bank format promises remain TXT-only in both locales for topic %s", async id => {
+    const topic = getTopicById(id)!;
+    for (const locale of ["ru", "uz"] as const) {
+      const html = renderToStaticMarkup(await CONTENT_REGISTRY[id][locale]({ topic }));
+      expect(html).toContain("1CClientBankExchange");
+      expect(html).toContain(".txt");
+      expect(html).not.toContain(".xls");
+      expect(html).not.toMatch(/Excel (?:и|va) 1CClientBankExchange/);
+      expect(JSON.stringify(topic.locales[locale])).not.toContain(".xls");
+    }
   });
 
   it("AI classification (04, ru+uz) renders H1 and the confirmed-vs-suggested distinction server-side", async () => {
@@ -344,7 +364,7 @@ describe("SSR output contains real content, not client-only", () => {
     const ruHtml = renderToStaticMarkup(await CONTENT_REGISTRY["19"].ru({ topic }));
     expect(ruHtml).toContain(topic.locales.ru.h1);
     expect(ruHtml).toContain(".txt");
-    expect(ruHtml).toContain(".xlsx");
+    expect(ruHtml).not.toContain(".xls");
     expect(ruHtml).toContain("откат импорта");
 
     const uzHtml = renderToStaticMarkup(await CONTENT_REGISTRY["19"].uz({ topic }));

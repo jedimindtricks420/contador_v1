@@ -1,6 +1,6 @@
 export interface ParsedTransaction {
   date: Date;
-  amount: number;
+  amount: number | string;
   direction: "CREDIT" | "DEBIT";
   description: string;
   counterpartyHint?: string;
@@ -9,8 +9,8 @@ export interface ParsedTransaction {
 
 export interface ParsedBankStatement {
   transactions: ParsedTransaction[];
-  openingBalance?: number;
-  closingBalance?: number;
+  openingBalance?: number | string;
+  closingBalance?: number | string;
   periodStart?: Date;
   periodEnd?: Date;
   accountNumber?: string;

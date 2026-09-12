@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
       orderBy: { code: "asc" },
       include: {
         _count: {
-          select: { journalEntries: true, openItems: true }
+          select: {
+            journalEntries: { where: { document: { orgId } } },
+            openItems: { where: { orgId } },
+          }
         }
       }
     });
@@ -86,6 +89,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(result);
   } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "UNAUTHORIZED") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (["FORBIDDEN", "NO_ACTIVE_ORG"].includes(message)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     console.error("GET /api/accounts error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

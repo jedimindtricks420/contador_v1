@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import Decimal from "decimal.js";
 import { ACCOUNTS, BALANCE_SHEET_TOLERANCE } from "@/lib/constants";
+import { InvalidReportPeriod, reportPeriod } from "@/lib/reports/reportPeriod";
 
 type AggRow = { code: string; sumDebit: string; sumCredit: string };
 
@@ -12,7 +13,7 @@ type AggRow = { code: string; sumDebit: string; sumCredit: string };
 // account in the chart of accounts (excluding 5xxx, tracked separately) appears
 // somewhere in this list — so a newly added account code can't silently fall off
 // the balance sheet the way it could before this was a single exported array.
-export const LINE010_CODES = ["0100","0110","0111","0112","0120","0130","0140","0150","0160","0170","0180","0190","0199"];
+export const LINE010_CODES = ["0100","0110","0111","0112","0120","0130","0140","0150","0160","0170","0180","0190","0199","0310"];
 export const LINE011_CODES = ["0200","0211","0212","0220","0230","0240","0250","0260","0270","0280","0290","0299"];
 export const LINE020_CODES = ["0410","0420","0430","0440","0460","0470","0480","0490"];
 export const LINE021_CODES = ["0510","0520","0530","0540","0560","0570","0590"];
@@ -21,7 +22,7 @@ export const LINE050_CODES = ["0620"];
 export const LINE060_CODES = ["0630"];
 export const LINE070_CODES = ["0640"];
 export const LINE080_CODES = ["0690"];
-export const LINE090_CODES = ["0310","0710","0720"];
+export const LINE090_CODES = ["0710","0720"];
 export const LINE100_CODES = ["0810","0820","0830","0840","0850","0860","0870","0890"];
 export const LINE110_CODES = ["0910","0920","0930","0940"];
 export const LINE120_CODES = ["0950","0960","0990"];
@@ -125,7 +126,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
 
     const toParam = searchParams.get("to");
-    const endDate = toParam ? new Date(toParam) : new Date(new Date().getFullYear(), 11, 31, 23, 59, 59);
+    const { endDate, endExclusive } = reportPeriod(toParam, toParam);
 
     const aggRows = await prisma.$queryRaw<AggRow[]>`
       SELECT a.code,
@@ -136,7 +137,7 @@ export async function GET(req: NextRequest) {
       JOIN "Account"  a ON a.id = je."accountId"
       WHERE d."orgId" = ${orgId}
         AND d.status  = 'POSTED'
-        AND d.date   <= ${endDate}
+        AND d.date    < ${endExclusive}
       GROUP BY a.code
     `;
 
@@ -186,7 +187,7 @@ export async function GET(req: NextRequest) {
       JOIN "Account"  a ON a.id = je."accountId"
       WHERE d."orgId" = ${orgId}
         AND d.status  = 'POSTED'
-        AND d.date   <= ${endDate}
+        AND d.date    < ${endExclusive}
         AND a.type    = 'TRANSIT'
     `;
     const transitNet = new Decimal(transitNetRows[0]?.netResult ?? "0");
@@ -194,7 +195,6 @@ export async function GET(req: NextRequest) {
     // ─── АКТИВ ───────────────────────────────────────────────────────
 
     // Раздел I. Долгосрочные активы
-    // Все субсчета ОС (0100 родительский + 0110-0190 субсчета)
     const line010 = balDebit(...LINE010_CODES);
     const line011 = balCredit(...LINE011_CODES);
     const line012 = line010.minus(line011);
@@ -210,7 +210,6 @@ export async function GET(req: NextRequest) {
     const line080 = balDebit(...LINE080_CODES);
     const line030 = line040.plus(line050).plus(line060).plus(line070).plus(line080);
 
-    // 0310 = капзатраты на арендованное имущество → долгосрочные арендованные активы
     const line090 = balDebit(...LINE090_CODES);
     const line100 = balDebit(...LINE100_CODES);
     const line110 = balDebit(...LINE110_CODES);
@@ -358,6 +357,9 @@ export async function GET(req: NextRequest) {
       line780: n(line780),
     });
   } catch (err: any) {
+    if (err instanceof InvalidReportPeriod) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     console.error("GET BALANCE ERROR:", err);
     if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

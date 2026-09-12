@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-import { BarChart2, Check, AlertTriangle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BarChart2, Check, AlertTriangle, FolderOpen, X, RefreshCw, Download, FileJson } from "lucide-react";
 import { formatSum } from "@/lib/format";
 import SearchableSelect from "@/components/SearchableSelect";
 
@@ -14,24 +14,115 @@ interface Step6SoliqProps {
   };
 }
 
-export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatched }: Step6SoliqProps) {
+function BatchExports({ batchId }: { batchId: string }) {
+  const url = `/v2/api/import/soliq/${encodeURIComponent(batchId)}/export`;
+  return <span className="flex shrink-0 items-center gap-1">
+    <a href={`${url}?format=source`} download title="Скачать оригинал" aria-label="Скачать оригинал"
+      className="inline-flex h-8 w-8 items-center justify-center rounded text-gray-600 hover:bg-gray-100">
+      <Download size={16} />
+    </a>
+    <a href={`${url}?format=protocol`} download title="Скачать протокол" aria-label="Скачать протокол"
+      className="inline-flex h-8 w-8 items-center justify-center rounded text-gray-600 hover:bg-gray-100">
+      <FileJson size={16} />
+    </a>
+  </span>;
+}
+
+export default function Step6Soliq(props: Step6SoliqProps) {
+  return <SoliqPeriodStep key={props.periodId} {...props} />;
+}
+
+function SoliqPeriodStep({ periodId, onNext, onPrev }: Step6SoliqProps) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const [soliqFile, setSoliqFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [emptyRegistryNotice, setEmptyRegistryNotice] = useState<string | null>(null);
   const [reconciliation, setReconciliation] = useState<any | null>(null);
   const [reconciliationFileName, setReconciliationFileName] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [aiMatching, setAiMatching] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const autoAiTriggered = useRef(false);
+  const [pendingBatches, setPendingBatches] = useState<{ id: string; sourceName: string }[]>([]);
+  const [archives, setArchives] = useState<{ id: string; sourceName: string; status: string }[]>([]);
+  const [imported, setImported] = useState(false);
+  const [pendingLoading, setPendingLoading] = useState(true);
+  const [pendingError, setPendingError] = useState<string | null>(null);
+  const [reloadCount, setReloadCount] = useState(0);
+  const [discardReason, setDiscardReason] = useState<string | null>(null);
+  const busy = saving || uploading || aiMatching || pendingLoading;
 
-  const handleUpload = async () => {
-    if (!soliqFile) return;
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/v2/api/import/soliq?periodId=${encodeURIComponent(periodId)}`, { signal: controller.signal })
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Не удалось получить пакеты Soliq");
+        if (!controller.signal.aborted) {
+          setPendingBatches(result.batches);
+          setArchives(result.archives ?? []);
+          setImported(result.imported === true);
+          setPendingError(null);
+        }
+      })
+      .catch(error => { if (!controller.signal.aborted) setPendingError(error.message || "Ошибка сети"); })
+      .finally(() => { if (!controller.signal.aborted) setPendingLoading(false); });
+    return () => controller.abort();
+  }, [periodId, reloadCount]);
+
+  const handleResume = async (batchId: string) => {
+    if (busy) return;
     setUploading(true);
     setUploadError(null);
-    setEmptyRegistryNotice(null);
+    try {
+      const response = await fetch(`/v2/api/import/soliq?periodId=${encodeURIComponent(periodId)}&batchId=${encodeURIComponent(batchId)}`);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      setReconciliation(result);
+      setReconciliationFileName(result.sourceName);
+      setSaveError(null);
+      setAiError(null);
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Ошибка сети");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDiscard = async () => {
+    if (busy || !reconciliation || !discardReason?.trim()) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(`/v2/api/import/soliq/${encodeURIComponent(reconciliation.batchId)}/discard`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: discardReason }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      setPendingBatches(current => current.filter(batch => batch.id !== reconciliation.batchId));
+      setArchives(current => [{ id: reconciliation.batchId, sourceName: reconciliationFileName, status: "CANCELLED" }, ...current]);
+      setReconciliation(null);
+      setReconciliationFileName("");
+      setSoliqFile(null);
+      setDiscardReason(null);
+      setAiError(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Ошибка сети");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!soliqFile || busy || imported) return;
+    setUploading(true);
+    setUploadError(null);
+    setSaveError(null);
+    setAiError(null);
     try {
       const fd = new FormData();
       fd.append("file", soliqFile);
@@ -43,15 +134,11 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
       });
       const data = await res.json();
       if (res.ok) {
-        if (data.empty) {
-          // Registry recognized but has no invoices with amounts — nothing to reconcile
-          setEmptyRegistryNotice(data.message);
-          setSoliqFile(null);
-        } else {
-          setReconciliation(data);
-          setReconciliationFileName(soliqFile.name);
-          setSoliqFile(null);
-        }
+        setReconciliation(data);
+        setReconciliationFileName(data.sourceName);
+        setPendingBatches(current => current.some(batch => batch.id === data.batchId) ? current :
+          [...current, { id: data.batchId, sourceName: data.sourceName }]);
+        setSoliqFile(null);
       } else {
         setUploadError(`Ошибка импорта: ${data.error}`);
       }
@@ -63,17 +150,22 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
   };
 
   const handleConfirm = async () => {
+    if (busy || discardReason !== null || (!reconciliation && (pendingError || pendingBatches.length > 0))) return;
+    if (imported) {
+      if (!reconciliation) onNext({});
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
       const payload = reconciliation ? {
-        matched: reconciliation.matched,
-        unmatched: reconciliation.unmatched,
-        parsedPayload: reconciliation.parsedPayload
-      } : {
-        matched: initialSoliqMatched?.matched || 0,
-        unmatched: initialSoliqMatched?.unmatched || 0
-      };
+        batchId: reconciliation.batchId,
+        decisions: reconciliation.esfItems.map((row: any) => ({
+          rowId: row.rowId,
+          openItemId: row.matchedOpenItemId ?? null,
+          ...(row.receiptKind ? { receiptKind: row.receiptKind } : {}),
+        })),
+      } : { skip: true };
 
       const res = await fetch(`/v2/api/closing/${periodId}/step/6/complete`, {
         method: "POST",
@@ -82,7 +174,8 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
       });
 
       if (res.ok) {
-        onNext({ soliqMatched: payload });
+        const result = await res.json();
+        if (active.current) onNext({ soliqMatched: result.summary.soliqMatched });
       } else {
         const err = await res.json();
         setSaveError(`Ошибка сохранения: ${err.error}`);
@@ -95,7 +188,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
   };
 
   const handleManualMatch = (bankId: string, soliqId: string) => {
-    const newReconciliation = { ...reconciliation };
+    const newReconciliation = structuredClone(reconciliation);
 
     const bankItemIndex = newReconciliation.bankOnly.findIndex((b: any) => b.id === bankId);
     const soliqItemIndex = newReconciliation.soliqOnly.findIndex((s: any) => s.id === soliqId);
@@ -104,17 +197,10 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
     const bankItem = newReconciliation.bankOnly[bankItemIndex];
     const soliqItem = newReconciliation.soliqOnly[soliqItemIndex];
 
-    if (newReconciliation.parsedPayload && newReconciliation.parsedPayload.esfItems) {
-      const esfPayloadItem = newReconciliation.parsedPayload.esfItems.find(
-        (e: any) => e.inn === soliqItem.inn && (e.amount + e.vatAmount) === soliqItem.amount && e.matchStatus === "UNMATCHED"
-      );
-      if (esfPayloadItem) {
-        esfPayloadItem.matchStatus = "MATCHED";
-        esfPayloadItem.matchedOpenItemId = bankId;
-        esfPayloadItem.matchedAmount = bankItem.amount;
-        esfPayloadItem.matchedAccountCode = bankItem.accountCode ?? "6310";
-      }
-    }
+    const esfPayloadItem = newReconciliation.esfItems.find((row: any) => row.rowId === soliqId);
+    if (!esfPayloadItem) return;
+    esfPayloadItem.matchStatus = "MATCHED";
+    esfPayloadItem.matchedOpenItemId = bankId;
 
     newReconciliation.matches.push({
       counterpartyName: `${bankItem.counterpartyName} ⟷ ${soliqItem.counterpartyName}`,
@@ -150,7 +236,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
         return;
       }
       if (res.ok && data.matches && data.matches.length > 0) {
-        const newReconciliation = { ...reconciliation };
+        const newReconciliation = structuredClone(reconciliation);
         
         data.matches.forEach((match: any) => {
           const bankItemIndex = newReconciliation.bankOnly.findIndex((b: any) => b.id === match.bankId);
@@ -160,18 +246,13 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
             const bankItem = newReconciliation.bankOnly[bankItemIndex];
             const soliqItem = newReconciliation.soliqOnly[soliqItemIndex];
 
-            // Update parsed payload BEFORE splice so bankItem reference is still valid
-            if (newReconciliation.parsedPayload && newReconciliation.parsedPayload.esfItems) {
-              const esfPayloadItem = newReconciliation.parsedPayload.esfItems.find(
-                (e: any) => e.inn === soliqItem.inn && (e.amount + e.vatAmount) === soliqItem.amount && e.matchStatus === "UNMATCHED"
-              );
-              if (esfPayloadItem) {
-                esfPayloadItem.matchStatus = "MATCHED";
-                esfPayloadItem.matchedOpenItemId = match.bankId;
-                esfPayloadItem.matchedAmount = bankItem.amount;
-                esfPayloadItem.matchedAccountCode = bankItem.accountCode ?? "6310";
-              }
-            }
+            const esfPayloadItem = newReconciliation.esfItems.find((row: any) => row.rowId === match.soliqId);
+            if (!esfPayloadItem || bankItem.inn !== esfPayloadItem.inn ||
+              bankItem.amount !== soliqItem.amount ||
+              bankItem.accountCode !== (esfPayloadItem.direction === "REVENUE" ? "6310" : "4310") ||
+              new Date(bankItem.date) > new Date(esfPayloadItem.date)) return;
+            esfPayloadItem.matchStatus = "MATCHED";
+            esfPayloadItem.matchedOpenItemId = match.bankId;
 
             // Move to matches
             newReconciliation.matches.push({
@@ -199,39 +280,58 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
     }
   };
 
-  // Auto-trigger AI matching after upload if there are unmatched items on both sides
-  useEffect(() => {
-    if (
-      reconciliation &&
-      !autoAiTriggered.current &&
-      reconciliation.bankOnly.length > 0 &&
-      reconciliation.soliqOnly.length > 0
-    ) {
-      autoAiTriggered.current = true;
-      handleAiMatch();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reconciliation]);
-
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-base font-bold text-gray-800">Шаг 6. Сверка с порталом my.soliq.uz</h2>
-        <p className="text-xs text-gray-400 mt-1">
-          Загрузите Excel-выгрузку реестра ЭСФ, чтобы сопоставить выставленные счета-фактуры с открытыми авансами в банке.
-          Файл может охватывать несколько месяцев — сверка выполняется по всем открытым авансам, включая прошлые периоды.
-        </p>
       </div>
 
+      {pendingLoading && <p className="text-xs text-gray-500" role="status">Загрузка пакетов Soliq...</p>}
+      {imported && <p className="flex items-center gap-1 text-xs text-gray-700" role="status"><Check size={14} />Реестр уже проведён.</p>}
+      {pendingError && <div role="alert" className="flex items-center gap-2 text-xs text-rose-800">
+        <span>{pendingError}</span>
+        <button type="button" title="Повторить загрузку" aria-label="Повторить загрузку" disabled={busy}
+          onClick={() => { setPendingLoading(true); setReloadCount(value => value + 1); }}>
+          <RefreshCw size={16} />
+        </button>
+      </div>}
+      {!reconciliation && pendingBatches.length > 0 && <section className="max-w-2xl space-y-2">
+        <h3 className="text-xs font-semibold text-gray-700">Непроведённые пакеты</h3>
+        <ul className="divide-y divide-gray-200">
+          {pendingBatches.map(batch => <li key={batch.id} className="flex items-center gap-3 py-2 text-xs">
+            <span className="min-w-0 flex-1 break-all">{batch.sourceName}</span>
+            <BatchExports batchId={batch.id} />
+            <button type="button" onClick={() => handleResume(batch.id)} disabled={busy}
+              className="flex shrink-0 items-center gap-1 text-gray-700 disabled:opacity-50">
+              <FolderOpen size={16} /> Открыть
+            </button>
+          </li>)}
+        </ul>
+      </section>}
+
+      {!reconciliation && archives.length > 0 && <section className="max-w-2xl border-y border-gray-200 py-3">
+        <h3 className="text-xs font-semibold text-gray-700">Архив реестров</h3>
+        <ul className="divide-y divide-gray-100">
+          {archives.map(batch => <li key={batch.id} className="flex items-center gap-2 py-2 text-xs">
+            <div className="min-w-0 flex-1">
+              <div className="break-all">{batch.sourceName}</div>
+              <div className="mt-1 text-gray-500">{batch.status === "POSTED" ? "Проведён" : "Отменён"}</div>
+            </div>
+            <BatchExports batchId={batch.id} />
+          </li>)}
+        </ul>
+      </section>}
+
       {/* Upload Zone */}
-      {!reconciliation && (
+      {!reconciliation && !imported && (
         <div className="bg-gray-50/20 border border-gray-200 rounded p-5 space-y-4 max-w-xl">
           <div className="border-2 border-dashed border-gray-200 hover:border-gray-200 rounded p-6 text-center transition duration-200">
             <input
               type="file"
               id="wizardSoliqFile"
               accept=".xlsx,.xls,.xltx"
-              onChange={(e) => { setSoliqFile(e.target.files?.[0] || null); setEmptyRegistryNotice(null); }}
+              disabled={busy}
+              onChange={(e) => setSoliqFile(e.target.files?.[0] || null)}
               className="hidden"
             />
             <label htmlFor="wizardSoliqFile" className="cursor-pointer space-y-1 block">
@@ -251,22 +351,10 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
             </div>
           )}
 
-          {emptyRegistryNotice && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded text-xs text-green-800 space-y-1">
-              <div className="flex items-center gap-2 font-semibold">
-                <Check size={14} className="shrink-0 text-green-600" />
-                <span>{emptyRegistryNotice}</span>
-              </div>
-              <div className="pl-6 text-green-700">
-                Если оборота по ЭСФ в этом периоде не было, нажмите «Пропустить шаг →», чтобы завершить сверку и продолжить закрытие месяца.
-              </div>
-            </div>
-          )}
-
           {soliqFile && (
             <button
               onClick={handleUpload}
-              disabled={uploading}
+              disabled={busy || !!pendingError}
               className="w-full bg-black hover:opacity-80 text-white text-xs font-bold py-2.5 rounded transition disabled:opacity-50"
             >
               {uploading ? "Сверка данных..." : "Запустить сверку ЭСФ"}
@@ -279,18 +367,35 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
       {reconciliation && (
         <div className="space-y-4">
           {/* File info + replace button */}
-          <div className="flex items-center justify-between max-w-2xl">
-            <div className="text-xs text-gray-500 font-medium truncate">
+          <div className="flex flex-wrap items-center justify-between gap-2 max-w-2xl">
+            <div className="min-w-0 break-all text-xs text-gray-500 font-medium">
               Файл: <span className="font-semibold text-gray-700">{reconciliationFileName}</span>
             </div>
+            <BatchExports batchId={reconciliation.batchId} />
             <button
-              onClick={() => { setReconciliation(null); setReconciliationFileName(""); setSoliqFile(null); }}
-              className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 hover:border-gray-300 py-1 px-2.5 rounded font-semibold transition ml-4 shrink-0"
+              onClick={() => setDiscardReason("")}
+              disabled={busy || discardReason !== null}
+              className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 py-1 font-semibold transition shrink-0 disabled:opacity-50"
             >
-              × Заменить файл
+              <X size={14} /> Отменить пакет
             </button>
           </div>
-          <div className="bg-gray-50 border border-gray-150 p-4 rounded flex gap-6 text-xs max-w-2xl font-bold">
+          {discardReason !== null && <div className="max-w-2xl space-y-2 border-y border-gray-200 py-3">
+            <label htmlFor="soliqDiscardReason" className="block text-xs font-semibold text-gray-700">Причина отмены</label>
+            <textarea id="soliqDiscardReason" maxLength={1000} value={discardReason} disabled={busy}
+              onChange={event => setDiscardReason(event.target.value)} rows={2}
+              className="w-full rounded border border-gray-300 p-2 text-sm" />
+            <div className="flex flex-wrap gap-3">
+              <button type="button" onClick={handleDiscard} disabled={busy || !discardReason.trim()}
+                className="flex items-center gap-1 text-xs font-semibold text-rose-700 disabled:opacity-50">
+                <X size={14} /> Подтвердить отмену
+              </button>
+              <button type="button" onClick={() => setDiscardReason(null)} disabled={busy}
+                className="text-xs text-gray-600">Вернуться к сверке</button>
+            </div>
+          </div>}
+          {reconciliation.empty && <p className="text-xs text-gray-600">Реестр пуст: 0 ЭСФ, сумма 0.</p>}
+          <div className="bg-gray-50 border border-gray-150 p-4 rounded flex flex-wrap gap-6 text-xs max-w-2xl font-bold">
             <div className="text-gray-700 flex items-center gap-1"><Check size={14} />Сопоставлено: {reconciliation.matched} ЭСФ</div>
             <div className="text-gray-600 flex items-center gap-1"><AlertTriangle size={14} />Не сопоставлено: {reconciliation.unmatched} ЭСФ</div>
             {reconciliation.taxSummary && (
@@ -302,7 +407,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
               <div className="ml-auto">
                 <button
                   onClick={handleAiMatch}
-                  disabled={aiMatching}
+                  disabled={aiMatching || saving}
                   className="text-[10px] font-bold bg-black text-white px-4 py-2 uppercase tracking-widest hover:opacity-80 transition-opacity disabled:opacity-50"
                 >
                   Распознать ИИ
@@ -335,7 +440,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
               ) : (
                 <>
                   <Check size={13} className="shrink-0 text-green-600" />
-                  <span>ИИ завершил сопоставление — все позиции обработаны</span>
+                  <span>Все позиции сопоставлены</span>
                 </>
               )}
             </div>
@@ -344,12 +449,12 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
           {/* Grid comparison */}
           <div className="border border-gray-200 rounded overflow-hidden max-w-3xl">
             <div className="overflow-y-auto max-h-[300px]">
-              <table className="w-full text-left border-collapse text-[11px]">
+              <table className="w-full table-fixed text-left border-collapse text-[11px] [overflow-wrap:anywhere]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold">
-                    <th className="p-2.5 w-[45%]">По банку (Авансы)</th>
-                    <th className="p-2.5 w-[10%] text-center">Статус</th>
-                    <th className="p-2.5 w-[45%]">По Soliq (ЭСФ)</th>
+                    <th className="p-2.5">По банку (Авансы)</th>
+                    <th className="p-2 w-14 text-center">Статус</th>
+                    <th className="p-2.5">По Soliq (ЭСФ)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-medium">
@@ -392,7 +497,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
                             }))}
                             value=""
                             onChange={(v) => { if (v) handleManualMatch(b.id, v); }}
-                            disabled={aiMatching}
+                            disabled={aiMatching || saving}
                             placeholder="— выбрать ЭСФ вручную —"
                           />
                         ) : (
@@ -414,7 +519,7 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
                             }))}
                             value=""
                             onChange={(v) => { if (v) handleManualMatch(v, s.id); }}
-                            disabled={aiMatching}
+                            disabled={aiMatching || saving}
                             placeholder="— выбрать из банка вручную —"
                           />
                         ) : (
@@ -445,17 +550,17 @@ export default function Step6Soliq({ periodId, onNext, onPrev, initialSoliqMatch
       <div className="flex justify-between items-center pt-4 border-t border-gray-100">
         <button
           onClick={onPrev}
-          disabled={saving}
+          disabled={busy}
           className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-5 rounded transition"
         >
           ← Назад
         </button>
         <button
           onClick={handleConfirm}
-          disabled={saving}
+          disabled={busy || discardReason !== null || (imported && !!reconciliation) || (!reconciliation && (!!pendingError || pendingBatches.length > 0))}
           className="text-xs bg-black hover:opacity-80 text-white font-bold py-2 px-6 rounded transition"
         >
-          {saving ? "Обработка..." : reconciliation ? "Принять всё совпавшее и продолжить →" : "Пропустить шаг →"}
+          {saving ? "Обработка..." : imported ? "Продолжить →" : reconciliation ? "Провести реестр и продолжить →" : "Пропустить шаг →"}
         </button>
       </div>
     </div>

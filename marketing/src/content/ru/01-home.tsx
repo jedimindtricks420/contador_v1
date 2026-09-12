@@ -43,7 +43,7 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <div className="rounded border border-gray-200 p-4">
             <p className="font-medium text-black">Импорт выписок</p>
-            <p className="mt-1 text-sm text-gray-600">Excel и 1CClientBankExchange, с проверкой на повторный импорт.</p>
+            <p className="mt-1 text-sm text-gray-600">1CClientBankExchange (.txt), с проверкой на повторный импорт.</p>
           </div>
           <div className="rounded border border-gray-200 p-4">
             <p className="font-medium text-black">Проводки и закрытие месяца</p>

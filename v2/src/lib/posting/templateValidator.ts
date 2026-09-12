@@ -40,13 +40,25 @@ export function validateTemplate(template: any): string[] {
     errors.push("Массив lines не должен быть пустым");
   }
 
-  // Не претендует на покрытие каждого поля payload из всех типов документов —
-  // это грубая синтаксическая проверка (expression должен распарситься и
-  // посчитаться), а не проверка реальных данных. Отсутствующее в scope поле
-  // не считается ошибкой валидации (evaluate() сама печатает предупреждение),
-  // но чем шире scope, тем меньше ложного шума в логах при каждом старте.
   const dummyScope = {
     amount: 1000,
+    salaryAmount: 5000,
+    rentAmount: 1000,
+    fxDifference: 100,
+    taxAmount: 100,
+    paidAmount: 500,
+    acquisitionCost: 1000,
+    accumulatedDepreciation: 200,
+    profit: 100,
+    loss: 100,
+    netAmount: 900,
+    commissionAmount: 100,
+    costAmount: 500,
+    correctionAmount: 100,
+    vatCorrection: 12,
+    fundingType: "PARTIALLY_PAID",
+    isVatPayer: true,
+    useReserve: true,
     vatAmount: 120,
     vatRate: TAX_RATES.VAT,
     grossSalary: 5000,

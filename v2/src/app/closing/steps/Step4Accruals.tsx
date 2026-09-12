@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { formatSum } from "@/lib/format";
 import { TAX_RATES, ACCOUNTS } from "@/lib/constants";
+import { closingAccrualsSchema } from "@/lib/closingInput";
 import { Info } from "lucide-react";
 import { RotateCcw, CheckCircle2, AlertTriangle, X, Zap } from "lucide-react";
 
@@ -24,7 +25,16 @@ interface Step4AccrualsProps {
   };
 }
 
-export default function Step4Accruals({ periodId, onNext, onPrev, initialAccruals }: Step4AccrualsProps) {
+export default function Step4Accruals(props: Step4AccrualsProps) {
+  return <AccrualsPeriod key={props.periodId} {...props} />;
+}
+
+function AccrualsPeriod({ periodId, onNext, onPrev, initialAccruals }: Step4AccrualsProps) {
+  const active = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const [salaryAmount, setSalaryAmount] = useState(String(initialAccruals.salaryAmount || 0));
   const [depreciationAmount, setDepreciationAmount] = useState(String(initialAccruals.depreciationAmount || 0));
   const [rentAmount, setRentAmount] = useState(String(initialAccruals.rentAmount || 0));
@@ -37,18 +47,18 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
   const [postedHint, setPostedHint] = useState<{ salary: number; dep: number; rent: number; expenseAccountCode: string | null } | null>(null);
 
   useEffect(() => {
-    // Fetch already-posted accrual docs so we can show a prefill hint
+    const controller = new AbortController();
     if (!initialAccruals.salaryAmount && !initialAccruals.depreciationAmount && !initialAccruals.rentAmount) {
-      fetch(`/v2/api/closing/${periodId}/accruals`)
+      fetch(`/v2/api/closing/${periodId}/accruals`, { signal: controller.signal })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
-          if (data && data.hasPostedDocs) {
+          if (!controller.signal.aborted && data && data.hasPostedDocs) {
             setPostedHint({ salary: data.postedSalaryAmount, dep: data.postedDepreciationAmount, rent: data.postedRentAmount, expenseAccountCode: data.postedExpenseAccountCode });
           }
         })
         .catch(() => {});
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => controller.abort();
   }, [periodId, initialAccruals.salaryAmount, initialAccruals.depreciationAmount, initialAccruals.rentAmount]);
 
   const hasSavedData =
@@ -64,11 +74,13 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
   const netSalary = salVal * (1 - TAX_RATES.NDFL);
 
   const handleReset = async () => {
+    if (saving || resetting) return;
     setShowResetConfirm(false);
     setResetting(true);
     setResetError(null);
     try {
       const res = await fetch(`/v2/api/closing/${periodId}/accruals`, { method: "DELETE" });
+      if (!active.current) return;
       if (res.ok) {
         setSalaryAmount("0");
         setDepreciationAmount("0");
@@ -76,48 +88,43 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
         setExpenseAccountCode("");
       } else {
         const err = await res.json();
-        setResetError(`Ошибка сброса: ${err.error}`);
+        if (active.current) setResetError(`Ошибка сброса: ${err.error}`);
       }
     } catch {
-      setResetError("Ошибка сети. Попробуйте снова.");
+      if (active.current) setResetError("Ошибка сети. Попробуйте снова.");
     } finally {
-      setResetting(false);
+      if (active.current) setResetting(false);
     }
   };
 
   const handleSubmit = async () => {
-    const sal = parseFloat(salaryAmount) || 0;
-    const dep = parseFloat(depreciationAmount) || 0;
-    const ren = parseFloat(rentAmount) || 0;
-    if (sal < 0 || dep < 0 || ren < 0) {
-      setSaveError("Суммы начислений не могут быть отрицательными");
-      return;
-    }
-    if (sal > 0 && !expenseAccountCode) {
-      setSaveError("Укажите функцию сотрудника для начисления ЗП");
+    if (saving || resetting) return;
+    const payload = { salaryAmount, depreciationAmount, rentAmount, expenseAccountCode };
+    const parsed = closingAccrualsSchema.safeParse(payload);
+    if (!parsed.success) {
+      setSaveError(parsed.error.issues[0].message);
       return;
     }
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = { salaryAmount: sal, depreciationAmount: dep, rentAmount: ren, expenseAccountCode };
-
       const res = await fetch(`/v2/api/closing/${periodId}/step/4/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
+      if (!active.current) return;
       if (res.ok) {
-        onNext({ accruals: payload });
+        onNext({ accruals: parsed.data });
       } else {
         const err = await res.json();
-        setSaveError(`Ошибка сохранения: ${err.error}`);
+        if (active.current) setSaveError(`Ошибка сохранения: ${err.error}`);
       }
     } catch {
-      setSaveError("Ошибка сети. Попробуйте снова.");
+      if (active.current) setSaveError("Ошибка сети. Попробуйте снова.");
     } finally {
-      setSaving(false);
+      if (active.current) setSaving(false);
     }
   };
 
@@ -139,7 +146,7 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
           </div>
           <button
             onClick={() => setShowResetConfirm(true)}
-            disabled={resetting}
+            disabled={saving || resetting}
             className="flex items-center gap-1 text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-300 bg-white py-1 px-2.5 rounded font-semibold transition ml-4 shrink-0 disabled:opacity-50"
           >
             <RotateCcw size={12} />
@@ -295,14 +302,14 @@ export default function Step4Accruals({ periodId, onNext, onPrev, initialAccrual
       <div className="flex justify-between items-center pt-4 border-t border-gray-100">
         <button
           onClick={onPrev}
-          disabled={saving}
+          disabled={saving || resetting}
           className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-5 rounded transition"
         >
           ← Назад
         </button>
         <button
           onClick={handleSubmit}
-          disabled={saving}
+          disabled={saving || resetting}
           className="text-xs bg-black hover:opacity-80 text-white font-bold py-2 px-6 rounded transition"
         >
           {saving ? "Сохранение..." : "Сохранить и продолжить →"}

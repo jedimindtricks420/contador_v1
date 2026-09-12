@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getActiveOrgId } from "@/lib/context";
+import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
+import { assertAccountingWriteRole } from "@/lib/posting/documentPolicy";
 
-/**
- * Manually closes an open item sub-ledger position.
- * Verifies period lock status, then sets status to CLOSED with the provided closingDocumentId.
- */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const orgId = await getActiveOrgId();
+    const membership = await getActiveMembership();
+    assertAccountingWriteRole(membership.role);
+    const orgId = membership.orgId;
     const { id } = await params;
-    
-    const body = await req.json().catch(() => ({}));
-    const closingDocumentId = body.closingDocumentId || null;
-    const dateClosed = body.dateClosed ? new Date(body.dateClosed) : new Date();
 
     const openItem = await prisma.openItem.findFirst({
       where: { id, orgId }
@@ -26,31 +21,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Открытая позиция не найдена" }, { status: 404 });
     }
 
-    // Check period lock
-    if (openItem.affectedPeriodId) {
-      const period = await prisma.period.findUnique({
-        where: { id: openItem.affectedPeriodId }
-      });
-      if (period && (period.status === "CLOSED" || period.lockDate !== null)) {
-        return NextResponse.json(
-          { error: "Отчётный период закрыт или заблокирован для редактирования" },
-          { status: 400 }
-        );
-      }
-    }
-
-    const updated = await prisma.openItem.update({
-      where: { id, orgId },
-      data: {
-        status: "CLOSED",
-        closingDocumentId,
-        dateClosed
-      }
-    });
-
-    return NextResponse.json(updated);
+    return NextResponse.json({
+      error: "Ручное закрытие задолженности запрещено. Проведите документ расчёта с контрагентом.",
+    }, { status: 409 });
   } catch (err: any) {
     console.error("PATCH CLOSE OPEN ITEM ERROR:", err);
+    if (err.message === "UNAUTHORIZED") return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
+    if (["FORBIDDEN", "NO_ACTIVE_ORG"].includes(err.message)) return NextResponse.json({ error: "Нет доступа" }, { status: 403 });
     return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
   }
 }

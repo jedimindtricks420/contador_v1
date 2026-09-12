@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Info } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Info, RefreshCw } from "lucide-react";
+import { closingFxSchema } from "@/lib/closingInput";
 
 interface Step5FxDiffProps {
   periodId: string;
@@ -13,6 +14,15 @@ interface Step5FxDiffProps {
 }
 
 export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }: Step5FxDiffProps) {
+  return <FxDiffPeriod key={periodId} periodId={periodId} onNext={onNext} onPrev={onPrev} initialFxDiff={initialFxDiff} />;
+}
+
+function FxDiffPeriod({ periodId, onNext, onPrev, initialFxDiff }: Step5FxDiffProps) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const [usdAccounts, setUsdAccounts] = useState<any[]>([]);
   const [exchangeRate, setExchangeRate] = useState(String(initialFxDiff.exchangeRate || ""));
   const [difference, setDifference] = useState(String(initialFxDiff.difference || 0));
@@ -22,15 +32,26 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
   const [validationError, setValidationError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [noUsdAccounts, setNoUsdAccounts] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [unsupportedCurrencies, setUnsupportedCurrencies] = useState<string[]>([]);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [initialRate] = useState(initialFxDiff.exchangeRate);
 
   useEffect(() => {
+    const controller = new AbortController();
     const loadData = async () => {
       try {
-        const [accRes, rateRes] = await Promise.all([
-          fetch("/v2/api/bank-accounts"),
-          fetch("/v2/api/cbu-rate")
-        ]);
+        const accRes = await fetch("/v2/api/bank-accounts", { signal: controller.signal });
         const list = await accRes.json();
+        if (!accRes.ok || !Array.isArray(list) || list.some(acc =>
+          !acc || typeof acc.currency !== "string" || !/^[A-Z]{3}$/.test(acc.currency))) {
+          throw new Error("Не удалось проверить валюты банковских счетов.");
+        }
+        if (controller.signal.aborted) return;
+        const unsupported = Array.from(new Set<string>(list.map(acc => acc.currency)))
+          .filter(currency => currency !== "UZS" && currency !== "USD");
+        setUnsupportedCurrencies(unsupported);
+        if (unsupported.length > 0) return;
         const usdOnly = list.filter((acc: any) => acc.currency === "USD");
         setUsdAccounts(usdOnly);
 
@@ -39,20 +60,22 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
           return;
         }
 
-        if (rateRes.ok) {
+        const rateRes = await fetch("/v2/api/cbu-rate", { signal: controller.signal });
+        if (rateRes.ok && !controller.signal.aborted) {
           const rateData = await rateRes.json();
-          if (rateData.rate && !initialFxDiff.exchangeRate) {
+          if (!controller.signal.aborted && rateData.rate && !initialRate) {
             setExchangeRate(String(rateData.rate));
           }
         }
       } catch (err) {
-        console.error(err);
+        if (!controller.signal.aborted) setLoadError(err instanceof Error ? err.message : "Не удалось проверить валютные счета.");
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
-    loadData();
-  }, [periodId]);
+    void loadData();
+    return () => controller.abort();
+  }, [initialRate, retryAttempt]);
 
   // Handle rate change and estimate difference against previous rate
   const handleRateChange = (rateStr: string) => {
@@ -66,8 +89,14 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
   };
 
   const handleSubmit = async () => {
-    const rate = parseFloat(exchangeRate) || 0;
-    if (rate <= 0) {
+    if (saving || loading || loadError || unsupportedCurrencies.length > 0) return;
+    const payload = noUsdAccounts ? { exchangeRate: "0", difference: "0" } : { exchangeRate, difference };
+    const parsed = closingFxSchema.safeParse(payload);
+    if (!parsed.success) {
+      setValidationError(parsed.error.issues[0].message);
+      return;
+    }
+    if (!noUsdAccounts && parsed.data.exchangeRate <= 0) {
       setValidationError("Курс ЦБ должен быть больше нуля. Введите официальный курс на последний день периода.");
       return;
     }
@@ -75,24 +104,23 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
     setSaveError(null);
     setSaving(true);
     try {
-      const payload = { exchangeRate: rate, difference: parseFloat(difference) || 0 };
-
       const res = await fetch(`/v2/api/closing/${periodId}/step/5/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
+      if (!active.current) return;
       if (res.ok) {
-        onNext({ fxDiff: payload });
+        onNext({ fxDiff: parsed.data });
       } else {
         const err = await res.json();
-        setSaveError(`Ошибка сохранения: ${err.error}`);
+        if (active.current) setSaveError(`Ошибка сохранения: ${err.error}`);
       }
     } catch {
-      setSaveError("Ошибка сети. Попробуйте снова.");
+      if (active.current) setSaveError("Ошибка сети. Попробуйте снова.");
     } finally {
-      setSaving(false);
+      if (active.current) setSaving(false);
     }
   };
 
@@ -101,6 +129,37 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
       <div className="flex items-center justify-center p-6 text-gray-500 font-medium">
         <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-300 mr-2"></div>
         Проверка валютных счетов...
+      </div>
+    );
+  }
+
+  if (loadError || unsupportedCurrencies.length > 0) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-base font-bold text-gray-800">Шаг 5. Курсовые разницы</h2>
+        <div role="alert" className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900">
+          <Info size={16} className="shrink-0" />
+          <p className="min-w-0 break-words flex-1">{loadError ||
+            `Обнаружены счета в валюте ${unsupportedCurrencies.join(", ")}. Переоценка этих валют пока не поддерживается. Сохранение нулевой разницы и продолжение закрытия заблокированы.`}</p>
+          <button
+            type="button"
+            title="Повторить проверку валютных счетов"
+            aria-label="Повторить проверку валютных счетов"
+            className="h-8 w-8 shrink-0 flex items-center justify-center border border-amber-300 rounded"
+            onClick={() => {
+              setLoadError(null);
+              setUnsupportedCurrencies([]);
+              setNoUsdAccounts(false);
+              setLoading(true);
+              setRetryAttempt(attempt => attempt + 1);
+            }}
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
+        <button onClick={onPrev} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-5 rounded transition">
+          ← Назад
+        </button>
       </div>
     );
   }
@@ -115,19 +174,21 @@ export default function Step5FxDiff({ periodId, onNext, onPrev, initialFxDiff }:
         <div className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600">
           <Info size={14} className="shrink-0 mt-0.5 text-gray-400" />
           <div>
-            <p className="font-bold text-gray-700 mb-1">Валютных счетов не найдено</p>
-            <p>В вашей организации нет банковских счетов в иностранной валюте (USD/EUR). Расчёт курсовых разниц не требуется — этот шаг будет пропущен.</p>
+            <p className="font-bold text-gray-700 mb-1">Валютных банковских счетов не найдено</p>
+            <p>Курсовая разница по банковским счетам: 0. Валютная задолженность этим шагом не проверяется.</p>
           </div>
         </div>
+        {saveError && <p role="alert" className="text-xs text-rose-800">{saveError}</p>}
         <div className="flex justify-between items-center pt-4 border-t border-gray-100">
-          <button onClick={onPrev} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-5 rounded transition">
+          <button onClick={onPrev} disabled={saving} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 px-5 rounded transition">
             ← Назад
           </button>
           <button
-            onClick={() => onNext({ fxDiff: { exchangeRate: 0, difference: 0 } })}
+            onClick={handleSubmit}
+            disabled={saving}
             className="text-xs bg-black hover:opacity-80 text-white font-bold py-2 px-6 rounded transition"
           >
-            Продолжить →
+            {saving ? "Сохранение..." : "Продолжить →"}
           </button>
         </div>
       </div>

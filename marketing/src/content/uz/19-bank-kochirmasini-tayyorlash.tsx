@@ -7,7 +7,7 @@ import type { Topic } from "@/lib/manifest";
 // guide turi, bloklar tartibi — TASK-0003 §6. 03-mavzudan farqli o‘quv
 // intenti (§6: "03 importni sotadi / 19 faylni tayyorlashni o‘rgatadi").
 const STEPS = [
-  { num: 1, title: "Bank-klientdan ko‘chirmani yuklab oling", desc: ".txt (1CClientBankExchange), .xls yoki .xlsx formatida." },
+  { num: 1, title: "Bank-klientdan ko‘chirmani yuklab oling", desc: "1CClientBankExchange (.txt), 5 MiB va 1000 ta operatsiyagacha." },
   { num: 2, title: "Format va davrni tekshiring", desc: "Fayl aynan kerakli davrni qamrab olishi kerak — yuklashda sana bo‘yicha filtr yo‘q." },
   { num: 3, title: "Yakuniy summalarni solishtiring", desc: "Bank ko‘chirmasidagi boshlang‘ich va yakuniy qoldiqni kutilgan qiymatlar bilan solishtiring." },
   { num: 4, title: "Oyni yopish ustasining 1-bosqichida yuklang", desc: "Import — «Yopish» bo‘limidagi oyni yopish ustasining birinchi bosqichi." },
@@ -22,13 +22,13 @@ const COLUMNS = [
 const MISTAKES = [
   {
     problem: "Fayl qo‘llab-quvvatlanmaydigan formatda saqlangan (masalan, brauzerdan .csv)",
-    cause: "Contador faqat .txt, .xls va .xlsx formatlarini taniydi",
-    fix: "Ko‘chirmani bank-klientdan uchta qo‘llab-quvvatlanadigan formatning birida qayta yuklab oling",
+    cause: "Bank importi faqat 1CClientBankExchange (.txt) formatini qabul qiladi",
+    fix: "Ko‘chirmani bank-klientdan 1CClientBankExchange formatida qayta oling; Excel yoki CSV kengaytmasini almashtirmang",
   },
   {
     problem: "Bitta ko‘chirma ikki marta yuklangan",
-    cause: "Davrda ikki marta takrorlangan operatsiyalar paydo bo‘ladi",
-    fix: "Importni bekor qilish (rollback) — u faqat takroriy yuklashdagi operatsiyalarni olib tashlaydi, davrning qolgan ma’lumotlariga tegmaydi",
+    cause: "Takroriy qatorlar tekshiriladi; yuklash natijasini solishtirish kerak",
+    fix: "Protokolni tekshiring. Egasi yoki administrator ishlov berilmagan xato importni hisob va davr holati tekshiruvlaridan keyin bekor qilishi mumkin",
   },
   {
     problem: "Faylda bir necha oy operatsiyalari birga",
@@ -42,7 +42,7 @@ export default function Body({ topic }: { topic: Topic }) {
     <div className="space-y-12">
       <Hero
         h1={topic.locales.uz.h1}
-        lead="Yuklashdan oldin fayl formatini (.txt, .xls yoki .xlsx) tekshiring, u kerakli davrni qamrab olishiga ishonch hosil qiling va yakuniy summalarni bank ma’lumotlari bilan solishtiring — bu oyni yopish ustasining birinchi bosqichidagi xatolar sonini kamaytiradi."
+        lead="Yuklashdan oldin 1CClientBankExchange (.txt) formatini tekshiring, fayl kerakli davrni qamrab olishiga ishonch hosil qiling va yakuniy summalarni bank ma’lumotlari bilan solishtiring — bu oyni yopish ustasining birinchi bosqichidagi xatolar sonini kamaytiradi."
       />
 
       <nav aria-label="Mundarija" className="text-sm">
@@ -59,9 +59,9 @@ export default function Body({ topic }: { topic: Topic }) {
           Format va davrni tekshiring
         </h2>
         <p className="mt-3 text-sm text-gray-600">
-          Contador .txt (1CClientBankExchange), .xls va .xlsx formatlarini qabul qiladi — format yuklashda avtomatik
-          aniqlanadi. Bu bosqichda sana bo‘yicha alohida filtr yo‘q: faylda nima bo‘lsa, hammasi import qilinadi,
-          shuning uchun bank-klientdan aynan kerakli davr uchun fayl yuklab olish muhim.
+          Contador 1CClientBankExchange (.txt), 5 MiB va 1000 ta operatsiyagacha qabul qiladi.
+          Hisob raqami, davr va nazorat qoldiqlari talab qilinadi. Bank ko‘chirmalari uchun Excel qabul qilinmaydi.
+          Sana bo‘yicha alohida filtr yo‘q: oldindan aynan kerakli davr uchun fayl yuklab oling.
         </p>
         <div className="mt-4">
           <FeatureSteps steps={STEPS} />

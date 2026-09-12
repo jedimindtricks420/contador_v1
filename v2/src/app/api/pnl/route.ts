@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getActiveOrgId } from "@/lib/context";
 import { ACCOUNTS, REVENUE_ACCOUNT_CODES, COGS_ACCOUNT_CODES, TAX_RATES } from "@/lib/constants";
 import Decimal from "decimal.js";
+import { InvalidReportPeriod, reportPeriod } from "@/lib/reports/reportPeriod";
 
 type AggRow = { code: string; sumDebit: string; sumCredit: string };
 
@@ -15,8 +16,8 @@ type AggRow = { code: string; sumDebit: string; sumCredit: string };
 // with a documented reason — so a newly added TRANSIT account can't silently vanish
 // from Форма №2 the way 9820 almost did (see errors_forms_audit / changelog П1.2).
 export const LINE010_CONTRA_CODES = ["9040", "9050"]; // сторно выручки / скидки покупателям
-export const LINE090_CREDIT_CODES = ["9310", "9330", "9340", "9350", "9360", "9370", "9380", "9390"];
-export const LINE090_DEBIT_CODES = ["9320"];
+export const LINE090_CREDIT_CODES = ["9310", "9320", "9330", "9340", "9350", "9360", "9370", "9380", "9390"];
+export const LINE090_DEBIT_CODES: string[] = [];
 export const LINE120_CODES = ["9520"];
 export const LINE130_CODES = ["9530"];
 export const LINE140_CODES = ["9550"];
@@ -47,7 +48,7 @@ export const PNL_COVERED_TRANSIT_CODES = [
 // собственная строка Формы №2, и их появление в шаблонах — ожидаемо и не
 // является поводом падать.
 export const PNL_ZERO_NET_TRANSIT_CODES = [
-  "9210", // Выбытие ОС — используется в FIXED_ASSET_DISPOSAL/_SALE/_RESULT/_SALVAGE, но нетто всегда 0; итог уже в 9310/9320 (line090)
+  "9210",
 ];
 
 // Счета официального плана НСБУ-21, которые сейчас не проводятся НИ ОДНИМ типом
@@ -79,24 +80,7 @@ export async function GET(req: NextRequest) {
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
 
-    const now = new Date();
-    const currentYear = now.getFullYear();
-
-    const startDate = fromParam ? new Date(fromParam) : new Date(currentYear, 0, 1);
-    const endDate = toParam ? new Date(toParam) : new Date(currentYear, 11, 31, 23, 59, 59);
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return NextResponse.json({ error: "Неверный формат даты (from/to)" }, { status: 400 });
-    }
-
-    // Generate list of months in YYYY-MM format
-    const months: string[] = [];
-    const curr = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-    const last = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-    while (curr <= last) {
-      months.push(`${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, "0")}`);
-      curr.setMonth(curr.getMonth() + 1);
-    }
+    const { startDate, endDate, endExclusive, months } = reportPeriod(fromParam, toParam);
 
     // Агрегация по коду счёта за весь период (исключая PERIOD_CLOSING)
     const aggRows = await prisma.$queryRaw<AggRow[]>`
@@ -110,7 +94,7 @@ export async function GET(req: NextRequest) {
       WHERE d."orgId"  = ${orgId}
         AND d.status   = 'POSTED'
         AND d.date    >= ${startDate}
-        AND d.date    <= ${endDate}
+        AND d.date     < ${endExclusive}
         AND dt.code   != 'PERIOD_CLOSING'
       GROUP BY a.code
     `;
@@ -125,88 +109,56 @@ export async function GET(req: NextRequest) {
 
     const td = (code: string) => aggByCode.get(code)?.debit  ?? new Decimal(0);
     const tc = (code: string) => aggByCode.get(code)?.credit ?? new Decimal(0);
-    const tcMany = (...codes: string[]) => codes.reduce((s, c) => s.plus(tc(c)), new Decimal(0));
-    const tdMany = (...codes: string[]) => codes.reduce((s, c) => s.plus(td(c)), new Decimal(0));
+    const debitNet = (code: string) => td(code).minus(tc(code));
+    const creditNet = (code: string) => tc(code).minus(td(code));
+    const creditNetMany = (...codes: string[]) => codes.reduce((sum, code) => sum.plus(creditNet(code)), new Decimal(0));
+    const debitNetMany = (...codes: string[]) => codes.reduce((sum, code) => sum.plus(debitNet(code)), new Decimal(0));
 
     // Форма №2 строки — счета берутся из тех же констант, что использует расчёт
     // налога в closing.ts (REVENUE_ACCOUNT_CODES/COGS_ACCOUNT_CODES/ACCOUNTS.*),
     // а не из отдельно переписанного списка — см. balance-sheet-completeness.test.ts
     // и pnl-shared-constants.test.ts для регрессии на рассинхронизацию.
-    const line010 = tcMany(...REVENUE_ACCOUNT_CODES).minus(tdMany(...LINE010_CONTRA_CODES));
-    const line020 = tdMany(...COGS_ACCOUNT_CODES);
+    const line010 = creditNetMany(...REVENUE_ACCOUNT_CODES).minus(debitNetMany(...LINE010_CONTRA_CODES));
+    const line020 = debitNetMany(...COGS_ACCOUNT_CODES);
     const line030 = line010.minus(line020);
 
-    const line050 = td(ACCOUNTS.EXPENSE_SALES);
-    const line060 = td(ACCOUNTS.EXPENSE_ADMIN);
-    const line070 = td(ACCOUNTS.EXPENSE_OTHER);
-    const line080 = td("9440"); // счёт 9440 не заведён в плане счетов — строка всегда 0, оставлено для формы
+    const line050 = debitNet(ACCOUNTS.EXPENSE_SALES);
+    const line060 = debitNet(ACCOUNTS.EXPENSE_ADMIN);
+    const line070 = debitNet(ACCOUNTS.EXPENSE_OTHER);
+    const line080 = debitNet("9440"); // счёт 9440 не заведён в плане счетов — строка всегда 0, оставлено для формы
     const line040 = line050.plus(line060).plus(line070).plus(line080);
 
-    // 9310/9330-9390 — доходы (кредитовые); 9320 — убыток от выбытия ОС (дебетовый, вычитается)
-    const line090 = tcMany(...LINE090_CREDIT_CODES)
-      .minus(tdMany(...LINE090_DEBIT_CODES));
+    const line090 = creditNetMany(...LINE090_CREDIT_CODES)
+      .minus(debitNetMany(...LINE090_DEBIT_CODES));
     const line100 = line030.minus(line040).plus(line090);
 
-    const line120 = tc(LINE120_CODES[0]);
-    const line130 = tc(LINE130_CODES[0]);
-    const line140 = tc(LINE140_CODES[0]);
-    const line150 = tc(LINE150_CODES[0]);
-    const line160 = tcMany(...LINE160_CODES);
+    const line120 = creditNet(LINE120_CODES[0]);
+    const line130 = creditNet(LINE130_CODES[0]);
+    const line140 = creditNet(LINE140_CODES[0]);
+    const line150 = creditNet(LINE150_CODES[0]);
+    const line160 = creditNetMany(...LINE160_CODES);
     const line110 = line120.plus(line130).plus(line140).plus(line150).plus(line160);
 
-    const line180 = td(LINE180_CODES[0]);
+    const line180 = debitNet(LINE180_CODES[0]);
     const line190 = new Decimal(0);
-    const line200 = td(LINE200_CODES[0]);
-    const line210 = tdMany(...LINE210_CODES);
+    const line200 = debitNet(LINE200_CODES[0]);
+    const line210 = debitNetMany(...LINE210_CODES);
     const line170 = line180.plus(line190).plus(line200).plus(line210);
 
     const line220 = line100.plus(line110).minus(line170);
-    const line230 = tc(LINE230_CREDIT_CODES[0]).minus(td(LINE230_DEBIT_CODES[0]));
+    const line230 = creditNet(LINE230_CREDIT_CODES[0]).minus(debitNet(LINE230_DEBIT_CODES[0]));
     const line240 = line220.plus(line230);
 
-    // стр. 250 — из проводок 9810 нетто (Дт начислений минус Кт сторно PROFIT_TAX_REVERSAL;
-    // кредиты реформации сюда не попадают — PERIOD_CLOSING исключён из выборки);
-    // если 0 — из taxCalendarEvent только по периодам в диапазоне
-    const line250 = td(LINE250_CODES[0]).minus(tc(LINE250_CODES[0]));
-    let taxAmountFromCalendar = new Decimal(0);
-    if (line250.isZero()) {
-      // Берём только события, привязанные к периодам внутри диапазона дат,
-      // чтобы не захватить налоги соседних периодов.
-      const periodsInRange = await prisma.period.findMany({
-        where: { orgId },
-        select: { id: true, year: true, month: true }
-      });
-      const periodIdsInRange = periodsInRange
-        .filter(p => {
-          const pDate = new Date(p.year, p.month - 1, 1);
-          return pDate >= new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-              && pDate <= new Date(endDate.getFullYear(), endDate.getMonth(), 1);
-        })
-        .map(p => p.id);
+    const line250 = debitNet(LINE250_CODES[0]);
+    const line250final = line250;
 
-      if (periodIdsInRange.length > 0) {
-        const taxEvents = await prisma.taxCalendarEvent.findMany({
-          where: {
-            orgId,
-            periodId: { in: periodIdsInRange },
-            type: { in: ["PROFIT_TAX", "TURNOVER_TAX"] }
-          },
-          select: { estimatedAmount: true }
-        });
-        taxAmountFromCalendar = taxEvents.reduce(
-          (s, e) => s.plus(new Decimal(e.estimatedAmount?.toString() || "0")), new Decimal(0)
-        );
-      }
-    }
-    const line250final = line250.gt(0) ? line250 : taxAmountFromCalendar;
-
-    const line260 = td(LINE260_CODES[0]);
+    const line260 = debitNet(LINE260_CODES[0]);
     const line270 = line240.minus(line250final).minus(line260);
 
     // Помесячный разрез для ключевых строк (графики)
     const monthlyRows = await prisma.$queryRaw<(AggRow & { month: string })[]>`
       SELECT a.code,
-             TO_CHAR(d.date, 'YYYY-MM') AS month,
+             TO_CHAR(d.date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM') AS month,
              SUM(je.debit)::text  AS "sumDebit",
              SUM(je.credit)::text AS "sumCredit"
       FROM "JournalEntry" je
@@ -216,7 +168,7 @@ export async function GET(req: NextRequest) {
       WHERE d."orgId"  = ${orgId}
         AND d.status   = 'POSTED'
         AND d.date    >= ${startDate}
-        AND d.date    <= ${endDate}
+        AND d.date     < ${endExclusive}
         AND dt.code   != 'PERIOD_CLOSING'
         -- Держать в списке ниже те же коды, что в PNL_COVERED_TRANSIT_CODES выше
         -- (плюс '9440', которого нет в плане счетов и который сюда никогда не попадёт) —
@@ -229,7 +181,7 @@ export async function GET(req: NextRequest) {
                        '9810','9820','9710','9720',
                        '9510','9520','9530','9540','9550','9560','9590',
                        '9610','9620','9630','9690')
-      GROUP BY a.code, TO_CHAR(d.date, 'YYYY-MM')
+      GROUP BY a.code, TO_CHAR(d.date AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tashkent', 'YYYY-MM')
     `;
 
     // Индекс помесячных данных
@@ -245,30 +197,32 @@ export async function GET(req: NextRequest) {
 
     const mtd = (month: string, code: string) => mMap.get(`${month}|${code}` as MonthCodeKey)?.debit  ?? new Decimal(0);
     const mtc = (month: string, code: string) => mMap.get(`${month}|${code}` as MonthCodeKey)?.credit ?? new Decimal(0);
+    const monthlyDebitNet = (month: string, code: string) => mtd(month, code).minus(mtc(month, code));
+    const monthlyCreditNet = (month: string, code: string) => mtc(month, code).minus(mtd(month, code));
 
     const monthlyRevenueOf = (m: string) =>
-      REVENUE_ACCOUNT_CODES.reduce((s, c) => s.plus(mtc(m, c)), new Decimal(0))
-        .minus(mtd(m,"9040")).minus(mtd(m,"9050"));
+      REVENUE_ACCOUNT_CODES.reduce((sum, code) => sum.plus(monthlyCreditNet(m, code)), new Decimal(0))
+        .minus(monthlyDebitNet(m,"9040")).minus(monthlyDebitNet(m,"9050"));
 
     const monthlyRevenue = months.map(m => monthlyRevenueOf(m).toNumber());
 
     const monthlyNetProfit  = months.map(m => {
       const r = monthlyRevenueOf(m);
-      const cogs = COGS_ACCOUNT_CODES.reduce((s, c) => s.plus(mtd(m, c)), new Decimal(0));
-      const exp  = mtd(m, ACCOUNTS.EXPENSE_SALES).plus(mtd(m, ACCOUNTS.EXPENSE_ADMIN)).plus(mtd(m, ACCOUNTS.EXPENSE_OTHER)).plus(mtd(m,"9440"));
+      const cogs = COGS_ACCOUNT_CODES.reduce((sum, code) => sum.plus(monthlyDebitNet(m, code)), new Decimal(0));
+      const exp  = monthlyDebitNet(m, ACCOUNTS.EXPENSE_SALES).plus(monthlyDebitNet(m, ACCOUNTS.EXPENSE_ADMIN)).plus(monthlyDebitNet(m, ACCOUNTS.EXPENSE_OTHER)).plus(monthlyDebitNet(m,"9440"));
       const oi   = LINE090_CREDIT_CODES
-                     .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0))
-                     .minus(LINE090_DEBIT_CODES.reduce((s,c) => s.plus(mtd(m,c)), new Decimal(0)));
+             .reduce((sum, code) => sum.plus(monthlyCreditNet(m, code)), new Decimal(0))
+             .minus(LINE090_DEBIT_CODES.reduce((sum, code) => sum.plus(monthlyDebitNet(m, code)), new Decimal(0)));
       const fin  = [...LINE120_CODES, ...LINE130_CODES, ...LINE140_CODES, ...LINE150_CODES, ...LINE160_CODES]
-                     .reduce((s,c) => s.plus(mtc(m,c)), new Decimal(0));
+             .reduce((sum, code) => sum.plus(monthlyCreditNet(m, code)), new Decimal(0));
       const finExp = [...LINE180_CODES, ...LINE200_CODES, ...LINE210_CODES]
-                     .reduce((s,c) => s.plus(mtd(m,c)), new Decimal(0));
+             .reduce((sum, code) => sum.plus(monthlyDebitNet(m, code)), new Decimal(0));
       const pbt  = r.minus(cogs).minus(exp).plus(oi).plus(fin).minus(finExp)
-                    .plus(mtc(m,LINE230_CREDIT_CODES[0])).minus(mtd(m,LINE230_DEBIT_CODES[0]));
+            .plus(monthlyCreditNet(m,LINE230_CREDIT_CODES[0])).minus(monthlyDebitNet(m,LINE230_DEBIT_CODES[0]));
       // Нетто 9810: Дт начислений минус Кт сторно (PROFIT_TAX_REVERSAL) — в месяц
       // сторно налоговая нагрузка уменьшается, чистая прибыль растёт.
       const tax  = mtd(m,LINE250_CODES[0]).minus(mtc(m,LINE250_CODES[0]));
-      return pbt.minus(tax).minus(mtd(m,LINE260_CODES[0])).toNumber();
+      return pbt.minus(tax).minus(monthlyDebitNet(m,LINE260_CODES[0])).toNumber();
     });
 
     return NextResponse.json({
@@ -308,6 +262,9 @@ export async function GET(req: NextRequest) {
       monthlyNetProfit,
     });
   } catch (err: any) {
+    if (err instanceof InvalidReportPeriod) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

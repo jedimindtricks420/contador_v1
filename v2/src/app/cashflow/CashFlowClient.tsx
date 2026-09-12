@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { formatSum } from "@/lib/format";
 import SearchableSelect from "@/components/SearchableSelect";
+import { RefreshCw } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -51,57 +52,71 @@ function formatMonthLabel(monthKey: string): string {
 }
 
 export default function CashFlowClient() {
-  const [data, setData] = useState<CashFlowData | null>(null);
+  const [report, setReport] = useState<{ key: string; data: CashFlowData | null; error: string | null } | null>(null);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("ALL");
   const [periodType, setPeriodType] = useState<string>("YEAR"); // YEAR, QUARTER, MONTH, CUSTOM
   
   // Custom range
-  const now = new Date();
-  const [fromStr, setFromStr] = useState<string>(`${now.getFullYear()}-01-01`);
-  const [toStr, setToStr] = useState<string>(`${now.getFullYear()}-12-31`);
+  const currentYear = new Intl.DateTimeFormat("en", { timeZone: "Asia/Tashkent", year: "numeric" }).format(new Date());
+  const [fromStr, setFromStr] = useState<string>(`${currentYear}-01-01`);
+  const [toStr, setToStr] = useState<string>(`${currentYear}-12-31`);
 
-  const [loading, setLoading] = useState(true);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const requestKey = JSON.stringify([selectedAccount, periodType, fromStr, toStr, retryAttempt]);
+  const loading = report?.key !== requestKey;
+  const data = loading ? null : report?.data ?? null;
+  const error = loading ? null : report?.error ?? null;
 
   // Collapse states
   const [showIncomeDetails, setShowIncomeDetails] = useState(true);
   const [showExpenseDetails, setShowExpenseDetails] = useState(true);
 
-  const loadFilterData = async () => {
-    try {
-      const bankRes = await fetch("/v2/api/bank-accounts");
-      const accounts = await bankRes.json();
-      setBankAccounts(accounts);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadFilterData = async () => {
+      try {
+        const bankRes = await fetch("/v2/api/bank-accounts", { signal: controller.signal });
+        const accounts = await bankRes.json();
+        if (!bankRes.ok || !Array.isArray(accounts)) throw new Error("Не удалось загрузить банковские счета");
+        if (!controller.signal.aborted) setBankAccounts(accounts);
+      } catch (err) {
+        if (!controller.signal.aborted) console.error(err);
+      }
+    };
+    void loadFilterData();
+    return () => controller.abort();
+  }, []);
 
-  const loadReport = async () => {
-    setLoading(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const loadReport = async () => {
     try {
+      const currentParts = new Intl.DateTimeFormat("en", {
+        timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit",
+      }).formatToParts(new Date());
+      const year = Number(currentParts.find(part => part.type === "year")!.value);
+      const currentMonthNum = Number(currentParts.find(part => part.type === "month")!.value);
       let fromDate = fromStr;
       let toDate = toStr;
 
-      const year = now.getFullYear();
       if (periodType === "YEAR") {
         fromDate = `${year}-01-01`;
         toDate = `${year}-12-31`;
       } else if (periodType === "QUARTER") {
-        const currentMonth = now.getMonth(); // 0-11
-        const quarter = Math.floor(currentMonth / 3); // 0-3
+        const quarter = Math.floor((currentMonthNum - 1) / 3);
         const startMonthNum = quarter * 3 + 1;
         const endMonthNum = quarter * 3 + 3;
         const startMonth = String(startMonthNum).padStart(2, "0");
         // last day of quarter-end month
-        const lastDay = new Date(year, endMonthNum, 0).getDate();
+        const lastDay = new Date(Date.UTC(year, endMonthNum, 0)).getUTCDate();
         const endMonth = String(endMonthNum).padStart(2, "0");
         fromDate = `${year}-${startMonth}-01`;
         toDate = `${year}-${endMonth}-${String(lastDay).padStart(2, "0")}`;
       } else if (periodType === "MONTH") {
-        const currentMonthNum = now.getMonth() + 1;
         const currentMonthStr = String(currentMonthNum).padStart(2, "0");
-        const lastDay = new Date(year, currentMonthNum, 0).getDate();
+        const lastDay = new Date(Date.UTC(year, currentMonthNum, 0)).getUTCDate();
         fromDate = `${year}-${currentMonthStr}-01`;
         toDate = `${year}-${currentMonthStr}-${String(lastDay).padStart(2, "0")}`;
       }
@@ -113,32 +128,22 @@ export default function CashFlowClient() {
         params.append("accountId", selectedAccount);
       }
 
-      const res = await fetch(`/v2/api/cashflow?${params.toString()}`);
+      const res = await fetch(`/v2/api/cashflow?${params.toString()}`, { signal });
       const reportData = await res.json();
-      setData(reportData);
+      if (!res.ok) throw new Error(reportData.error || "Не удалось загрузить ДДС");
+      if (!Array.isArray(reportData.months) || !Array.isArray(reportData.income) ||
+          !Array.isArray(reportData.expense) || !Array.isArray(reportData.netFlow)) {
+        throw new Error("Сервер вернул некорректный отчёт ДДС");
+      }
+      if (!signal.aborted) setReport({ key: requestKey, data: reportData, error: null });
     } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      if (!signal.aborted) setReport({ key: requestKey, data: null,
+        error: err instanceof Error ? err.message : "Не удалось загрузить ДДС" });
     }
-  };
-
-  useEffect(() => {
-    loadFilterData();
-  }, []);
-
-  useEffect(() => {
-    loadReport();
-  }, [selectedAccount, periodType, fromStr, toStr]);
-
-  if (loading && !data) {
-    return (
-      <div className="flex items-center justify-center h-[300px] text-gray-500 font-medium">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-300 mr-3"></div>
-        Загрузка отчёта Cash Flow...
-      </div>
-    );
-  }
+    };
+    void loadReport();
+    return () => controller.abort();
+  }, [selectedAccount, periodType, fromStr, toStr, requestKey]);
 
   // Скрываем категории где все значения = 0
   const visibleIncome = data ? data.income.filter((cat) => cat.amounts.some((a) => a !== 0)) : [];
@@ -227,6 +232,16 @@ export default function CashFlowClient() {
           )}
         </div>
       </div>
+
+      {loading && <p role="status" className="text-sm text-gray-500">Загрузка отчёта ДДС...</p>}
+      {error && <div role="alert" className="flex items-start gap-3 border-l-2 border-rose-400 bg-rose-50 p-4 text-sm text-rose-800">
+        <p className="min-w-0 flex-1 break-words">{error}</p>
+        <button type="button" onClick={() => setRetryAttempt(attempt => attempt + 1)}
+          disabled={loading} aria-label="Повторить загрузку ДДС" title="Повторить загрузку ДДС"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded hover:bg-rose-100 disabled:opacity-50">
+          <RefreshCw size={16} />
+        </button>
+      </div>}
 
       {/* Visual Chart */}
       {data && (

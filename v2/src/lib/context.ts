@@ -15,9 +15,8 @@ export async function getUser() {
 }
 
 export async function getActiveOrgId(): Promise<string> {
-  const session = await getSession();
-  if (!session.activeOrgId) throw new Error("NO_ACTIVE_ORG");
-  return session.activeOrgId;
+  const membership = await getActiveMembership();
+  return membership.orgId;
 }
 
 export async function getActiveMembership() {

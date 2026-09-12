@@ -1,149 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
-import { ACCOUNTS } from "@/lib/constants";
+import { assertAccountingWriteRole } from "@/lib/posting/documentPolicy";
+import { isOpeningBalanceAccount, openingBalanceSchema, openingBalanceTotals } from "@/lib/openingBalanceInput";
 
-interface BalanceLine {
-  accountCode: string;
-  debit: number;
-  credit: number;
+function failure(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "UNAUTHORIZED") return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
+  if (["FORBIDDEN", "NO_ACTIVE_ORG"].includes(message)) return NextResponse.json({ error: "Нет доступа" }, { status: 403 });
+  if (error instanceof SyntaxError) return NextResponse.json({ error: "Некорректный JSON" }, { status: 400 });
+  if (error && typeof error === "object" && "code" in error && ["P2034", "P2002"].includes(String(error.code))) {
+    return NextResponse.json({ error: "Учётные данные изменились. Обновите страницу и повторите проверку." }, { status: 409 });
+  }
+  console.error("OPENING BALANCE ERROR:", error);
+  return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
 }
 
 export async function GET() {
   try {
-    const membership = await getActiveMembership();
-    const orgId = membership.orgId;
-
-    // Return existing opening balance entries
-    const existingDoc = await prisma.document.findFirst({
+    const { orgId } = await getActiveMembership();
+    const documents = await prisma.document.findMany({
       where: { orgId, type: { code: "OPENING_BALANCE" }, status: "POSTED" },
-      include: {
-        journalEntries: { include: { account: { select: { code: true, name: true } } } }
-      },
-      orderBy: { date: "asc" }
+      include: { journalEntries: { include: { account: { select: { code: true, name: true } } }, orderBy: { account: { code: "asc" } } } },
+      orderBy: [{ date: "asc" }, { id: "asc" }], take: 2,
     });
-
-    if (!existingDoc) return NextResponse.json({ lines: [] });
-
-    const lines = existingDoc.journalEntries
-      .filter(je => je.account.code !== ACCOUNTS.OPENING_BALANCE_EQUITY)
-      .map(je => ({
-        accountCode: je.account.code,
-        accountName: je.account.name,
-        debit: Number(je.debit),
-        credit: Number(je.credit)
-      }));
-
-    return NextResponse.json({ lines, documentId: existingDoc.id });
-  } catch (err: any) {
-    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
-    return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
+    if (documents.length > 1) return NextResponse.json({ error: "Найдены несколько начальных балансов. Требуется сверка истории.", code: "OPENING_BALANCE_REQUIRES_REVIEW" }, { status: 409 });
+    const document = documents[0];
+    if (!document) return NextResponse.json({ lines: [] });
+    const lines = document.journalEntries.map(entry => ({
+      accountCode: entry.account.code, accountName: entry.account.name,
+      debit: entry.debit.toFixed(2), credit: entry.credit.toFixed(2),
+    }));
+    const date = new Date(document.date.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    return NextResponse.json({ lines, date, documentId: document.id, totals: openingBalanceTotals(lines), readOnly: true });
+  } catch (error) {
+    return failure(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const membership = await getActiveMembership();
-    const orgId = membership.orgId;
-    const { lines, date }: { lines: BalanceLine[]; date: string } = await req.json();
+    const { orgId, userId, role } = await getActiveMembership();
+    assertAccountingWriteRole(role);
+    const parsed = openingBalanceSchema.safeParse(await req.json());
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Неверные остатки" }, { status: 400 });
+    const { lines, date } = parsed.data;
+    const year = Number(date.slice(0, 4));
+    const month = Number(date.slice(5, 7));
+    const balanceDate = new Date(`${date}T00:00:00+05:00`);
 
-    if (!lines || lines.length === 0) {
-      return NextResponse.json({ error: "Нужна хотя бы одна строка" }, { status: 400 });
-    }
-
-    // Find earliest open period or create one
-    let period = await prisma.period.findFirst({
-      where: { orgId, status: "OPEN" },
-      orderBy: [{ year: "asc" }, { month: "asc" }]
-    });
-    if (!period) {
-      const now = new Date();
-      period = await prisma.period.create({
-        data: { orgId, year: now.getFullYear(), month: now.getMonth() + 1, status: "OPEN", mode: "ACTIVE" }
-      });
-    }
-
-    const balanceDate = date ? new Date(date) : new Date(period.year, period.month - 1, 1);
-
-    // Reject unbalanced input up front — no more silent parking of the difference
-    // on 8890. The caller must add the missing line themselves (see 8890's real
-    // purpose: "Прочие целевые поступления", not a balancing plug).
-    let totalDebitCheck = 0;
-    let totalCreditCheck = 0;
-    for (const line of lines) {
-      totalDebitCheck += line.debit;
-      totalCreditCheck += line.credit;
-    }
-    const diffCheck = Math.round((totalDebitCheck - totalCreditCheck) * 100) / 100;
-    if (diffCheck !== 0) {
-      return NextResponse.json(
-        { error: `Строки не сбалансированы. Разница: ${diffCheck}. Добавьте недостающую проводку (например, по уставному капиталу или нераспределённой прибыли).` },
-        { status: 400 }
-      );
-    }
-
-    // Ensure OPENING_BALANCE document type exists
-    let obType = await prisma.documentType.findUnique({ where: { code: "OPENING_BALANCE" } });
-    if (!obType) {
-      obType = await prisma.documentType.create({
-        data: {
-          code: "OPENING_BALANCE",
-          name: "Ввод начальных остатков",
-          mode: "MANUAL_ONLY",
-          postingTemplate: { lines: [], opensItem: false }
-        }
-      });
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      // Void/delete existing opening balance doc
-      const existing = await tx.document.findFirst({
-        where: { orgId, type: { code: "OPENING_BALANCE" }, status: "POSTED" }
-      });
-      if (existing) {
-        await tx.journalEntry.deleteMany({ where: { documentId: existing.id } });
-        await tx.document.update({ where: { id: existing.id }, data: { status: "VOIDED" } });
+    return await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Organization" WHERE "id" = ${orgId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "Period" WHERE "orgId" = ${orgId} ORDER BY "year", "month" FOR NO KEY UPDATE`;
+      const period = await tx.period.findFirst({ where: { orgId, year, month } });
+      if (!period) return NextResponse.json({ error: "Сначала создайте период, соответствующий дате остатков" }, { status: 400 });
+      if (period.status !== "OPEN" || period.lockDate !== null) {
+        return NextResponse.json({ error: "Период закрыт или заблокирован" }, { status: 409 });
       }
-
-      // Create new document
-      const doc = await tx.document.create({
-        data: {
-          orgId,
-          periodId: period!.id,
-          typeId: obType!.id,
-          date: balanceDate,
-          status: "POSTED",
-          payload: { note: "Ввод начальных остатков" } as any
-        }
-      });
-
-      // Build journal entries — balance already verified above (diffCheck === 0),
-      // so no plug entry into 8890 is needed here.
-      const entries: any[] = [];
-
-      for (const line of lines) {
-        if (line.debit === 0 && line.credit === 0) continue;
-        const account = await tx.account.findUnique({ where: { code: line.accountCode } });
-        if (!account) throw new Error(`Счёт ${line.accountCode} не найден`);
-
-        entries.push({
-          documentId: doc.id,
-          accountId: account.id,
-          debit: line.debit,
-          credit: line.credit,
-          date: balanceDate
-        });
+      const existing = await tx.document.findFirst({ where: { orgId }, select: { id: true } });
+      if (existing) return NextResponse.json({
+        error: "В организации уже есть документы. Изменение начального баланса требует контролируемой корректировки без удаления истории.",
+        code: "OPENING_BALANCE_REQUIRES_REVIEW",
+      }, { status: 409 });
+      const closed = await tx.period.findFirst({ where: { orgId, OR: [{ status: { not: "OPEN" } }, { lockDate: { not: null } }, { closingData: { not: Prisma.DbNull } }] }, select: { id: true } });
+      if (closed) return NextResponse.json({ error: "В организации есть закрытие или блокировка периода" }, { status: 409 });
+      const accounts = await tx.account.findMany({ where: { code: { in: lines.map(line => line.accountCode) } }, include: { _count: { select: { children: true } } } });
+      if (accounts.length !== lines.length || accounts.some(account => !isOpeningBalanceAccount(account))) {
+        return NextResponse.json({ error: "Допустимы только действующие проводимые балансовые счета; групповые, транзитные и забалансовые счета запрещены" }, { status: 400 });
       }
-
-      await tx.journalEntry.createMany({ data: entries });
-
-      return doc;
-    });
-
-    return NextResponse.json({ id: result.id }, { status: 201 });
-  } catch (err: any) {
-    console.error("OPENING BALANCE POST ERROR:", err);
-    if (err.message === "UNAUTHORIZED" || err.message === "NO_ACTIVE_ORG") return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
-    return NextResponse.json({ error: "Внутренняя ошибка сервера" }, { status: 500 });
+      const type = await tx.documentType.upsert({
+        where: { code: "OPENING_BALANCE" }, update: {},
+        create: { code: "OPENING_BALANCE", name: "Ввод начальных остатков", mode: "MANUAL_ONLY", postingTemplate: { lines: [], opensItem: false } },
+      });
+      const totals = openingBalanceTotals(lines);
+      const document = await tx.document.create({ data: {
+        orgId, periodId: period.id, typeId: type.id, date: balanceDate, status: "POSTED",
+        payload: { note: "Ввод начальных остатков", version: 1, date, lines, totals },
+        journalEntries: { create: lines.map(line => ({
+          accountId: accounts.find(account => account.code === line.accountCode)!.id,
+          debit: line.debit, credit: line.credit, date: balanceDate,
+        })) },
+      } });
+      await tx.auditLog.create({ data: {
+        orgId, userId, action: "CREATE_OPENING_BALANCE", entityType: "Document", entityId: document.id,
+        newValue: { version: 1, date, periodId: period.id, lines, totals },
+      } });
+      return NextResponse.json({ id: document.id, totals }, { status: 201 });
+    }, { maxWait: 5000, timeout: 15000 });
+  } catch (error) {
+    return failure(error);
   }
 }

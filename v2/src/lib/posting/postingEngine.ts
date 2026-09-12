@@ -2,7 +2,23 @@ import prisma from "../prisma";
 import { evaluate } from "./expressionEval";
 import Decimal from "decimal.js";
 import { getRiskDeadline } from "../openItems";
-import { TAX_RATES, SALARY_EXPENSE_ACCOUNT_CODES, AMOUNT_TOLERANCE } from "../constants";
+import { TAX_RATES, SALARY_EXPENSE_ACCOUNT_CODES } from "../constants";
+import { PostingValidationError } from "./errors";
+
+type PostingResult = { journalEntries: any[]; openItem: any };
+
+function resolveAccountCode(reference: unknown, payload: Record<string, any>): string {
+  if (typeof reference !== "string" || !reference.trim()) {
+    throw new Error("Некорректный код счёта в шаблоне");
+  }
+  if (!reference.startsWith("$")) return reference;
+  const fieldName = reference.slice(1);
+  const value = Object.hasOwn(payload, fieldName) ? payload[fieldName] : undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`Обязательное поле "${fieldName}" не указано в данных документа (нужен код счёта)`);
+  }
+  return value.trim();
+}
 
 /**
  * Posts a document by resolving its templates, evaluating mathematical expressions,
@@ -12,7 +28,18 @@ export async function postDocument(
   documentId: string,
   tx: any = prisma,
   passedUserId?: string
-) {
+): Promise<PostingResult> {
+  if (typeof tx.$transaction === "function") {
+    return tx.$transaction(
+      (transaction: any) => postDocumentInTransaction(documentId, transaction, passedUserId),
+      { maxWait: 5000, timeout: 30000 }
+    );
+  }
+  return postDocumentInTransaction(documentId, tx, passedUserId);
+}
+
+async function postDocumentInTransaction(documentId: string, tx: any, passedUserId?: string) {
+  await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
   // 1. Fetch Document and type
   const doc = await tx.document.findUnique({
     where: { id: documentId },
@@ -21,16 +48,36 @@ export async function postDocument(
 
   if (!doc) throw new Error("Документ не найден");
   if (doc.status === "VOIDED") {
-    return { journalEntries: [] };
+    throw new Error("Сторнированный документ нельзя провести повторно");
   }
 
   // 2. Check period lock
+  await tx.$queryRaw`SELECT "id" FROM "Period" WHERE "id" = ${doc.periodId} FOR NO KEY UPDATE`;
   const period = await tx.period.findUnique({
     where: { id: doc.periodId }
   });
   if (!period) throw new Error("Период не найден");
+  if (period.orgId !== doc.orgId) {
+    throw new Error("Период не принадлежит организации документа");
+  }
   if (period.status === "CLOSED" || period.lockDate !== null) {
     throw new Error("Период закрыт для редактирования");
+  }
+
+  const accountingDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent", year: "numeric", month: "numeric"
+  }).formatToParts(doc.date);
+  const year = Number(accountingDate.find((part) => part.type === "year")?.value);
+  const month = Number(accountingDate.find((part) => part.type === "month")?.value);
+  if (year !== period.year || month !== period.month) {
+    throw new Error("Дата документа не входит в выбранный период (Asia/Tashkent)");
+  }
+
+  const existingEntry = await tx.journalEntry.findFirst({
+    where: { documentId: doc.id }, select: { id: true }
+  });
+  if (existingEntry) {
+    throw new Error("Документ уже проведён; повторное проведение запрещено");
   }
 
   // 3. Fetch Organization to verify VAT status
@@ -39,35 +86,7 @@ export async function postDocument(
   });
   if (!org) throw new Error("Организация не найдена");
 
-  // 4. Resolve counterparty
   const payload = (doc.payload || {}) as Record<string, any>;
-  let counterpartyId: string | null = null;
-  const payloadInn = payload.counterpartyInn;
-  const payloadHint = payload.counterpartyHint;
-
-  if (payloadInn || payloadHint) {
-    let counterparty = null;
-    if (payloadInn) {
-      counterparty = await tx.counterparty.findFirst({
-        where: { orgId: doc.orgId, inn: String(payloadInn) }
-      });
-    } else if (payloadHint) {
-      counterparty = await tx.counterparty.findFirst({
-        where: { orgId: doc.orgId, name: { equals: String(payloadHint), mode: "insensitive" } }
-      });
-    }
-
-    if (!counterparty) {
-      counterparty = await tx.counterparty.create({
-        data: {
-          orgId: doc.orgId,
-          name: payloadHint || `Контрагент ИНН ${payloadInn}`,
-          inn: payloadInn ? String(payloadInn) : null
-        }
-      });
-    }
-    counterpartyId = counterparty.id;
-  }
 
   // 5. Build evaluation context payload
   const evalPayload = {
@@ -79,6 +98,34 @@ export async function postDocument(
   const template = doc.type.postingTemplate as any;
   if (!template || !Array.isArray(template.lines)) {
     throw new Error("Шаблон проводок документа пуст или некорректен");
+  }
+
+  if ((payload.contractId !== undefined && payload.contractId !== null && payload.contractId !== "") ||
+      template.lines.some((line: any) => line.subcontoType === "contract")) {
+    throw new Error("Договорная аналитика требует проверяемого реестра договоров; проведение остановлено");
+  }
+  for (const field of ["counterpartyId", "counterpartyInn", "counterpartyHint"]) {
+    if (payload[field] !== undefined && payload[field] !== null && typeof payload[field] !== "string") {
+      throw new Error(`Поле ${field} должно быть строкой`);
+    }
+  }
+  const explicitCounterpartyId = payload.counterpartyId?.trim();
+  if (payload.counterpartyId !== undefined && payload.counterpartyId !== null && !explicitCounterpartyId) {
+    throw new Error("Идентификатор контрагента не может быть пустым");
+  }
+
+  const isLongTermLoan = ["LONG_TERM_LOAN_RECEIVED", "LONG_TERM_LOAN_REPAYMENT"].includes(doc.type.code);
+  if (isLongTermLoan && !["7810", "7820"].includes(resolveAccountCode("$loanAccountCode", payload))) {
+    throw new Error("Допустимые счета долгосрочного кредита/займа: 7810, 7820");
+  }
+  const openingAccountCode = template.opensItem
+    ? resolveAccountCode(template.itemAccountCode, payload) : null;
+  const closingAccountCode = template.closesOpenItemByAccount
+    ? resolveAccountCode(template.closesOpenItemByAccount, payload) : null;
+  const selectedOpenItemId = payload.openItemId;
+  if (selectedOpenItemId !== undefined &&
+      (typeof selectedOpenItemId !== "string" || !selectedOpenItemId.trim() || !closingAccountCode)) {
+    throw new Error("Выбранная задолженность требует корректного идентификатора и счёта погашения");
   }
 
   // Guard: CAPITAL_CONTRIBUTION credits 4610 (debt of the founders towards the
@@ -113,7 +160,7 @@ export async function postDocument(
   // Same rollback behaviour as the CAPITAL_CONTRIBUTION guard above.
   if (doc.type.code === "VAT_OFFSET") {
     const soliqDoc = await tx.document.findFirst({
-      where: { periodId: doc.periodId, type: { code: "SOLIQ_IMPORT" }, status: "POSTED" }
+      where: { periodId: doc.periodId, orgId: doc.orgId, type: { code: "SOLIQ_IMPORT" }, status: "POSTED" }
     });
     if (!soliqDoc) {
       throw new Error("Зачёт НДС невозможен: для этого периода ещё не загружен отчёт Soliq (Шаг 6 закрытия).");
@@ -154,24 +201,20 @@ export async function postDocument(
     }
   }
 
-  const entries: any[] = [];
+  const preparedEntries: { line: any; accountId: string; amount: Decimal }[] = [];
 
   // 6. Generate entries
   for (const line of template.lines) {
+    if (line.side !== "debit" && line.side !== "credit") {
+      throw new Error("Некорректная сторона проводки: ожидается debit или credit");
+    }
     if (line.condition) {
       const condResult = evaluate(line.condition, evalPayload);
       if (condResult.isZero()) continue;
     }
 
     // Find account — supports "$fieldName" for payload-driven dynamic account codes
-    let resolvedAccountCode: string = line.accountCode;
-    if (resolvedAccountCode.startsWith("$")) {
-      const fieldName = resolvedAccountCode.slice(1);
-      resolvedAccountCode = (payload[fieldName] as string) || "";
-      if (!resolvedAccountCode) {
-        throw new Error(`Обязательное поле "${fieldName}" не указано в данных документа (нужен код счёта)`);
-      }
-    }
+    const resolvedAccountCode = resolveAccountCode(line.accountCode, payload);
 
     const account = await tx.account.findUnique({
       where: { code: resolvedAccountCode }
@@ -182,30 +225,127 @@ export async function postDocument(
 
     // Calculate amount
     const amt = evaluate(line.expression, evalPayload);
+    if (!amt.isFinite() || amt.isNegative()) {
+      throw new Error("Сумма проводки должна быть конечной и неотрицательной");
+    }
+    if (amt.decimalPlaces() > 2 || amt.gte("1000000000000000000")) {
+      throw new Error("Сумма проводки не представима в Decimal(20,2) без округления или переполнения");
+    }
     if (amt.isZero()) continue; // Skip zero amount entries
 
-    entries.push({
-      documentId: doc.id,
-      accountId: account.id,
-      debit: line.side === "debit" ? amt : new Decimal(0),
-      credit: line.side === "credit" ? amt : new Decimal(0),
-      date: doc.date,
-      counterpartyId: line.subcontoType === "counterparty" ? counterpartyId : null,
-      contractId: line.subcontoType === "contract" ? (payload.contractId as string) || null : null
-    });
+    if (resolvedAccountCode === "4410" && org.isVatPayer !== true) {
+      throw new PostingValidationError("Проводки по входному НДС (4410) требуют статуса плательщика НДС. Учёт НДС в стоимости требует отдельного подтверждённого правила операции.");
+    }
+
+    preparedEntries.push({ line, accountId: account.id, amount: amt });
+  }
+
+  if (preparedEntries.length === 0) {
+    throw new Error("Документ не содержит ненулевых проводок");
   }
 
   // 7. Verify balance (Σ Debit = Σ Credit)
-  let totalDebit = new Decimal(0);
-  let totalCredit = new Decimal(0);
-  for (const entry of entries) {
-    totalDebit = totalDebit.plus(entry.debit);
-    totalCredit = totalCredit.plus(entry.credit);
+  let totalDebitCents = BigInt(0);
+  let totalCreditCents = BigInt(0);
+  for (const entry of preparedEntries) {
+    const cents = BigInt(entry.amount.toFixed(2).replace(".", ""));
+    if (entry.line.side === "debit") totalDebitCents += cents;
+    else totalCreditCents += cents;
   }
 
-  if (!totalDebit.equals(totalCredit)) {
+  const formatCents = (cents: bigint) => `${cents / BigInt(100)}.${(cents % BigInt(100)).toString().padStart(2, "0")}`;
+  const totalDebit = formatCents(totalDebitCents);
+  const totalCredit = formatCents(totalCreditCents);
+  if (totalDebitCents !== totalCreditCents) {
     throw new Error(`Несбалансированная проводка для документа ${doc.id}: Дт=${totalDebit.toString()} Кт=${totalCredit.toString()}`);
   }
+
+  const payloadInn = typeof payload.counterpartyInn === "string" ? payload.counterpartyInn.trim() : payload.counterpartyInn;
+  const payloadHint = typeof payload.counterpartyHint === "string" ? payload.counterpartyHint.trim() : undefined;
+  const needsItemAmount = openingAccountCode || (closingAccountCode && (explicitCounterpartyId || payloadInn || payloadHint));
+  const itemAmount = needsItemAmount ? evaluate("amount", evalPayload) : null;
+  if (itemAmount && (!itemAmount.isFinite() || itemAmount.lte(0) ||
+      itemAmount.decimalPlaces() > 2 || itemAmount.gte("1000000000000000000"))) {
+    throw new Error("Сумма задолженности должна быть положительной и представимой в Decimal(20,2) без округления или переполнения");
+  }
+
+  let counterpartyId: string | null = null;
+  if ((template.requiresCounterparty || isLongTermLoan) && !explicitCounterpartyId && !payloadInn && !payloadHint) {
+    throw new Error("Для проведения документа обязателен контрагент");
+  }
+
+  if (explicitCounterpartyId) {
+    const counterparty = await tx.counterparty.findFirst({
+      where: { id: explicitCounterpartyId, orgId: doc.orgId },
+    });
+    if (!counterparty) throw new Error("Контрагент не найден в организации документа");
+    if (payloadInn && counterparty.inn?.trim() !== payloadInn) {
+      throw new Error("ИНН не совпадает с выбранным контрагентом");
+    }
+    counterpartyId = counterparty.id;
+  } else if (payloadInn || payloadHint) {
+    let counterparty = null;
+    if (payloadInn) {
+      counterparty = await tx.counterparty.findFirst({
+        where: { orgId: doc.orgId, inn: String(payloadInn) }
+      });
+    } else if (payloadHint) {
+      counterparty = await tx.counterparty.findFirst({
+        where: { orgId: doc.orgId, name: { equals: String(payloadHint), mode: "insensitive" } }
+      });
+    }
+
+    if (!counterparty) {
+      counterparty = await tx.counterparty.create({
+        data: {
+          orgId: doc.orgId,
+          name: payloadHint || `Контрагент ИНН ${payloadInn}`,
+          inn: payloadInn ? String(payloadInn) : null
+        }
+      });
+    }
+    counterpartyId = counterparty.id;
+  }
+
+  if (selectedOpenItemId && !counterpartyId) throw new Error("Для выбранной задолженности требуется контрагент");
+  let itemToClose: { id: string } | null = null;
+  if (closingAccountCode && counterpartyId) {
+    const closeAccount = await tx.account.findUnique({ where: { code: closingAccountCode } });
+    if (!closeAccount) throw new Error("Счёт погашения задолженности не найден");
+    await tx.$queryRaw`SELECT "id" FROM "OpenItem"
+      WHERE "orgId" = ${doc.orgId} AND "accountId" = ${closeAccount.id}
+        AND "counterpartyId" = ${counterpartyId} AND "status" IN ('OPEN', 'RISK')
+        AND "dateOpened" <= ${doc.date}
+        AND (${selectedOpenItemId ?? null}::text IS NULL OR "id" = ${selectedOpenItemId ?? null})
+      ORDER BY "dateOpened", "id" FOR UPDATE`;
+    const candidates = await tx.openItem.findMany({
+      where: { orgId: doc.orgId, accountId: closeAccount.id, counterpartyId,
+        ...(selectedOpenItemId ? { id: selectedOpenItemId } : {}),
+        status: { in: ["OPEN", "RISK"] }, dateOpened: { lte: doc.date } },
+      orderBy: [{ dateOpened: "asc" }, { id: "asc" }]
+    });
+    itemToClose = candidates.find((item: any) =>
+      (!selectedOpenItemId || item.id === selectedOpenItemId) && new Decimal(item.amount.toString()).equals(itemAmount!)) ?? null;
+    if (selectedOpenItemId && !itemToClose) {
+      throw new Error("Выбранная задолженность недоступна или не соответствует сумме и реквизитам платежа");
+    }
+    if (!itemToClose && candidates.length > 0) {
+      throw new Error("Частичное погашение или переплата требуют регистра распределений; автоматическое закрытие задолженности остановлено");
+    }
+    if (!itemToClose && (template.requireCloseMatch || isLongTermLoan)) {
+      throw new Error(`У контрагента нет открытого долга на счёте ${closingAccountCode}`);
+    }
+  }
+
+  const entries = preparedEntries.map(({ line, accountId, amount }) => ({
+    documentId: doc.id,
+    accountId,
+    debit: line.side === "debit" ? amount : new Decimal(0),
+    credit: line.side === "credit" ? amount : new Decimal(0),
+    date: doc.date,
+    counterpartyId: line.subcontoType === "counterparty" ? counterpartyId : null,
+    contractId: null
+  }));
 
   // 8. Write entries to database
   const createdEntries: any[] = [];
@@ -218,19 +358,15 @@ export async function postDocument(
 
   // 9. OpenItem creation
   let openItem: any = null;
-  if (template.opensItem && template.itemAccountCode) {
+  if (openingAccountCode) {
     const bufferAccount = await tx.account.findUnique({
-      where: { code: template.itemAccountCode }
+      where: { code: openingAccountCode }
     });
     if (!bufferAccount) {
-      throw new Error(`Буферный счёт ${template.itemAccountCode} не найден в плане счетов`);
+      throw new Error(`Буферный счёт ${openingAccountCode} не найден в плане счетов`);
     }
 
-    const itemAmount = evaluate("amount", evalPayload);
-    if (itemAmount.isZero()) {
-      throw new Error(`OpenItem не создан: поле "amount" равно нулю или отсутствует в payload документа ${doc.id}`);
-    }
-    const riskDeadline = getRiskDeadline(template.itemAccountCode, doc.date, org.settings);
+    const riskDeadline = getRiskDeadline(openingAccountCode, doc.date, org.settings);
 
     openItem = await tx.openItem.create({
       data: {
@@ -247,51 +383,12 @@ export async function postDocument(
     });
   }
 
-  // 9b. Auto-close an existing OpenItem when the template declares closesOpenItemByAccount.
-  // Used by SUPPLIER_REFUND (closes 4310 advance) and ADVANCE_RETURN_SENT (closes 6310 advance).
-  if (template.closesOpenItemByAccount && counterpartyId) {
-    const closeAccount = await tx.account.findUnique({
-      where: { code: template.closesOpenItemByAccount }
+  if (itemToClose) {
+    const closed = await tx.openItem.updateMany({
+      where: { id: itemToClose.id, orgId: doc.orgId, status: { in: ["OPEN", "RISK"] } },
+      data: { status: "CLOSED", dateClosed: doc.date, closingDocumentId: doc.id }
     });
-    if (closeAccount) {
-      const docAmount = evaluate("amount", evalPayload);
-      // Find the best matching open item: same counterparty + same account + closest amount
-      const candidates = await tx.openItem.findMany({
-        where: {
-          orgId: doc.orgId,
-          accountId: closeAccount.id,
-          counterpartyId,
-          status: "OPEN"
-        },
-        orderBy: { dateOpened: "asc" }
-      });
-      // Prefer exact amount match, otherwise take the oldest open item
-      const exactMatch = candidates.find((c: any) =>
-        new Decimal(c.amount.toString()).minus(docAmount).abs().lessThan(AMOUNT_TOLERANCE)
-      );
-      const toClose = exactMatch ?? candidates[0] ?? null;
-      if (!toClose && template.requireCloseMatch) {
-        throw new Error(
-          `У этого контрагента нет открытого долга на счёте ${template.closesOpenItemByAccount} — ` +
-          `похоже, это аванс, а не погашение существующей задолженности. ` +
-          `Используйте категорию «Предоплата поставщику» (ADVANCE_PAID) вместо этой.`
-        );
-      }
-      if (toClose) {
-        // updateMany with status: "OPEN" in the WHERE (instead of update by id alone)
-        // makes this an optimistic-concurrency check: if two documents concurrently
-        // targeting the same counterparty+account both pick this same OpenItem as
-        // toClose, only the first one's write actually matches a row (count === 1);
-        // the second one's WHERE no longer matches (status is already "CLOSED") and
-        // silently updates zero rows instead of overwriting the first one's
-        // closingDocumentId — same "best-effort, skip if nothing to close" behaviour
-        // as when candidates is empty.
-        await tx.openItem.updateMany({
-          where: { id: toClose.id, status: "OPEN" },
-          data: { status: "CLOSED", dateClosed: doc.date, closingDocumentId: doc.id }
-        });
-      }
-    }
+    if (closed.count !== 1) throw new Error("Задолженность уже изменена; проведение отменено");
   }
 
   // 10. Audit Log
@@ -311,58 +408,12 @@ export async function postDocument(
     }
   });
 
-  // Update tax calendar events dynamically for the period
-  try {
-    const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
-    await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
-    await tx.document.update({
-      where: { id: doc.id },
-      data: { taxCalendarSyncStatus: "OK", taxCalendarSyncError: null }
-    });
-  } catch (err: any) {
-    console.error("Failed to dynamically update tax calendar events in postDocument:", err.message);
-    await tx.document.update({
-      where: { id: doc.id },
-      data: { taxCalendarSyncStatus: "FAILED", taxCalendarSyncError: err.message?.slice(0, 500) || "Unknown error" }
-    });
-  }
-
-  // Auto-close TaxCalendarEvents when a tax payment document is posted.
-  // TAX_PAYMENT covers all budget taxes (VAT, НДФЛ, profit tax, turnover tax).
-  // SOCIAL_TAX_PAYMENT covers social tax only.
-  // We close PENDING events whose due date has already passed (lte payment date),
-  // meaning the tax was accrued and is now being paid.
-  if (doc.type.code === "TAX_PAYMENT") {
-    await tx.taxCalendarEvent.updateMany({
-      where: {
-        orgId: doc.orgId,
-        type: { in: ["VAT", "PERSONAL_INCOME_TAX", "PROFIT_TAX", "TURNOVER_TAX"] as any[] },
-        status: "PENDING",
-        dueDate: { lte: doc.date }
-      },
-      data: { status: "DONE" }
-    });
-  } else if (doc.type.code === "SOCIAL_TAX_PAYMENT") {
-    await tx.taxCalendarEvent.updateMany({
-      where: {
-        orgId: doc.orgId,
-        type: "SOCIAL_TAX" as any,
-        status: "PENDING",
-        dueDate: { lte: doc.date }
-      },
-      data: { status: "DONE" }
-    });
-  } else if (doc.type.code === "INPS_PAYMENT") {
-    await tx.taxCalendarEvent.updateMany({
-      where: {
-        orgId: doc.orgId,
-        type: "INPS" as any,
-        status: "PENDING",
-        dueDate: { lte: doc.date }
-      },
-      data: { status: "DONE" }
-    });
-  }
+  const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
+  await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
+  await tx.document.update({
+    where: { id: doc.id },
+    data: { taxCalendarSyncStatus: "OK", taxCalendarSyncError: null }
+  });
 
   return { journalEntries: createdEntries, openItem };
 }
@@ -376,6 +427,17 @@ export async function voidDocument(
   tx: any = prisma,
   passedUserId?: string
 ) {
+  if (typeof tx.$transaction === "function") {
+    return tx.$transaction(
+      (transaction: any) => voidDocumentInTransaction(documentId, transaction, passedUserId),
+      { maxWait: 5000, timeout: 30000 }
+    );
+  }
+  return voidDocumentInTransaction(documentId, tx, passedUserId);
+}
+
+async function voidDocumentInTransaction(documentId: string, tx: any, passedUserId?: string) {
+  await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
   // 1. Fetch document
   const doc = await tx.document.findUnique({
     where: { id: documentId }
@@ -383,13 +445,31 @@ export async function voidDocument(
 
   if (!doc) throw new Error("Документ не найден");
 
+  if (doc.status === "VOIDED") return;
+
   // 2. Check period lock
+  await tx.$queryRaw`SELECT "id" FROM "Period" WHERE "id" = ${doc.periodId} FOR NO KEY UPDATE`;
   const period = await tx.period.findUnique({
     where: { id: doc.periodId }
   });
   if (!period) throw new Error("Период не найден");
+  if (period.orgId !== doc.orgId) {
+    throw new Error("Период не принадлежит организации документа");
+  }
   if (period.status === "CLOSED" || period.lockDate !== null) {
     throw new Error("Период закрыт для редактирования");
+  }
+
+  await tx.$queryRaw`SELECT "id" FROM "OpenItem"
+    WHERE "orgId" = ${doc.orgId}
+      AND ("openingDocumentId" = ${documentId} OR "closingDocumentId" = ${documentId})
+    ORDER BY "dateOpened", "id" FOR UPDATE`;
+  const settledDebt = await tx.openItem.findFirst({
+    where: { orgId: doc.orgId, openingDocumentId: documentId, closingDocumentId: { not: null } },
+    select: { id: true },
+  });
+  if (settledDebt) {
+    throw new Error("Задолженность документа уже погашена; сначала отмените документ расчёта");
   }
 
   // 3. Mark document status as VOIDED. Clear sourceTransactionId too — it has a
@@ -407,7 +487,7 @@ export async function voidDocument(
 
   // 5. Close related OpenItems opened by this document
   await tx.openItem.updateMany({
-    where: { openingDocumentId: documentId, status: "OPEN" },
+    where: { orgId: doc.orgId, openingDocumentId: documentId, status: { in: ["OPEN", "RISK"] } },
     data: {
       status: "CLOSED",
       dateClosed: new Date()
@@ -417,14 +497,14 @@ export async function voidDocument(
   // 5b-revert. Re-open any items that were auto-closed by this document (closesOpenItemByAccount).
   // After void, those items are no longer settled and must go back to OPEN status.
   await tx.openItem.updateMany({
-    where: { closingDocumentId: documentId },
+    where: { orgId: doc.orgId, closingDocumentId: documentId },
     data: { status: "OPEN", dateClosed: null, closingDocumentId: null }
   });
 
   // 5b. Return the bank transaction to the clarification queue if this document
   //     was created from a staged transaction (AUTO_MATCHED or CONFIRMED by user).
   await tx.stagedTransaction.updateMany({
-    where: { documentId },
+    where: { orgId: doc.orgId, documentId },
     data: { status: "NEEDS_CLARIFICATION", documentId: null }
   });
 
@@ -441,21 +521,12 @@ export async function voidDocument(
     }
   });
 
-  // Update tax calendar events dynamically for the period
-  try {
-    const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
-    await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
-    await tx.document.update({
-      where: { id: doc.id },
-      data: { taxCalendarSyncStatus: "OK", taxCalendarSyncError: null }
-    });
-  } catch (err: any) {
-    console.error("Failed to dynamically update tax calendar events in voidDocument:", err.message);
-    await tx.document.update({
-      where: { id: doc.id },
-      data: { taxCalendarSyncStatus: "FAILED", taxCalendarSyncError: err.message?.slice(0, 500) || "Unknown error" }
-    });
-  }
+  const { upsertTaxCalendarEventsForPeriod } = await import("../closing");
+  await upsertTaxCalendarEventsForPeriod(doc.periodId, doc.orgId, tx);
+  await tx.document.update({
+    where: { id: doc.id },
+    data: { taxCalendarSyncStatus: "OK", taxCalendarSyncError: null }
+  });
 }
 
 /**
@@ -469,7 +540,18 @@ export async function repostDocument(
   newTypeId: string,
   tx: any = prisma,
   passedUserId?: string
-) {
+): Promise<PostingResult> {
+  if (typeof tx.$transaction === "function") {
+    return tx.$transaction(
+      (transaction: any) => repostDocumentInTransaction(documentId, newTypeId, transaction, passedUserId),
+      { maxWait: 5000, timeout: 30000 }
+    );
+  }
+  return repostDocumentInTransaction(documentId, newTypeId, tx, passedUserId);
+}
+
+async function repostDocumentInTransaction(documentId: string, newTypeId: string, tx: any, passedUserId?: string) {
+  await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
   // Save linked staged transaction IDs before voiding clears them
   const linkedStagedTxs = await tx.stagedTransaction.findMany({
     where: { documentId },

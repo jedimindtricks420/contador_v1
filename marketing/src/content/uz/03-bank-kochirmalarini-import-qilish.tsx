@@ -10,7 +10,7 @@ const STEPS = [
   {
     num: 2,
     title: "Ko‘chirma faylini yuklang",
-    desc: "Format avtomatik aniqlanadi: .txt, .xls yoki .xlsx.",
+    desc: "1CClientBankExchange (.txt), 5 MiB va 1000 ta operatsiyagacha.",
   },
   {
     num: 3,
@@ -20,7 +20,7 @@ const STEPS = [
   {
     num: 4,
     title: "Xato bo‘lsa — importni bekor qiling",
-    desc: "Rollback faqat shu yuklashdagi operatsiyalarni olib tashlaydi, davrning boshqa ma’lumotlariga tegmaydi.",
+    desc: "Egasi yoki administrator ishlov berilmagan importni hisob va ochiq davrlar o‘zgarmagan bo‘lsa bekor qilishi mumkin.",
   },
 ];
 
@@ -36,7 +36,7 @@ export default function Body({ topic }: { topic: Topic }) {
     <div className="space-y-12">
       <Hero
         h1={topic.locales.uz.h1}
-        lead="Bank ko‘chirmasini import qilish — Contador’da oyni yopish ustasining birinchi bosqichi. Fayl formati avtomatik aniqlanadi, xato yuklashni bekor qilish mumkin."
+        lead="1CClientBankExchange (.txt) bank ko‘chirmasini import qilish — Contador’da oyni yopish ustasining birinchi bosqichi. Ishlov berilmagan xato import hisob va davrlar holati tekshirilgandan keyin bekor qilinishi mumkin."
       />
 
       <section aria-labelledby="h2-formats">
@@ -44,9 +44,9 @@ export default function Body({ topic }: { topic: Topic }) {
           Qaysi fayllar qo‘llab-quvvatlanadi
         </h2>
         <p className="mt-3 text-sm text-gray-600">
-          .txt, .xlsx va .xls formatlari qo‘llab-quvvatlanadi. Format yuklashda avtomatik aniqlanadi — alohida
-          ko‘rsatish shart emas. .txt fayli ko‘plab bank-mijoz dasturlari eksport qiladigan 1CClientBankExchange
-          formatiga mos keladi; .xls/.xlsx — Excel jadval ko‘chirmasi.
+          1CClientBankExchange (.txt), 5 MiB va 1000 ta operatsiyagacha qo‘llab-quvvatlanadi.
+          Hisob raqami, davr, boshlang‘ich va yakuniy qoldiqlar talab qilinadi. Bankning Excel
+          jadvallari hozir qabul qilinmaydi; kengaytmani almashtirish fayl formatini o‘zgartirmaydi.
         </p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[480px] border-collapse text-left text-sm">
@@ -96,10 +96,9 @@ export default function Body({ topic }: { topic: Topic }) {
           Takroriy import bilan ishlash
         </h2>
         <p className="mt-3 text-sm text-gray-600">
-          Fayl xato yoki noto‘g‘ri yuklangan bo‘lsa, alohida importni bekor qilish (rollback) funksiyasi mavjud: u
-          faqat shu yuklashdagi operatsiyalarni olib tashlaydi, davrning boshqa ma’lumotlariga tegmaydi. Contador
-          barcha banklarga API orqali ulanishni yoki istalgan Excel faylini import qilishni va’da qilmaydi — faqat
-          yuqorida sanab o‘tilgan qo‘llab-quvvatlanadigan formatlar ishlaydi.
+          Egasi yoki administrator ishlov berilmagan importni bekor qilishi mumkin. Yopiq davr,
+          o‘tkazilgan operatsiyalar yoki hisob holatining o‘zgarishi bekor qilishni bloklaydi.
+          Asl ko‘chirma va protokol arxivda saqlanadi. Barcha banklarga API orqali ulanish qo‘llab-quvvatlanmaydi.
         </p>
       </section>
 

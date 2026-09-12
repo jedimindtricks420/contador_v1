@@ -1072,8 +1072,7 @@ export const baseDocumentTypes = [
         // Прибыль: выручка > остаточная стоимость → Дт 9210 — Кт 9310
         { accountCode: "9210", side: "debit",  expression: "profit", condition: "profit > 0" },
         { accountCode: "9310", side: "credit", expression: "profit", condition: "profit > 0" },
-        // Убыток: остаточная стоимость > выручка → Дт 9320 — Кт 9210
-        { accountCode: "9320", side: "debit",  expression: "loss",   condition: "loss > 0" },
+        { accountCode: "9430", side: "debit",  expression: "loss",   condition: "loss > 0" },
         { accountCode: "9210", side: "credit", expression: "loss",   condition: "loss > 0" }
       ],
       opensItem: false,

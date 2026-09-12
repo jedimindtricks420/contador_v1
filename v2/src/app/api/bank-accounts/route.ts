@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { getActiveOrgId } from "@/lib/context";
-
-import Decimal from "decimal.js";
+import { getActiveOrgId, getActiveMembership } from "@/lib/context";
+import { createBankAccountSchema } from "@/lib/bankAccountInput";
+import { normalizeBankAccountNumber } from "@/lib/bankStatementValidation";
 
 export async function GET() {
   try {
@@ -24,28 +25,29 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-
-    const orgId = await getActiveOrgId();
-    const { name, bankName, accountNumber, lastBalance, currency } = await req.json();
-
-    if (!name) {
-      return NextResponse.json({ error: "Название счёта обязательно" }, { status: 400 });
-    }
-
-    const account = await prisma.bankAccount.create({
-      data: {
-        orgId,
-        name,
-        bankName: bankName || null,
-        accountNumber: accountNumber || null,
-        lastBalance: new Decimal(lastBalance || 0),
-        currency: currency || "UZS"
+    const membership = await getActiveMembership();
+    if (!["OWNER", "ADMIN"].includes(membership.role)) throw new Error("FORBIDDEN");
+    const orgId = membership.orgId;
+    const input = createBankAccountSchema.safeParse(await req.json().catch(() => null));
+    if (!input.success) return NextResponse.json({ error: "Некорректные реквизиты счёта", details: input.error.issues }, { status: 400 });
+    return await prisma.$transaction(async database => {
+      await database.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`bank-account:${orgId}`}))::text`;
+      const existing = await database.bankAccount.findMany({ where: { orgId }, select: { accountNumber: true } });
+      if (existing.some(account => normalizeBankAccountNumber(account.accountNumber) === input.data.accountNumber)) {
+        return NextResponse.json({ error: "Номер счёта уже существует в организации", code: "BANK_ACCOUNT_DUPLICATE" }, { status: 409 });
       }
-    });
-
-    return NextResponse.json(account, { status: 201 });
+      const account = await database.bankAccount.create({ data: { orgId, ...input.data } });
+      await database.auditLog.create({ data: {
+        orgId, userId: membership.userId, action: "CREATE_BANK_ACCOUNT", entityType: "BankAccount", entityId: account.id,
+        newValue: { ...input.data, lastSyncedAt: null },
+      } });
+      return NextResponse.json(account, { status: 201 });
+    }, { maxWait: 5000, timeout: 10000 });
   } catch (err: any) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002" && err.meta?.modelName === "BankAccount") {
+      return NextResponse.json({ error: "Номер счёта уже существует в организации", code: "BANK_ACCOUNT_DUPLICATE" }, { status: 409 });
+    }
     console.error("POST BANK ACCOUNT ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Internal error" }, { status: ["FORBIDDEN", "NO_ACTIVE_ORG"].includes(err.message) ? 403 : 500 });
   }
 }

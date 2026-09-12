@@ -41,7 +41,7 @@ export default function Body({ topic }: { topic: Topic }) {
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <div className="rounded border border-gray-200 p-4">
             <p className="font-medium text-black">Ko‘chirmalarni import qilish</p>
-            <p className="mt-1 text-sm text-gray-600">Excel va 1CClientBankExchange, takroriy importni tekshirish bilan.</p>
+            <p className="mt-1 text-sm text-gray-600">1CClientBankExchange (.txt), takroriy importni tekshirish bilan.</p>
           </div>
           <div className="rounded border border-gray-200 p-4">
             <p className="font-medium text-black">O‘tkazmalar va oyni yopish</p>

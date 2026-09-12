@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getActiveMembership } from "@/lib/context";
 import prisma from "@/lib/prisma";
 import { postDocument } from "@/lib/posting/postingEngine";
+import { assertAccountingWriteRole, isSystemDocumentType } from "@/lib/posting/documentPolicy";
+import { z } from "zod";
+
+const createDocumentSchema = z.object({
+  typeId: z.string().trim().min(1),
+  periodId: z.string().trim().min(1),
+  date: z.union([z.iso.date(), z.iso.datetime({ offset: true })]),
+  payload: z.record(z.string(), z.json()).default({})
+});
 
 export async function GET(req: NextRequest) {
   try {
@@ -52,12 +61,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const membership = await getActiveMembership();
-    const body = await req.json();
-
-    const { typeId, periodId, date, payload } = body;
-    if (!typeId || !periodId || !date) {
-      return NextResponse.json({ error: "typeId, periodId, date обязательны" }, { status: 400 });
+    assertAccountingWriteRole(membership.role);
+    const parsed = createDocumentSchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Некорректные typeId, periodId, date или payload" }, { status: 400 });
     }
+    const { typeId, periodId, date, payload } = parsed.data;
 
     // Verify period belongs to org and is not closed
     const period = await prisma.period.findFirst({
@@ -85,6 +94,9 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (isSystemDocumentType(docType.code)) {
+      return NextResponse.json({ error: "Системный документ создаётся только через специализированный процесс" }, { status: 400 });
+    }
 
     const doc = await prisma.$transaction(async (tx) => {
       const created = await tx.document.create({
@@ -105,6 +117,8 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error("POST DOCUMENT ERROR:", err);
     if (err.message === "UNAUTHORIZED") return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
+    if (err.message === "FORBIDDEN" || err.message === "NO_ACTIVE_ORG") return NextResponse.json({ error: "Нет доступа" }, { status: 403 });
+    if (err instanceof SyntaxError) return NextResponse.json({ error: "Некорректный JSON" }, { status: 400 });
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

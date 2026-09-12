@@ -10,14 +10,11 @@ type Value = Decimal | string;
  * Returns a Decimal instance (1/0 for boolean results).
  */
 export function evaluate(expression: string, payload: Record<string, unknown>): Decimal {
-  // Normalize payload: convert numeric/boolean values to Decimal, keep strings as strings.
-  const scope: Record<string, Value> = {};
+  const scope: Record<string, Value> = Object.create(null);
   for (const [key, value] of Object.entries(payload)) {
     if (value instanceof Decimal) {
       scope[key] = value;
     } else if (typeof value === "number") {
-      scope[key] = new Decimal(value);
-    } else if (typeof value === "string" && value.trim() !== "" && !isNaN(Number(value))) {
       scope[key] = new Decimal(value);
     } else if (typeof value === "boolean") {
       scope[key] = new Decimal(value ? 1 : 0);
@@ -39,7 +36,13 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
 
   function asDecimal(val: Value, context: string): Decimal {
     if (typeof val === "string") {
-      throw new Error(`Expected a number in ${context}, got string "${val}"`);
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(val.trim())) {
+        throw new Error(`Expected a decimal number in ${context}, got string "${val}"`);
+      }
+      val = new Decimal(val.trim());
+    }
+    if (!val.isFinite()) {
+      throw new Error(`Expected a finite number in ${context}`);
     }
     return val;
   }
@@ -79,9 +82,9 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
         const right = parseTerm();
         let condition: boolean;
         if (op === "==" || op === "!=") {
-          const equal = typeof val === "string" || typeof right === "string"
-            ? String(val instanceof Decimal ? val.toString() : val) === String(right instanceof Decimal ? right.toString() : right)
-            : val.equals(right);
+          const equal = typeof val === "string" && typeof right === "string"
+            ? val === right
+            : asDecimal(val, `'${op}'`).equals(asDecimal(right, `'${op}'`));
           condition = op === "==" ? equal : !equal;
         } else {
           const l = asDecimal(val, `'${op}'`);
@@ -108,7 +111,7 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
         const right = parseFactor();
         const l = asDecimal(val, `'${op}'`);
         const r = asDecimal(right, `'${op}'`);
-        val = op === "+" ? l.plus(r) : l.minus(r);
+        val = asDecimal(op === "+" ? l.plus(r) : l.minus(r), `'${op}' result`);
       } else {
         break;
       }
@@ -130,6 +133,7 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
           if (r.isZero()) throw new Error("Division by zero in expression evaluation");
           val = l.div(r);
         }
+        val = asDecimal(val, `'${op}' result`);
       } else {
         break;
       }
@@ -168,17 +172,16 @@ export function evaluate(expression: string, payload: Record<string, unknown>): 
 
     // Number literal
     if (!isNaN(Number(token))) {
-      return new Decimal(token);
+      return asDecimal(new Decimal(token), "number literal");
     }
 
     // Variable lookup
-    if (scope[token] !== undefined) {
-      return scope[token];
+    if (Object.hasOwn(scope, token)) {
+      const value = scope[token];
+      return typeof value === "string" ? value : asDecimal(value, `variable "${token}"`);
     }
 
-    // Unknown variable — warn loudly so typos are diagnosable; return 0 so balance check catches it
-    console.warn(`[expressionEval] unknown variable "${token}" in expression — check document payload`);
-    return new Decimal(0);
+    throw new Error(`Unknown or invalid variable "${token}" in expression`);
   }
 
   const result = parseExpr();

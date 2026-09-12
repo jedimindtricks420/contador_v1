@@ -134,7 +134,7 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
             value={selectedBankAccountId}
             onChange={setSelectedBankAccountId}
           />
-          <p className="text-[10px] text-gray-400 mt-1">Формат выписки определяется автоматически (.txt / .xlsx)</p>
+          <p className="text-[10px] text-gray-400 mt-1">1CClientBankExchange (.txt), до 5 МиБ</p>
         </div>
 
         {/* Dotted upload zone */}
@@ -142,7 +142,7 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
           <input
             type="file"
             id="wizardBankFile"
-            accept=".txt,.xls,.xlsx"
+            accept=".txt"
             onChange={(e) => {
               setUploadFile(e.target.files?.[0] || null);
               setUploadResult("");
@@ -155,7 +155,7 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
               {uploadFile ? uploadFile.name : "Выберите файл выписки"}
             </div>
             <div className="text-[10px] text-gray-400">
-              Поддерживаются форматы .txt, .xlsx, .xls
+              1CClientBankExchange (.txt)
             </div>
           </label>
         </div>
@@ -222,8 +222,9 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
               </button>
             </div>
             <p className="text-xs text-gray-600">
-              Будут удалены <strong>{lastBatch.count} транзакций</strong> из «{lastBatch.fileName}». Действие
-              необратимо, если некоторые транзакции уже классифицированы — откат будет заблокирован.
+              Будут отменены <strong>{lastBatch.count} транзакций</strong> из «{lastBatch.fileName}».
+              Остаток и время синхронизации восстановятся из снимка импорта, строки сохранятся в аудите.
+              Закрытый период, обработанные операции или изменённое состояние счёта блокируют откат.
             </p>
             <div className="flex gap-3">
               <button

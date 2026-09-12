@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Calendar, CalendarClock, Lock, AlertTriangle, X } from "lucide-react";
 import { formatSum } from "@/lib/format";
+import { z } from "zod";
 
 interface Step7SummaryProps {
   periodId: string;
@@ -18,10 +19,26 @@ const TAX_NAMES: Record<string, string> = {
   SOCIAL_TAX: "Социальный налог (12%)"
 };
 
-export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7SummaryProps) {
+const summaryMoney = z.union([z.number().finite(), z.string().regex(/^-?\d+(?:\.\d+)?$/)]);
+const summarySchema = z.object({
+  kpi: z.object({ totalBalance: summaryMoney, income: summaryMoney, expense: summaryMoney, taxesOwed: summaryMoney }),
+  stats: z.object({ riskItems: z.number().int().nonnegative(), needsClarification: z.number().int().nonnegative() }),
+});
+
+export default function Step7Summary(props: Step7SummaryProps) {
+  return <SummaryPeriod key={props.periodId} {...props} />;
+}
+
+function SummaryPeriod({ periodId, onPrev, onFinalized }: Step7SummaryProps) {
+  const active = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [stats, setStats] = useState<any | null>(null);
+  const [stats, setStats] = useState<z.infer<typeof summarySchema> | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [missingCogsError, setMissingCogsError] = useState<string | null>(null);
@@ -36,33 +53,43 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
   // M-02: year-end inline confirm state
   const [yearEndConfirmStep, setYearEndConfirmStep] = useState<"idle" | "confirm">("idle");
 
-  const loadSummaryStats = async () => {
-    setLoadError(false);
+  useEffect(() => {
+    let disposed = false;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
-    try {
-      const [dashRes, yearEndRes] = await Promise.all([
-        fetch(`/v2/api/dashboard?periodId=${periodId}`, { signal: controller.signal }),
-        fetch(`/v2/api/closing/year-end/status?periodId=${periodId}`, { signal: controller.signal })
-      ]);
-      const d = await dashRes.json();
-      const yearEndStatus = await yearEndRes.json();
-      setStats(d);
-      setYearEndDone(yearEndStatus.done === true);
-    } catch (err) {
-      console.error(err);
-      setLoadError(true);
-    } finally {
+    const loadSummaryStats = async () => {
+      try {
+        const [dashRes, yearEndRes] = await Promise.all([
+          fetch(`/v2/api/dashboard?periodId=${periodId}`, { signal: controller.signal }),
+          fetch(`/v2/api/closing/year-end/status?periodId=${periodId}`, { signal: controller.signal })
+        ]);
+        if (!dashRes.ok || !yearEndRes.ok) throw new Error("Summary request failed");
+        const data = summarySchema.parse(await dashRes.json());
+        const yearEndStatus = z.object({ done: z.boolean() }).parse(await yearEndRes.json());
+        if (disposed) return;
+        setStats(data);
+        setYearEndDone(yearEndStatus.done);
+      } catch (err) {
+        if (!disposed) {
+          console.error(err);
+          setLoadError(true);
+        }
+      } finally {
+        clearTimeout(timer);
+        controller.abort();
+        if (!disposed) setLoading(false);
+      }
+    };
+    void loadSummaryStats();
+    return () => {
+      disposed = true;
       clearTimeout(timer);
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadSummaryStats();
-  }, [periodId]);
+      controller.abort();
+    };
+  }, [periodId, retryAttempt]);
 
   const handleFinalize = async (confirmMissingCogs = false) => {
+    if (finalizing) return;
     setShowFinalizeConfirm(false);
     setFinalizing(true);
     setFinalizeError(null);
@@ -74,7 +101,12 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
         body: JSON.stringify({ confirmMissingCogs })
       });
       const data = await res.json();
+      if (!active.current) return;
       if (res.ok) {
+        if (data?.period?.id !== periodId || data.period.status !== "CLOSED") {
+          setFinalizeError("Сервер не подтвердил закрытие выбранного периода.");
+          return;
+        }
         setFinalResult(data);
         onFinalized();
       } else if (data.code === "MISSING_COGS") {
@@ -83,9 +115,9 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
         setFinalizeError(`Ошибка при финализации: ${data.error}`);
       }
     } catch {
-      setFinalizeError("Ошибка сети. Попробуйте снова.");
+      if (active.current) setFinalizeError("Ошибка сети. Попробуйте снова.");
     } finally {
-      setFinalizing(false);
+      if (active.current) setFinalizing(false);
     }
   };
 
@@ -105,7 +137,7 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
         <p className="text-sm font-bold text-rose-800">Не удалось загрузить сводные данные</p>
         <p className="text-xs text-rose-600">Проверьте подключение к сети и попробуйте снова.</p>
         <button
-          onClick={() => { setLoading(true); loadSummaryStats(); }}
+          onClick={() => { setLoading(true); setLoadError(false); setRetryAttempt(value => value + 1); }}
           className="inline-flex items-center gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded transition"
         >
           Повторить
@@ -115,6 +147,7 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
   }
 
   const handleYearEnd = async () => {
+    if (yearEndLoading) return;
     setYearEndConfirmStep("idle");
     setYearEndLoading(true);
     setYearEndError(null);
@@ -125,19 +158,27 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
         body: JSON.stringify({ periodId })
       });
       const data = await res.json();
+      if (!active.current) return;
       if (res.ok) {
         setYearEndDone(true);
       } else {
         if (res.status === 409) {
-          setYearEndDone(true);
-        } else {
-          setYearEndError(`Ошибка: ${data.error}`);
+          const statusResponse = await fetch(`/v2/api/closing/year-end/status?periodId=${periodId}`, {
+            signal: AbortSignal.timeout(30000),
+          });
+          const status = await statusResponse.json();
+          if (!active.current) return;
+          if (statusResponse.ok && status?.done === true) {
+            setYearEndDone(true);
+            return;
+          }
         }
+        setYearEndError(`Ошибка: ${data.error}`);
       }
     } catch {
-      setYearEndError("Ошибка сети. Попробуйте снова.");
+      if (active.current) setYearEndError("Ошибка сети. Попробуйте снова.");
     } finally {
-      setYearEndLoading(false);
+      if (active.current) setYearEndLoading(false);
     }
   };
 
@@ -277,7 +318,7 @@ export default function Step7Summary({ periodId, onPrev, onFinalized }: Step7Sum
 
   // Preview before finalize
   const { kpi, stats: summaryStats } = stats || {};
-  const hasUnclassified = summaryStats?.needsClarification > 0;
+  const hasUnclassified = (summaryStats?.needsClarification ?? 0) > 0;
 
   return (
     <div className="space-y-6 max-w-xl">

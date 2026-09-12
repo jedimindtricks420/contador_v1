@@ -9,7 +9,7 @@ import type { Topic } from "@/lib/manifest";
 // majburiy mazmuni. Excel bo‘yicha bir bosishda konvertatsiya haqida va’da
 // berilmaydi — faqat ma’lumotlarni tayyorlash rejasi.
 const TRANSFER = [
-  { what: "Bank operatsiyalari", how: "Qo‘llab-quvvatlanadigan usulda — oyni yopish ustasining birinchi bosqichida ko‘chirma faylini (.txt, .xls, .xlsx) import qilish" },
+  { what: "Bank operatsiyalari", how: "Oyni yopish ustasining birinchi bosqichida 1CClientBankExchange (.txt) ko‘chirmasini import qilish" },
   { what: "Hisobvaraqlar bo‘yicha boshlang‘ich qoldiqlar", how: "Tayyorlashni talab qiladi — qo‘lda yig‘ilib, «Boshlang‘ich qoldiqlar» sozlamalar bo‘limiga kiritiladi" },
   { what: "Excel jadvallaringizning tarixiy tuzilishi", how: "Tayyorlashni talab qiladi — Contador ixtiyoriy foydalanuvchi jadvallarini o‘qimaydi, faqat qo‘llab-quvvatlanadigan ko‘chirma formatini" },
   { what: "O‘tgan operatsiyalar bo‘yicha o‘tkazmalar", how: "Tayyorlashni talab qiladi — faqat yig‘ilgan boshlang‘ich qoldiqlar orqali ko‘chiriladi, hujjatma-hujjat emas" },
@@ -18,7 +18,7 @@ const TRANSFER = [
 const STEPS = [
   { num: 1, title: "Hisob boshlanish sanasini tanlang", desc: "Odatda oy yoki chorak boshi — shu sanadan Contador operatsiyalarni batafsil yuritadi." },
   { num: 2, title: "Boshlang‘ich qoldiqlarni yig‘ing", desc: "Hisobvaraqlar, kontragentlar va avanslar bo‘yicha tanlangan sanaga — boshlang‘ich qoldiqlar qo‘llanmasiga qarang." },
-  { num: 3, title: "Bank ko‘chirmalarini tayyorlang", desc: "Boshlanish sanasidan keyingi davrlar uchun .txt, .xls yoki .xlsx qo‘llab-quvvatlanadigan formatda." },
+  { num: 3, title: "Bank ko‘chirmalarini tayyorlang", desc: "Boshlanish sanasidan keyingi davrlar uchun 1CClientBankExchange (.txt) formatida." },
   { num: 4, title: "Yuklang va birinchi davrni solishtiring", desc: "Ko‘chirmani import qiling, qoldiqlarni kiriting va birinchi hisobotni jadvallaringiz bilan solishtiring." },
 ];
 

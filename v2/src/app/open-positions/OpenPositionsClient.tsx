@@ -84,23 +84,8 @@ export default function OpenPositionsClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [periods, setPeriods] = useState<{ id: string; year: number; month: number }[]>([]);
 
-  // Interactive UI Modals
-  const [activeItemToClose, setActiveItemToClose] = useState<OpenItem | null>(null);
-  const [closingDate, setClosingDate] = useState<string>(
-    new Date().toISOString().substring(0, 10)
-  );
-  const [isClosing, setIsClosing] = useState(false);
-
   // Details Modal
   const [detailsItem, setDetailsItem] = useState<OpenItem | null>(null);
-
-  // M-08: Reopen confirm
-  const [reopenTarget, setReopenTarget] = useState<OpenItem | null>(null);
-  const [reopening, setReopening] = useState(false);
-  const [reopenError, setReopenError] = useState<string>("");
-
-  // Manual close error
-  const [closeError, setCloseError] = useState<string>("");
 
   const loadFilterData = async () => {
     try {
@@ -152,55 +137,6 @@ export default function OpenPositionsClient() {
     }, 350);
     return () => clearTimeout(delay);
   }, [searchQuery]);
-
-  const handleManualClose = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeItemToClose) return;
-
-    setIsClosing(true);
-    setCloseError("");
-    try {
-      const res = await fetch(`/v2/api/open-items/${activeItemToClose.id}/close`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dateClosed: new Date(closingDate).toISOString(),
-        }),
-      });
-
-      if (res.ok) {
-        setActiveItemToClose(null);
-        loadData();
-      } else {
-        const errData = await res.json();
-        setCloseError(`Ошибка при закрытии позиции: ${errData.error}`);
-      }
-    } catch {
-      setCloseError("Сетевая ошибка при закрытии. Попробуйте снова.");
-    } finally {
-      setIsClosing(false);
-    }
-  };
-
-  const handleReopen = async () => {
-    if (!reopenTarget) return;
-    setReopening(true);
-    setReopenError("");
-    try {
-      const res = await fetch(`/v2/api/open-items/${reopenTarget.id}/reopen`, { method: "POST" });
-      if (res.ok) {
-        setReopenTarget(null);
-        loadData();
-      } else {
-        const errData = await res.json();
-        setReopenError(`Ошибка: ${errData.error}`);
-      }
-    } catch {
-      setReopenError("Ошибка сети. Попробуйте снова.");
-    } finally {
-      setReopening(false);
-    }
-  };
 
   // Group items by accountCode
   const groupedItems = items.reduce<Record<string, { account: OpenItem["account"]; list: OpenItem[] }>>(
@@ -511,25 +447,13 @@ export default function OpenPositionsClient() {
                               >
                                 Документ
                               </button>
-                              {!isClosed && (
-                                <button
-                                  onClick={() => {
-                                    setActiveItemToClose(item);
-                                    setClosingDate(new Date().toISOString().substring(0, 10));
-                                    setCloseError("");
-                                  }}
-                                  className="text-[11px] bg-black hover:opacity-80 text-white py-1 px-2.5 rounded-md font-semibold transition shadow-sm"
-                                >
-                                  Закрыть вручную
-                                </button>
-                              )}
                               {isClosed && item.closingDocumentId === null && (
-                                <button
-                                  onClick={() => { setReopenTarget(item); setReopenError(""); }}
-                                  className="text-[11px] border border-gray-200 hover:border-gray-400 text-gray-500 hover:text-gray-700 py-1 px-2.5 rounded-md font-semibold transition"
+                                <span
+                                  title="Нет документа расчёта"
+                                  className="text-[11px] text-amber-700"
                                 >
-                                  Открыть повторно
-                                </button>
+                                  Требует сверки
+                                </span>
                               )}
                             </td>
                           </tr>
@@ -543,69 +467,6 @@ export default function OpenPositionsClient() {
           })
         )}
       </div>
-
-      {/* Manual Close Modal */}
-      {activeItemToClose && (
-        <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded shadow-xl border border-gray-200 w-full max-w-md overflow-hidden transform transition duration-300 scale-100">
-            <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-sm font-bold text-gray-800">Ручное закрытие позиции</h3>
-              <button
-                onClick={() => setActiveItemToClose(null)}
-                className="text-gray-400 hover:text-gray-600 text-sm p-1 rounded-md"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            <form onSubmit={handleManualClose} className="p-6 space-y-4">
-              <div className="bg-gray-50 border border-gray-200 p-3.5 rounded text-gray-600 text-[11px] font-semibold leading-relaxed">
-                <AlertTriangle size={13} className="inline mr-1.5 text-amber-500" />Подтвердите ручное закрытие открытой позиции для контрагента{" "}
-                <strong>
-                  {activeItemToClose.counterparty?.name ||
-                    (activeItemToClose.openingDocument?.payload as any)?.counterpartyHint ||
-                    "данного контрагента"}
-                </strong>{" "}
-                на сумму <strong>{formatSum(activeItemToClose.amount)}</strong>. Позиция будет исключена из списков просрочек и рисков.
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-gray-500">Дата закрытия обязательства</label>
-                <input
-                  type="date"
-                  value={closingDate}
-                  onChange={(e) => setClosingDate(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 outline-hidden focus:border-black"
-                  required
-                />
-              </div>
-
-              {closeError && (
-                <div className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-semibold">
-                  {closeError}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setActiveItemToClose(null)}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-2 px-4 rounded transition"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  disabled={isClosing}
-                  className="bg-black hover:opacity-80 text-white text-xs font-bold py-2 px-5 rounded transition disabled:opacity-50 shadow-sm"
-                >
-                  {isClosing ? "Закрываем..." : "Подтвердить закрытие"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Opening Document Details Modal */}
       {detailsItem && (
@@ -686,39 +547,6 @@ export default function OpenPositionsClient() {
         </div>
       )}
 
-      {/* M-08: Reopen confirm modal */}
-      {reopenTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded border border-gray-200 shadow-xl max-w-sm w-full p-6 space-y-4">
-            <h3 className="text-sm font-bold text-gray-900">Открыть позицию повторно?</h3>
-            <p className="text-xs text-gray-600">
-              Позиция для <strong>{reopenTarget.counterparty?.name || "контрагента"}</strong> на сумму{" "}
-              <strong>{new Intl.NumberFormat("ru-RU").format(Number(reopenTarget.amount))} сум</strong>{" "}
-              будет возвращена в статус «Открытая».
-            </p>
-            {reopenError && (
-              <div className="p-2 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-semibold">
-                {reopenError}
-              </div>
-            )}
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => setReopenTarget(null)}
-                className="flex-1 text-xs border border-gray-200 text-gray-700 font-bold py-2.5 rounded hover:bg-gray-50 transition"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={handleReopen}
-                disabled={reopening}
-                className="flex-1 text-xs bg-black hover:opacity-80 text-white font-bold py-2.5 rounded transition disabled:opacity-50"
-              >
-                {reopening ? "Открываем..." : "Открыть повторно"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

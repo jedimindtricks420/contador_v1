@@ -1,4 +1,8 @@
 import { ParsedBankStatement, ParsedTransaction } from "./types";
+import { BankStatementValidationError, normalizeBankAccountNumber, parseBankStatementMoney } from "../bankStatementValidation";
+
+export const BANK_STATEMENT_MAX_TRANSACTIONS = 1_000;
+export const BANK_STATEMENT_MAX_LINES = 50_000;
 
 // Windows-1251 code points for bytes 0x80–0xFF
 const CP1251_MAP = [
@@ -46,29 +50,70 @@ function decodeCP1251(buf: Buffer): string {
  *   - DEBIT:  recipient (Получатель / ПолучательИНН)
  */
 export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
-  const text = Buffer.isBuffer(input) ? decodeCP1251(input) : input;
+  let text: string;
+  if (Buffer.isBuffer(input)) {
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(input);
+    } catch {
+      text = decodeCP1251(input);
+    }
+  } else {
+    text = input;
+  }
+  let lineCount = 1;
+  for (let newline = text.indexOf("\n"); newline !== -1; newline = text.indexOf("\n", newline + 1)) {
+    if (++lineCount > BANK_STATEMENT_MAX_LINES) {
+      throw new BankStatementValidationError("Выписка 1С превышает лимит 50000 текстовых строк");
+    }
+  }
   const lines = text.split(/\r?\n/);
   const transactions: ParsedTransaction[] = [];
 
   // Statement-level metadata extracted from СекцияРасчСчет
   let ourAccount = "";
-  let openingBalance: number | undefined;
-  let closingBalance: number | undefined;
+  let openingBalance: string | undefined;
+  let closingBalance: string | undefined;
   let periodStart: Date | undefined;
   let periodEnd: Date | undefined;
 
-  // Extract our account from the top-level header (first РасчСчет before any section)
+  const accountNumbers = new Set<string>();
+  let scanningDocument = false;
+  let documentCount = 0;
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith("СекцияДокумент")) break;
-    if (trimmed.startsWith("РасчСчет=")) {
-      ourAccount = trimmed.slice("РасчСчет=".length).trim();
+    const separator = trimmed.indexOf("=");
+    if (separator !== -1 && trimmed.slice(0, separator).trim() === "СекцияДокумент") {
+      if (++documentCount > BANK_STATEMENT_MAX_TRANSACTIONS) {
+        throw new BankStatementValidationError("Выписка 1С превышает лимит 1000 операций");
+      }
+      scanningDocument = true;
+    }
+    if (trimmed === "КонецДокумента") scanningDocument = false;
+    if (!scanningDocument && trimmed.startsWith("РасчСчет=")) {
+      const account = normalizeBankAccountNumber(trimmed.slice("РасчСчет=".length));
+      if (!account) throw new BankStatementValidationError("Некорректный номер счёта в выписке 1С");
+      accountNumbers.add(account);
     }
   }
+  if (accountNumbers.size !== 1) throw new BankStatementValidationError("Выписка 1С должна содержать ровно один банковский счёт");
+  ourAccount = [...accountNumbers][0];
+
+  const parseDate = (value: string): Date => {
+    const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value);
+    if (!match) throw new BankStatementValidationError("Некорректная дата в выписке 1С");
+    const isoDate = `${match[3]}-${match[2]}-${match[1]}`;
+    const date = new Date(`${isoDate}T00:00:00Z`);
+    if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== isoDate) {
+      throw new BankStatementValidationError("Невозможная дата в выписке 1С");
+    }
+    return date;
+  };
 
   let current: Record<string, string> = {};
   let inSection = false;
   let inAccSection = false;
+  let accountSectionCount = 0;
+  const accountFields = new Set<string>();
 
   for (const line of lines) {
     const eqIdx = line.indexOf("=");
@@ -76,7 +121,11 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
       const k = line.trim();
 
       // Parse bank account section for opening/closing balances
-      if (k === "СекцияРасчСчет") { inAccSection = true; continue; }
+      if (k === "СекцияРасчСчет") {
+        if (inSection || ++accountSectionCount > 1) throw new BankStatementValidationError("Неоднозначные секции счёта в выписке 1С");
+        inAccSection = true;
+        continue;
+      }
       if (k === "КонецРасчСчет" && inAccSection) {
         inAccSection = false;
         continue;
@@ -85,20 +134,17 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
       if (k === "КонецДокумента" && inSection) {
         inSection = false;
 
-        const amount = parseFloat((current["Сумма"] || "0").replace(",", "."));
+        const amount = parseBankStatementMoney(current["Сумма"] || "");
         const dateStr = current["Дата"] || "";
-        const parts = dateStr.split(".");
-        if (parts.length !== 3 || amount <= 0) continue;
+        const date = parseDate(dateStr);
 
-        const [day, month, year] = parts;
-        const date = new Date(`${year}-${month}-${day}`);
-        if (isNaN(date.getTime())) continue;
-
-        // Determine direction via account comparison
-        const recipientAccount = current["ПолучательРасчСчет"] || current["ПолучательСчет"] || "";
-        const isCredit = ourAccount
-          ? recipientAccount === ourAccount
-          : recipientAccount !== "" && recipientAccount !== (current["ПлательщикРасчСчет"] || current["ПлательщикСчет"] || "");
+        const recipientAccount = normalizeBankAccountNumber(current["ПолучательРасчСчет"] || current["ПолучательСчет"]);
+        const payerAccount = normalizeBankAccountNumber(current["ПлательщикРасчСчет"] || current["ПлательщикСчет"]);
+        const isCredit = recipientAccount === ourAccount;
+        const isDebit = payerAccount === ourAccount;
+        if (!recipientAccount || !payerAccount || isCredit === isDebit) {
+          throw new BankStatementValidationError("Нельзя однозначно определить направление операции по счетам выписки 1С");
+        }
 
         const direction: "CREDIT" | "DEBIT" = isCredit ? "CREDIT" : "DEBIT";
 
@@ -158,27 +204,45 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
     const v = line.slice(eqIdx + 1).trim();
 
     if (k === "СекцияДокумент") {
+      if (inSection || inAccSection) throw new BankStatementValidationError("Незавершённая секция в выписке 1С");
       inSection = true;
       current = {};
     } else if (inAccSection) {
+      if (accountFields.has(k)) throw new BankStatementValidationError("Повторный реквизит секции счёта в выписке 1С");
+      accountFields.add(k);
       // Balance section: НачальныйОстаток, КонечныйОстаток, ДатаНачала, ДатаКонца
       if (k === "НачальныйОстаток") {
-        openingBalance = parseFloat(v.replace(",", ".")) || 0;
+        openingBalance = parseBankStatementMoney(v, true);
       } else if (k === "КонечныйОстаток") {
-        closingBalance = parseFloat(v.replace(",", ".")) || 0;
+        closingBalance = parseBankStatementMoney(v, true);
       } else if (k === "ДатаНачала") {
-        const parts = v.split(".");
-        if (parts.length === 3) periodStart = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        periodStart = parseDate(v);
       } else if (k === "ДатаКонца") {
-        const parts = v.split(".");
-        if (parts.length === 3) periodEnd = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        periodEnd = parseDate(v);
       } else if (k === "РасчСчет" && !ourAccount) {
         ourAccount = v;
       }
     } else if (inSection) {
+      if (Object.hasOwn(current, k)) throw new BankStatementValidationError("Повторный реквизит документа в выписке 1С");
       current[k] = v;
     }
   }
 
+  if (inSection || inAccSection) throw new BankStatementValidationError("Незавершённая секция в выписке 1С");
+  if (!periodStart || !periodEnd || openingBalance === undefined || closingBalance === undefined) {
+    throw new BankStatementValidationError("Выписка 1С должна содержать период и оба контрольных остатка");
+  }
+  if (periodStart && periodEnd && periodStart > periodEnd) throw new BankStatementValidationError("Обратный период выписки 1С");
+  if (transactions.some(transaction => (periodStart && transaction.date < periodStart) || (periodEnd && transaction.date > periodEnd))) {
+    throw new BankStatementValidationError("Операция находится вне периода выписки 1С");
+  }
+  let expectedClosing = BigInt(openingBalance.replace(".", ""));
+  for (const transaction of transactions) {
+    const amountCents = BigInt(String(transaction.amount).replace(".", ""));
+    expectedClosing += transaction.direction === "CREDIT" ? amountCents : -amountCents;
+  }
+  if (expectedClosing !== BigInt(closingBalance.replace(".", ""))) {
+    throw new BankStatementValidationError("Контрольные остатки выписки не согласуются с её операциями");
+  }
   return { transactions, openingBalance, closingBalance, periodStart, periodEnd, accountNumber: ourAccount || undefined };
 }

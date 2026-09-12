@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, AlertTriangle, RefreshCw } from "lucide-react";
+import { z } from "zod";
 import Step1Import from "./steps/Step1Import";
 import Step2Clarification from "./steps/Step2Clarification";
 import Step3Registry from "./steps/Step3Registry";
@@ -24,7 +25,23 @@ interface ClosingWizardProps {
   initialStepParam?: number;
 }
 
-export default function ClosingWizard({ period, onRefreshList, initialStepParam }: ClosingWizardProps) {
+const wizardSchema = z.object({ currentStep: z.number().int().min(1).max(8) }).passthrough();
+const statsSchema = z.object({ stats: z.object({}).passthrough() });
+const pendingSchema = z.array(z.unknown());
+
+async function readJson(url: string, signal: AbortSignal) {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error("Не удалось загрузить данные мастера закрытия");
+  const data = await response.json();
+  signal.throwIfAborted();
+  return data;
+}
+
+export default function ClosingWizard(props: ClosingWizardProps) {
+  return <PeriodWizard key={props.period.id} {...props} />;
+}
+
+function PeriodWizard({ period, onRefreshList, initialStepParam }: ClosingWizardProps) {
   const [activeStep, setActiveStep] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -32,98 +49,99 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
   const [closureStats, setClosureStats] = useState<any>(null);
 
   const [hasPendingInvoices, setHasPendingInvoices] = useState<boolean>(false);
-
-  const loadWizardState = async () => {
-    setLoadError(false);
-    try {
-      const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
-      let hasPending = false;
-      if (pendingRes.ok) {
-        const pendingData = await pendingRes.json();
-        hasPending = pendingData && pendingData.length > 0;
-        setHasPendingInvoices(hasPending);
-      }
-
-      const res = await fetch(`/v2/api/closing/${period.id}/state`);
-      const data = await res.json();
-      setWizardState(data);
-
-      const maxStep = hasPending ? 8 : 7;
-      if (initialStepParam && initialStepParam >= 1 && initialStepParam <= maxStep) {
-        setActiveStep(initialStepParam);
-      } else {
-        setActiveStep(Math.min(data.currentStep || 1, maxStep));
-      }
-
-      // Load dashboard/stats
-      const statsRes = await fetch(`/v2/api/dashboard?periodId=${period.id}`);
-      const statsData = await statsRes.json();
-      setClosureStats(statsData.stats);
-    } catch (err) {
-      console.error(err);
-      setLoadError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [navigationError, setNavigationError] = useState(false);
+  const [navigating, setNavigating] = useState(false);
+  const navigationPending = useRef(false);
+  const lifetime = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    loadWizardState();
-  }, [period.id]);
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let disposed = false;
+    const timer = setTimeout(() => controller.abort(), 30000);
+    async function loadWizardState() {
+      try {
+        const [pending, state, dashboard] = await Promise.all([
+          readJson(`/v2/api/closing/${period.id}/pending-invoices`, controller.signal),
+          readJson(`/v2/api/closing/${period.id}/state`, controller.signal),
+          readJson(`/v2/api/dashboard?periodId=${period.id}`, controller.signal),
+        ]);
+        const hasPending = pendingSchema.parse(pending).length > 0;
+        const data = wizardSchema.parse(state);
+        const statsData = statsSchema.parse(dashboard);
+        if (disposed) return;
+        setHasPendingInvoices(hasPending);
+        setWizardState(data);
+        setClosureStats(statsData.stats);
+        const maxStep = hasPending ? 8 : 7;
+        setActiveStep(initialStepParam && initialStepParam >= 1 && initialStepParam <= maxStep
+          ? initialStepParam : Math.min(data.currentStep, maxStep));
+      } catch (err) {
+        if (!disposed) {
+          console.error(err);
+          setLoadError(true);
+        }
+      } finally {
+        clearTimeout(timer);
+        controller.abort();
+        if (!disposed) setLoading(false);
+      }
+    }
+    void loadWizardState();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [period.id, initialStepParam, retryAttempt]);
 
   const refreshStats = async () => {
+    const controller = lifetime.current;
+    if (!controller || controller.signal.aborted) return;
     try {
-      const statsRes = await fetch(`/v2/api/dashboard?periodId=${period.id}`);
-      const statsData = await statsRes.json();
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
+      const statsData = statsSchema.parse(await readJson(`/v2/api/dashboard?periodId=${period.id}`, signal));
       setClosureStats(statsData.stats);
     } catch (err) {
-      console.error(err);
+      if (!controller.signal.aborted) console.error(err);
     }
   };
 
-  const handleNextStep = async (stepPayload?: any) => {
-    if (stepPayload) {
-      setWizardState((prev: any) => ({ ...prev, ...stepPayload }));
-    }
-
+  const navigateStep = async (direction: "next" | "prev", stepPayload?: any) => {
+    const controller = lifetime.current;
+    if (!controller || controller.signal.aborted || navigationPending.current) return;
+    navigationPending.current = true;
+    setNavigating(true);
+    setNavigationError(false);
     try {
-      const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
-      let hasPending = false;
-      if (pendingRes.ok) {
-        const pendingData = await pendingRes.json();
-        hasPending = pendingData && pendingData.length > 0;
-        setHasPendingInvoices(hasPending);
-      }
-
-      const nextStep = activeStep + 1;
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30000)]);
+      const pending = pendingSchema.parse(await readJson(`/v2/api/closing/${period.id}/pending-invoices`, signal));
+      const hasPending = pending.length > 0;
+      setHasPendingInvoices(hasPending);
+      if (stepPayload) setWizardState((prev: any) => ({ ...prev, ...stepPayload }));
       const maxStep = hasPending ? 8 : 7;
-      setActiveStep(Math.min(nextStep, maxStep));
+      setActiveStep(direction === "next" ? Math.min(activeStep + 1, maxStep)
+        : activeStep === maxStep ? maxStep - 1 : Math.max(activeStep - 1, 1));
     } catch (err) {
-      console.error("handleNextStep error:", err);
-      setActiveStep((prev) => Math.min(prev + 1, 8));
+      if (!controller.signal.aborted) {
+        console.error(err);
+        setNavigationError(true);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        navigationPending.current = false;
+        setNavigating(false);
+      }
     }
   };
-
-  const handlePrevStep = async () => {
-    try {
-      const pendingRes = await fetch(`/v2/api/closing/${period.id}/pending-invoices`);
-      let hasPending = false;
-      if (pendingRes.ok) {
-        const pendingData = await pendingRes.json();
-        hasPending = pendingData && pendingData.length > 0;
-        setHasPendingInvoices(hasPending);
-      }
-
-      if (activeStep === (hasPending ? 8 : 7)) {
-        setActiveStep(hasPending ? 7 : 6);
-      } else {
-        setActiveStep((prev) => Math.max(prev - 1, 1));
-      }
-    } catch (err) {
-      console.error("handlePrevStep error:", err);
-      setActiveStep((prev) => Math.max(prev - 1, 1));
-    }
-  };
+  const handleNextStep = (stepPayload?: any) => navigateStep("next", stepPayload);
+  const handlePrevStep = () => navigateStep("prev");
 
   if (loading) {
     return (
@@ -141,7 +159,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
         <p className="text-sm font-bold text-rose-800">Не удалось загрузить данные мастера закрытия</p>
         <p className="text-xs text-rose-600">Проверьте подключение к сети и попробуйте снова.</p>
         <button
-          onClick={() => { setLoading(true); loadWizardState(); }}
+          onClick={() => { setLoading(true); setLoadError(false); setRetryAttempt(attempt => attempt + 1); }}
           className="inline-flex items-center gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded transition"
         >
           <RefreshCw size={12} />Повторить
@@ -176,7 +194,8 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
           return (
             <button
               key={s.num}
-              onClick={() => setActiveStep(s.num)}
+              disabled={navigating}
+              onClick={() => { setNavigationError(false); setActiveStep(s.num); }}
               className={`w-full text-left p-4 rounded border transition flex items-start gap-3 ${
                 isCurrent
                   ? "bg-white border-gray-300 text-black font-semibold shadow-sm"
@@ -207,6 +226,7 @@ export default function ClosingWizard({ period, onRefreshList, initialStepParam 
 
       {/* Wizard Panels Panel */}
       <div className="lg:col-span-3 bg-white rounded border border-gray-200 p-6 shadow-sm">
+        {navigationError && <p role="alert" className="mb-4 text-sm text-rose-700">Не удалось проверить ЭСФ. Повторите переход.</p>}
         {activeStep === 1 && (
           <Step1Import
             periodId={period.id}

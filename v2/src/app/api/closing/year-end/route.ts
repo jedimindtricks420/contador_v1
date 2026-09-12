@@ -1,51 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getActiveOrgId } from "@/lib/context";
+import { getActiveMembership } from "@/lib/context";
 import { ACCOUNTS } from "@/lib/constants";
 import Decimal from "decimal.js";
-
-class YearEndAlreadyDoneError extends Error {
-  constructor() {
-    super("Годовое закрытие уже выполнено для этого периода");
-    this.name = "YearEndAlreadyDoneError";
-  }
-}
+import { z } from "zod";
+import { assertAccountingWriteRole } from "@/lib/posting/documentPolicy";
+import { tashkentDate } from "@/lib/accountingDate";
 
 // Перенос финансового результата (9910) в нераспределённую прибыль (8710) в конце года.
 // Дт 9910 — Кт 8710 (прибыль) / Дт 8710 — Кт 9910 (убыток)
 export async function POST(req: NextRequest) {
   try {
-    const orgId = await getActiveOrgId();
-    const { periodId } = await req.json();
+    const membership = await getActiveMembership();
+    assertAccountingWriteRole(membership.role);
+    const orgId = membership.orgId;
+    const body = z.object({ periodId: z.string().min(1) }).strict().safeParse(await req.json().catch(() => null));
+    if (!body.success) return NextResponse.json({ error: "Некорректный период" }, { status: 400 });
+    const { periodId } = body.data;
 
-    const period = await prisma.period.findFirst({ where: { id: periodId, orgId } });
+    return await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Period" WHERE "id" = ${periodId} AND "orgId" = ${orgId} FOR NO KEY UPDATE`;
+    const period = await tx.period.findFirst({ where: { id: periodId, orgId } });
     if (!period) return NextResponse.json({ error: "Период не найден" }, { status: 404 });
     if (period.month !== 12) return NextResponse.json({ error: "Годовое закрытие только в декабре" }, { status: 400 });
     if (period.status !== "CLOSED") return NextResponse.json({ error: "Период должен быть сначала закрыт" }, { status: 400 });
 
-    // Fast, non-authoritative check for early user feedback — the real guarantee
-    // against double-transfer is the advisory lock + re-check inside the
-    // transaction below (this one alone would be a TOCTOU race).
-    const existing = await prisma.document.findFirst({
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('YEAR_END_CLOSE'), hashtext(${periodId}))`;
+    const existing = await tx.document.findFirst({
       where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
     });
     if (existing) {
+      if (existing.status !== "POSTED") {
+        return NextResponse.json({
+          error: "Найден непроведённый документ годового закрытия. Требуется сверка перед повторным переносом.",
+          code: "YEAR_END_REQUIRES_REVIEW",
+        }, { status: 409 });
+      }
       return NextResponse.json({ error: "Годовое закрытие уже выполнено для этого периода" }, { status: 409 });
     }
 
     const year = period.year;
+    const yearStart = tashkentDate(year, 0, 1);
+    const nextYearStart = tashkentDate(year + 1, 0, 1);
 
     // Суммарное сальдо 9910 за весь год.
     // Знак: net9910 = Σ(credit − debit) → ПРИБЫЛЬ при net9910 > 0 (интуитивная конвенция,
     // согласована с src/lib/closing.ts — там же исторически был обратный знак, что уже
     // приводило к ошибке в реализации).
-    const result = await prisma.$queryRaw<{ net: string }[]>`
+    const result = await tx.$queryRaw<{ net: string }[]>`
       SELECT COALESCE(SUM(je.credit - je.debit), 0)::text AS net
       FROM "JournalEntry" je
       JOIN "Document" d ON d.id = je."documentId"
       JOIN "Account" a ON a.id = je."accountId"
       WHERE d."orgId" = ${orgId} AND d.status = 'POSTED'
-        AND EXTRACT(YEAR FROM d.date) = ${year}
+        AND d.date >= ${yearStart} AND d.date < ${nextYearStart}
         AND a.code = '9910'
     `;
 
@@ -55,16 +63,16 @@ export async function POST(req: NextRequest) {
     }
 
     const [acc9910, acc8710] = await Promise.all([
-      prisma.account.findUnique({ where: { code: ACCOUNTS.FINAL_RESULT } }),
-      prisma.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } })
+      tx.account.findUnique({ where: { code: ACCOUNTS.FINAL_RESULT } }),
+      tx.account.findUnique({ where: { code: ACCOUNTS.RETAINED_EARNINGS } })
     ]);
     if (!acc9910 || !acc8710) {
       return NextResponse.json({ error: "Счета 9910 или 8710 не найдены в плане счетов" }, { status: 500 });
     }
 
-    let yearEndType = await prisma.documentType.findUnique({ where: { code: "YEAR_END_CLOSE" } });
+    let yearEndType = await tx.documentType.findUnique({ where: { code: "YEAR_END_CLOSE" } });
     if (!yearEndType) {
-      yearEndType = await prisma.documentType.create({
+      yearEndType = await tx.documentType.create({
         data: {
           code: "YEAR_END_CLOSE",
           name: "Перенос финансового результата в нераспределённую прибыль",
@@ -73,28 +81,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const docDate = new Date(year, 11, 31); // 31 декабря
+    const docDate = new Date(nextYearStart.getTime() - 1);
     const amt = net9910.abs();
-
-    await prisma.$transaction(async (tx) => {
-      // Advisory lock scoped to this period, auto-released on commit/rollback —
-      // serialises concurrent year-end-close submissions for the SAME period so
-      // the existence re-check right below can't race (see the analogous fix in
-      // closing/[periodId]/step/[stepNumber]/complete/route.ts for SOLIQ_IMPORT).
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('YEAR_END_CLOSE'), hashtext(${periodId}))`;
-
-      const alreadyDone = await tx.document.findFirst({
-        where: { orgId, periodId, type: { code: "YEAR_END_CLOSE" } }
-      });
-      if (alreadyDone) {
-        throw new YearEndAlreadyDoneError();
-      }
 
       const doc = await tx.document.create({
         data: {
           orgId, periodId, typeId: yearEndType!.id,
           date: docDate, status: "POSTED",
-          payload: { type: "year_end_close", year, net9910: net9910.toNumber() } as any
+          payload: { type: "year_end_close", year, net9910: net9910.toFixed(2) } as any
         }
       });
 
@@ -115,25 +109,23 @@ export async function POST(req: NextRequest) {
       await tx.auditLog.create({
         data: {
           orgId,
-          userId: "system",
+          userId: membership.userId,
           action: "YEAR_END_CLOSE",
           entityType: "Document",
           entityId: doc.id,
-          newValue: { year, net9910: net9910.toNumber() } as any
+          newValue: { year, net9910: net9910.toFixed(2) } as any
         }
       });
-    });
-
     return NextResponse.json({
       message: net9910.gt(0) ? "Прибыль перенесена в нераспределённую прибыль (8710)" : "Убыток перенесён в нераспределённую прибыль (8710)",
       transferred: amt.toNumber(),
       isProfit: net9910.gt(0)
     });
+    }, { maxWait: 5000, timeout: 30000 });
   } catch (err: any) {
-    if (err instanceof YearEndAlreadyDoneError) {
-      return NextResponse.json({ error: err.message }, { status: 409 });
-    }
     console.error("YEAR END CLOSE ERROR:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Internal error" }, {
+      status: ["FORBIDDEN", "NO_ACTIVE_ORG"].includes(err.message) ? 403 : 500,
+    });
   }
 }

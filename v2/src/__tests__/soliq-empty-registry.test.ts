@@ -26,6 +26,37 @@ function buildSoliqWorkbook(opts: {
 }
 
 describe("parseSoliqExcel — empty registry vs unrecognized file", () => {
+  it.each(["31.02.2026", "29.02.2025", "invalid", "", "2026-09-31"]) ("rejects invalid invoice date %s instead of using today", date => {
+    expect(() => parseSoliqExcel(buildSoliqWorkbook({
+      expenseRows: [[1, "Example", "111111111", "1", date, 100, 0]],
+    }))).toThrow(/list01, строка 15: некорректная дата/);
+  });
+
+  it.each(["100oops", "-1", "1.001", "1e3", "0x10"]) ("rejects invalid money %s", amount => {
+    expect(() => parseSoliqExcel(buildSoliqWorkbook({
+      expenseRows: [[1, "Example", "111111111", "1", "10.09.2026", amount, 0]],
+    }))).toThrow(/сумма/);
+  });
+
+  it("preserves Tashkent civil dates and decimal totals", () => {
+    const parsed = parseSoliqExcel(buildSoliqWorkbook({
+      expenseRows: [[1, "Example", "111111111", "1", "01.09.2026", "1 000,10", "120,01"]],
+      revenueRows: [["", 1, "Example", "111111111", "2", "2026-09-30", 0.1, 0.2, 0.3]],
+    }));
+    expect(parsed.expenses[0].date.toISOString()).toBe("2026-08-31T19:00:00.000Z");
+    expect(parsed.revenues[0].vatAmount).toBe(0.2);
+    expect(parsed.taxSummary.vat).toBe(-119.81);
+  });
+
+  it("rejects inconsistent VAT totals and malformed identities", () => {
+    expect(() => parseSoliqExcel(buildSoliqWorkbook({
+      revenueRows: [["", 1, "Example", "111111111", "2", "10.09.2026", 100, 12, 111]],
+    }))).toThrow(/не совпадают/);
+    expect(() => parseSoliqExcel(buildSoliqWorkbook({
+      expenseRows: [[1, "Example", "INN111111111", "1", "10.09.2026", 100, 0]],
+    }))).toThrow(/ИНН/);
+  });
+
   it("marks templateRecognized=true for a registry with no data rows at all", () => {
     const buf = buildSoliqWorkbook({});
     const parsed = parseSoliqExcel(buf);

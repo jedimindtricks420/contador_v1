@@ -332,7 +332,7 @@ function ClosingPageContent() {
               {periodLabel(deletingPeriod.year, deletingPeriod.month)}
             </p>
             <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 font-semibold">
-              Будут удалены все транзакции, проводки и данные за этот период. Это действие нельзя отменить.
+              Можно удалить только пустой открытый период без документов, импорта и истории закрытия. Учётные данные не удаляются.
             </div>
             <div className="flex gap-3 pt-1">
               <button

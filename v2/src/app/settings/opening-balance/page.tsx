@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, AlertCircle, Plus, Trash2, X } from "lucide-react";
 import SearchableSelect from "@/components/SearchableSelect";
+import { isOpeningBalanceAccount, openingBalanceSchema, openingBalanceTotals } from "@/lib/openingBalanceInput";
 
 interface BalanceLine {
   accountCode: string;
@@ -13,32 +14,58 @@ interface AccountOption {
   code: string;
   name: string;
   type: string;
+  isDeprecated: boolean;
+  children?: AccountOption[];
+}
+
+function flattenAccounts(accounts: AccountOption[]): AccountOption[] {
+  return accounts.flatMap(account => [account, ...flattenAccounts(account.children ?? [])]);
 }
 
 export default function OpeningBalancePage() {
   const [lines, setLines] = useState<BalanceLine[]>([{ accountCode: "", debit: "0", credit: "0" }]);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent" }).format(new Date()));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]);
+    async function load(url: string) {
+      const response = await fetch(url, { signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Не удалось загрузить начальные остатки");
+      return data;
+    }
     Promise.all([
-      fetch("/v2/api/accounts").then(r => r.ok ? r.json() : []),
-      fetch("/v2/api/settings/opening-balance").then(r => r.ok ? r.json() : { lines: [] })
+      load("/v2/api/accounts"),
+      load("/v2/api/settings/opening-balance")
     ]).then(([accs, existing]) => {
-      setAccounts(Array.isArray(accs) ? accs : []);
+      if (!active) return;
+      if (!Array.isArray(accs) || !Array.isArray(existing.lines)) throw new Error("Некорректный ответ сервера");
+      setAccounts(flattenAccounts(accs).filter(account => isOpeningBalanceAccount({ ...account, _count: { children: account.children?.length ?? 0 } })));
       if (existing.lines && existing.lines.length > 0) {
-        setLines(existing.lines.map((l: any) => ({
-          accountCode: l.accountCode,
-          debit: String(l.debit || 0),
-          credit: String(l.credit || 0)
+        setLines(existing.lines.map((line: BalanceLine) => ({
+          accountCode: line.accountCode,
+          debit: String(line.debit),
+          credit: String(line.credit)
         })));
       }
-    }).catch(e => setError(e.message)).finally(() => setLoading(false));
-  }, []);
+      if (existing.date) setDate(existing.date);
+      setReadOnly(Boolean(existing.documentId));
+      setReady(true);
+    }).catch(error => {
+      if (active) setError(error instanceof Error ? error.message : "Ошибка загрузки");
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; controller.abort(); };
+  }, [reload]);
 
   const addLine = () => setLines(prev => [...prev, { accountCode: "", debit: "0", credit: "0" }]);
 
@@ -48,35 +75,35 @@ export default function OpeningBalancePage() {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: val } : l));
   };
 
-  const totalDebit = lines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
-  const totalCredit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
-  const diff = totalDebit - totalCredit;
+  const totals = openingBalanceTotals(lines.map(line => ({
+    debit: /^\d{1,18}(?:\.\d{1,2})?$/.test(line.debit) ? line.debit : "0",
+    credit: /^\d{1,18}(?:\.\d{1,2})?$/.test(line.credit) ? line.credit : "0",
+  })));
+  const balanced = totals.debit === totals.credit;
 
   const handleSave = async () => {
-    const validLines = lines.filter(l => l.accountCode && (parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0));
-    if (validLines.length === 0) { setError("Добавьте хотя бы одну строку с суммой"); return; }
+    if (!ready || readOnly || saving) return;
+    const parsed = openingBalanceSchema.safeParse({ date, lines });
+    if (!parsed.success) { setError(parsed.error.issues[0]?.message || "Проверьте суммы и счета"); return; }
     setSaving(true); setError(null);
     try {
       const res = await fetch("/v2/api/settings/opening-balance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date,
-          lines: validLines.map(l => ({ accountCode: l.accountCode, debit: parseFloat(l.debit) || 0, credit: parseFloat(l.credit) || 0 }))
-        })
+        body: JSON.stringify(parsed.data),
+        signal: AbortSignal.timeout(20000),
       });
-      if (res.ok) { setSuccess(true); setTimeout(() => setSuccess(false), 3000); }
+      if (res.ok) { setSuccess(true); setReadOnly(true); }
       else { const e = await res.json(); setError(e.error || "Ошибка сохранения"); }
-    } catch (e: any) { setError(e.message); } finally { setSaving(false); }
+    } catch (error) {
+      setError(error instanceof Error ? `${error.message}. Проверьте состояние сохранения после обновления страницы.` : "Ошибка сохранения");
+    } finally { setSaving(false); }
   };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Начальные остатки</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Введите остатки по счетам на начало ведения учёта. Разница балансируется на счёт 8890.
-          </p>
         </div>
 
         {loading ? (
@@ -97,10 +124,15 @@ export default function OpeningBalancePage() {
               </div>
             )}
 
-            {/* Date */}
+            {!ready && (
+              <button onClick={() => { setError(null); setLoading(true); setReload(value => value + 1); }} className="text-sm underline">Повторить загрузку</button>
+            )}
+            {readOnly && <p className="text-xs text-gray-500">Проведённый начальный баланс</p>}
+            <fieldset disabled={!ready || readOnly || saving} className="space-y-4 min-w-0">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-bold text-gray-500 w-32">Дата остатков</label>
+              <label htmlFor="opening-date" className="text-xs font-bold text-gray-500 w-32">Дата остатков</label>
               <input
+                id="opening-date"
                 type="date"
                 value={date}
                 onChange={e => setDate(e.target.value)}
@@ -108,9 +140,8 @@ export default function OpeningBalancePage() {
               />
             </div>
 
-            {/* Lines table */}
-            <div className="border border-gray-200 rounded overflow-hidden">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="border border-gray-200 rounded overflow-x-auto">
+              <table className="w-full min-w-[540px] text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                     <th className="py-3 px-4">Счёт</th>
@@ -123,18 +154,18 @@ export default function OpeningBalancePage() {
                   {lines.map((line, idx) => (
                     <tr key={idx} className="hover:bg-gray-50/40">
                       <td className="py-2 px-4">
-                        <SearchableSelect
+                        {readOnly ? <span>{line.accountCode}</span> : <SearchableSelect
                           options={accounts.map(a => ({ value: a.code, label: `${a.code} — ${a.name}`, searchText: a.code }))}
                           value={line.accountCode}
                           onChange={v => updateLine(idx, "accountCode", v)}
                           placeholder="— Выберите счёт —"
-                        />
+                        />}
                       </td>
                       <td className="py-2 px-4">
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
+                          aria-label={`Дебет строки ${idx + 1}`}
                           value={line.debit}
                           onChange={e => updateLine(idx, "debit", e.target.value)}
                           className="w-full text-right bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-mono text-gray-700 outline-hidden focus:border-black"
@@ -142,9 +173,9 @@ export default function OpeningBalancePage() {
                       </td>
                       <td className="py-2 px-4">
                         <input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
+                          aria-label={`Кредит строки ${idx + 1}`}
                           value={line.credit}
                           onChange={e => updateLine(idx, "credit", e.target.value)}
                           className="w-full text-right bg-white border border-gray-200 rounded px-2 py-1.5 text-xs font-mono text-gray-700 outline-hidden focus:border-black"
@@ -152,6 +183,8 @@ export default function OpeningBalancePage() {
                       </td>
                       <td className="py-2 px-2 text-center">
                         <button
+                          title="Удалить строку"
+                          aria-label={`Удалить строку ${idx + 1}`}
                           onClick={() => removeLine(idx)}
                           className="text-gray-300 hover:text-rose-500 transition p-1 rounded"
                           disabled={lines.length === 1}
@@ -165,14 +198,14 @@ export default function OpeningBalancePage() {
                 <tfoot>
                   <tr className="bg-gray-50 border-t border-gray-200 font-bold text-xs">
                     <td className="py-2 px-4 text-gray-500">Итого</td>
-                    <td className="py-2 px-4 text-right font-mono">{totalDebit.toLocaleString("ru-RU", { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2 px-4 text-right font-mono">{totalCredit.toLocaleString("ru-RU", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 px-4 text-right font-mono">{totals.debit}</td>
+                    <td className="py-2 px-4 text-right font-mono">{totals.credit}</td>
                     <td></td>
                   </tr>
-                  {diff !== 0 && (
+                  {!balanced && (
                     <tr className="bg-amber-50 border-t border-amber-200 text-xs">
                       <td className="py-2 px-4 text-amber-700 font-semibold" colSpan={4}>
-                        Разница {Math.abs(diff).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} будет отнесена на счёт 8890 (нераспределённая прибыль)
+                        Дебет и кредит не совпадают
                       </td>
                     </tr>
                   )}
@@ -180,7 +213,7 @@ export default function OpeningBalancePage() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between">
+            {!readOnly && <div className="flex flex-wrap gap-3 items-center justify-between">
               <button
                 onClick={addLine}
                 className="inline-flex items-center gap-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded transition"
@@ -189,12 +222,13 @@ export default function OpeningBalancePage() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || !ready || !balanced}
                 className="text-xs bg-black hover:opacity-80 text-white font-bold py-2 px-6 rounded transition disabled:opacity-40"
               >
                 {saving ? "Сохранение..." : "Сохранить начальные остатки"}
               </button>
-            </div>
+            </div>}
+            </fieldset>
           </div>
         )}
     </div>
