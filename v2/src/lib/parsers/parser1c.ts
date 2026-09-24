@@ -75,6 +75,16 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
   let closingBalance: string | undefined;
   let periodStart: Date | undefined;
   let periodEnd: Date | undefined;
+  let currency: string | undefined;
+
+  const recordCurrency = (value: string) => {
+    const codes: Record<string, string> = { "860": "UZS", "840": "USD", "978": "EUR", "643": "RUB" };
+    const normalized = codes[value] ?? value.toUpperCase();
+    if (!/^[A-Z]{3}$/.test(normalized) || (currency && currency !== normalized)) {
+      throw new BankStatementValidationError("Неоднозначная или неподдерживаемая валюта выписки 1С");
+    }
+    currency = normalized;
+  };
 
   const accountNumbers = new Set<string>();
   let scanningDocument = false;
@@ -172,6 +182,10 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
         }
 
         const description = current["НазначениеПлатежа"] || current["Назначение"] || "";
+        const bankDocumentNumber = current["Номер"];
+        if (bankDocumentNumber !== undefined && (!bankDocumentNumber || bankDocumentNumber.length > 128 || /[\u0000-\u001f\u007f]/.test(bankDocumentNumber))) {
+          throw new BankStatementValidationError("Некорректный номер документа выписки 1С");
+        }
 
         let finalCounterpartyHint = counterpartyHint || undefined;
         let finalCounterpartyInn = counterpartyInn || undefined;
@@ -193,6 +207,9 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
           description,
           counterpartyHint: finalCounterpartyHint,
           counterpartyInn: finalCounterpartyInn,
+          bankDocumentNumber,
+          payerAccountNumber: payerAccount,
+          recipientAccountNumber: recipientAccount,
         });
 
         current = {};
@@ -202,6 +219,7 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
 
     const k = line.slice(0, eqIdx).trim();
     const v = line.slice(eqIdx + 1).trim();
+    if (k === "Валюта" || k === "КодВалюты") recordCurrency(v);
 
     if (k === "СекцияДокумент") {
       if (inSection || inAccSection) throw new BankStatementValidationError("Незавершённая секция в выписке 1С");
@@ -244,5 +262,5 @@ export function parse1CExchange(input: string | Buffer): ParsedBankStatement {
   if (expectedClosing !== BigInt(closingBalance.replace(".", ""))) {
     throw new BankStatementValidationError("Контрольные остатки выписки не согласуются с её операциями");
   }
-  return { transactions, openingBalance, closingBalance, periodStart, periodEnd, accountNumber: ourAccount || undefined };
+  return { transactions, openingBalance, closingBalance, periodStart, periodEnd, accountNumber: ourAccount || undefined, currency };
 }

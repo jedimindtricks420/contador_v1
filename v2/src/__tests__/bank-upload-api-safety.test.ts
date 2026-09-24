@@ -18,10 +18,11 @@ const statement = [
   "НазначениеПлатежа=Synthetic", "КонецДокумента", "КонецФайла",
 ].join("\n");
 
-function upload(file: File, preview = false, extra?: string) {
+function upload(file: File, preview = false, extra?: string, confirmedCurrency: string | null = "UZS") {
   const form = new FormData();
   form.set("file", file);
   form.set("bankAccountId", "bank-1");
+  if (confirmedCurrency !== null) form.set("confirmedCurrency", confirmedCurrency);
   if (extra) form.set("extra", extra);
   return new NextRequest(`http://localhost/api/import/bank${preview ? "?preview=true" : ""}`, { method: "POST", body: form });
 }
@@ -36,11 +37,67 @@ function streamed(stream: ReadableStream<Uint8Array>, preview = false, signal?: 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.membership.mockResolvedValue({ orgId: "own", userId: "actor", role: "OWNER" });
-  mocks.findBank.mockResolvedValue({ id: "bank-1", orgId: "own", accountNumber });
+  mocks.findBank.mockResolvedValue({ id: "bank-1", orgId: "own", accountNumber, currency: "UZS" });
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("bank upload API resource limits", () => {
+  it("requires explicit currency confirmation for a source without currency", async () => {
+    const response = await POST(upload(new File([statement], "bank.txt"), false, undefined, null));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: "BANK_CURRENCY_CONFIRMATION_REQUIRED" });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("rejects a conflicting source currency before writes, preview=%s", async preview => {
+    const response = await POST(upload(new File([statement.replace("КонецРасчСчет", "Валюта=USD\nКонецРасчСчет")], "bank.txt"), preview));
+    expect(response.status).toBe(422);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("allows preview without confirmation and exposes missing currency", async () => {
+    const response = await POST(upload(new File([statement], "bank.txt"), true, undefined, null));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ currency: null, bankCurrency: "UZS", requiresCurrencyConfirmation: true });
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
+  it("rechecks currency under the account lock", async () => {
+    mocks.transaction.mockImplementation(callback => callback({
+      $queryRaw: async () => [{ lastBalance: "0.00", lastSyncedAt: null, currency: "USD", accountNumber }],
+    }));
+    const response = await POST(upload(new File([statement], "bank.txt")));
+    expect(response.status).toBe(422);
+  });
+
+  it.each([false, true])("persists the original source atomically, archive failure=%s", async failArchive => {
+    const archive = vi.fn(async () => {
+      if (failArchive) throw new Error("archive unavailable");
+    });
+    let committed = false;
+    const audit = vi.fn();
+    mocks.transaction.mockImplementation(async callback => {
+      const result = await callback({
+        $queryRaw: async () => [{ lastBalance: "0.00", lastSyncedAt: null, currency: "UZS", accountNumber }],
+        period: { upsert: async () => ({ id: "period" }), findUniqueOrThrow: async () => ({ status: "OPEN", lockDate: null }) },
+        stagedTransaction: { findUnique: async () => null, createMany: async () => ({ count: 1 }), findMany: async () => [] },
+        bankAccount: { update: vi.fn() }, bankImportBatch: { create: archive, findMany: async () => [] }, auditLog: { create: audit },
+      });
+      committed = true;
+      return result;
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const response = await POST(upload(new File([statement], "bank.txt")));
+    expect(response.status).toBe(failArchive ? 500 : 200);
+    expect(committed).toBe(!failArchive);
+    expect(archive).toHaveBeenCalledWith({ data: expect.objectContaining({
+      sourceData: Buffer.from(statement), sourceName: "bank.txt", parserVersion: "1c-bank-v2",
+      rows: [expect.objectContaining({ amount: "0.10" })],
+      result: expect.objectContaining({ newValue: expect.objectContaining({ bankBatchVersion: 1, rollbackVersion: 2, currencyEvidence: "USER_CONFIRMED", confirmedCurrency: "UZS" }) }),
+    }) });
+    expect(audit).toHaveBeenCalledTimes(failArchive ? 0 : 1);
+  });
+
   it.each([false, true])("preserves real parsing and preview for a file at the limit: %s", async atLimit => {
     const source = atLimit
       ? Buffer.concat([Buffer.from(statement + "\n"), Buffer.alloc(BANK_UPLOAD_MAX_FILE_BYTES - Buffer.byteLength(statement) - 1, 32)])

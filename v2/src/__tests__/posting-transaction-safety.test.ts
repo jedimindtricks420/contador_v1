@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { postDocument, voidDocument, repostDocument } from "@/lib/posting/postingEngine";
+import { isSystemDocumentType } from "@/lib/posting/documentPolicy";
 
 const { syncCalendar } = vi.hoisted(() => ({ syncCalendar: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({ default: {} }));
@@ -8,7 +9,9 @@ vi.mock("@/lib/closing", () => ({ upsertTaxCalendarEventsForPeriod: syncCalendar
 describe("posting transaction safety", () => {
   const transaction = {
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     document: { findUnique: vi.fn(), update: vi.fn() },
+    documentType: { findUnique: vi.fn() },
     period: { findUnique: vi.fn() },
     organization: { findUnique: vi.fn() },
     account: { findUnique: vi.fn() },
@@ -33,7 +36,9 @@ describe("posting transaction safety", () => {
     committed = [];
     pending = [];
     syncCalendar.mockResolvedValue(undefined);
-    transaction.$queryRaw.mockResolvedValue([{ id: "doc-safe" }]);
+    transaction.$queryRaw.mockResolvedValue([]);
+    transaction.$executeRaw.mockResolvedValue(1);
+    transaction.documentType.findUnique.mockResolvedValue({ code: "TEST" });
     transaction.document.findUnique.mockResolvedValue({
       id: "doc-safe", orgId: "org-safe", periodId: "period-safe", status: "POSTED",
       date: new Date("2026-09-10T00:00:00Z"), payload: { amount: "100" },
@@ -67,6 +72,73 @@ describe("posting transaction safety", () => {
     await postDocument("doc-safe", transaction, "user-safe");
     expect(client.$transaction).not.toHaveBeenCalled();
     expect(transaction.$queryRaw).toHaveBeenCalled();
+  });
+
+  it("treats opening balances as system documents", () => {
+    expect(isSystemDocumentType("OPENING_BALANCE")).toBe(true);
+  });
+
+  it.each(["post", "void", "repost"])("blocks shared %s of opening balances before writes", async operation => {
+    const document = await transaction.document.findUnique();
+    transaction.document.findUnique.mockResolvedValue({ ...document, type: { code: "OPENING_BALANCE" } });
+    const result = operation === "post" ? postDocument("doc-safe", client)
+      : operation === "void" ? voidDocument("doc-safe", client)
+        : repostDocument("doc-safe", "new-type", client);
+    await expect(result).rejects.toThrow(/Начальные остатки/);
+    expect(transaction.document.update).not.toHaveBeenCalled();
+    expect(transaction.journalEntry.create).not.toHaveBeenCalled();
+    expect(transaction.journalEntry.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("blocks conversion into an opening balance before voiding", async () => {
+    transaction.documentType.findUnique.mockResolvedValue({ code: "OPENING_BALANCE" });
+    await expect(repostDocument("doc-safe", "opening-type", client)).rejects.toThrow(/Начальные остатки/);
+    expect(transaction.document.update).not.toHaveBeenCalled();
+    expect(transaction.journalEntry.deleteMany).not.toHaveBeenCalled();
+    expect(transaction.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("writes the POST archive after journal entries in the same transaction", async () => {
+    await postDocument("doc-safe", client, "user-safe");
+    expect(transaction.$executeRaw).toHaveBeenCalledOnce();
+    const [parts, ...values] = transaction.$executeRaw.mock.calls[0];
+    expect(parts.join("")).toContain('INSERT INTO "PostingRevision"');
+    expect(values).toContain("POST");
+    expect(values).toContain("user-safe");
+    expect(transaction.$executeRaw.mock.invocationCallOrder[0])
+      .toBeGreaterThan(transaction.journalEntry.create.mock.invocationCallOrder[1]);
+  });
+
+  it.each(["post", "void", "repost"])("rolls back %s when archive persistence fails", async operation => {
+    transaction.$executeRaw.mockRejectedValue(new Error("archive unavailable"));
+    const result = operation === "post" ? postDocument("doc-safe", client)
+      : operation === "void" ? voidDocument("doc-safe", client)
+        : repostDocument("doc-safe", "new-type", client);
+    await expect(result).rejects.toThrow("archive unavailable");
+    expect(committed).toEqual([]);
+    expect(transaction.document.update).not.toHaveBeenCalled();
+    expect(transaction.journalEntry.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("archives VOID before deleting or changing the live document", async () => {
+    await voidDocument("doc-safe", client);
+    expect(transaction.$executeRaw.mock.calls[0]).toContain("VOID");
+    expect(transaction.$executeRaw.mock.invocationCallOrder[0])
+      .toBeLessThan(transaction.document.update.mock.invocationCallOrder[0]);
+    expect(transaction.$executeRaw.mock.invocationCallOrder[0])
+      .toBeLessThan(transaction.journalEntry.deleteMany.mock.invocationCallOrder[0]);
+  });
+
+  it.each(["POSTED", "VOIDED"])("checks ledger drift before voiding a %s document", async status => {
+    const document = await transaction.document.findUnique();
+    transaction.document.findUnique.mockResolvedValue({ ...document, status });
+    transaction.$queryRaw.mockImplementation(async (parts) => parts.join("").includes('FROM "PostingRevision"')
+      ? [{ orgId: "org-safe", periodId: "period-safe", action: "POST", hashValid: true, ledgerMatches: false, hasEntries: true }]
+      : []);
+    await expect(voidDocument("doc-safe", client)).rejects.toThrow(/accounting review/);
+    expect(transaction.document.update).not.toHaveBeenCalled();
+    expect(transaction.$executeRaw).not.toHaveBeenCalled();
   });
 
   it("rejects a duplicate before writes", async () => {

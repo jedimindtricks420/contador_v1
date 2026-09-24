@@ -43,3 +43,6 @@ next-env.d.ts
 /src/generated/prisma
 postgres_data/
 
+# AI agent worktree scaffolding (separate git worktrees, not regular content)
+.claude/
+

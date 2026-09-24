@@ -56,6 +56,7 @@ model Organization {
   charterCapitalFundingType CharterCapitalFundingType?
   auditLogs                 AuditLog[]
   bankAccounts              BankAccount[]
+  bankImportBatches         BankImportBatch[]
   classificationJobs        ClassificationJob[]
   closingJobs               ClosingJob[]
   soliqImportBatches        SoliqImportBatch[]
@@ -97,7 +98,35 @@ model BankAccount {
   org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   stagedTransactions StagedTransaction[]
 
+  importBatches      BankImportBatch[]
+
+  @@unique([id, orgId])
   @@index([orgId])
+}
+
+model BankImportBatch {
+  id              String       @id @default(uuid())
+  orgId           String
+  bankAccountId   String
+  bankCurrency    String
+  sourceName      String
+  sourceHash      String
+  sourceData      Bytes
+  parserVersion   String
+  rows            Json
+  statement       Json
+  result          Json
+  status          String       @default("IMPORTED")
+  createdBy       String
+  createdAt       DateTime     @default(now())
+  rolledBackBy    String?
+  rolledBackAt    DateTime?
+  rollbackAuditId String?
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  bankAccount     BankAccount  @relation(fields: [bankAccountId, orgId], references: [id, orgId], onDelete: Restrict)
+
+  @@index([orgId, bankAccountId, createdAt])
+  @@index([orgId, bankAccountId, sourceHash])
 }
 
 model Period {
@@ -222,6 +251,23 @@ model Document {
 
   @@index([orgId, periodId])
   @@index([orgId, date])
+}
+
+model PostingRevision {
+  id           String   @id @default(uuid())
+  orgId        String
+  documentId   String
+  periodId     String
+  revision     Int
+  previousId   String?  @unique
+  action       String
+  createdBy    String
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  snapshot     Json
+  snapshotHash String
+
+  @@unique([documentId, revision])
+  @@index([orgId, documentId, revision])
 }
 
 model JournalEntry {

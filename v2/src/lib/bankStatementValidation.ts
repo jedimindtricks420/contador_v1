@@ -21,6 +21,16 @@ export function assertStatementAccount(statementNumber: string | undefined, bank
   return statement;
 }
 
+export function assertStatementCurrency(statementCurrency: string | undefined, bankCurrency: string, confirmedCurrency: string | null, preview = false): void {
+  if (!/^[A-Z]{3}$/.test(bankCurrency) || (statementCurrency !== undefined && statementCurrency !== bankCurrency) ||
+      (confirmedCurrency !== null && confirmedCurrency !== bankCurrency)) {
+    throw new BankStatementValidationError("Валюта выписки не совпадает с валютой банковского счёта");
+  }
+  if (!preview && statementCurrency === undefined && confirmedCurrency !== bankCurrency) {
+    throw new BankStatementValidationError("В файле не указана валюта. Необходимо подтвердить валюту выписки");
+  }
+}
+
 export function parseBankStatementMoney(value: string, allowNegative = false): string {
   const trimmed = value.trim();
   if (!/^-?(?:\d+|\d{1,3}(?:[ \u00a0]\d{3})+)(?:[.,]\d{1,2})?$/.test(trimmed)) {

@@ -4,8 +4,15 @@ import Decimal from "decimal.js";
 import { getRiskDeadline } from "../openItems";
 import { TAX_RATES, SALARY_EXPENSE_ACCOUNT_CODES } from "../constants";
 import { PostingValidationError } from "./errors";
+import { appendPostingRevision, assertPostingRevisionState } from "./postingRevision";
 
 type PostingResult = { journalEntries: any[]; openItem: any };
+
+function assertNotOpeningBalance(code: string) {
+  if (code === "OPENING_BALANCE") {
+    throw new PostingValidationError("Начальные остатки требуют отдельной процедуры проверки и исправления");
+  }
+}
 
 function resolveAccountCode(reference: unknown, payload: Record<string, any>): string {
   if (typeof reference !== "string" || !reference.trim()) {
@@ -47,6 +54,7 @@ async function postDocumentInTransaction(documentId: string, tx: any, passedUser
   });
 
   if (!doc) throw new Error("Документ не найден");
+  assertNotOpeningBalance(doc.type.code);
   if (doc.status === "VOIDED") {
     throw new Error("Сторнированный документ нельзя провести повторно");
   }
@@ -79,6 +87,8 @@ async function postDocumentInTransaction(documentId: string, tx: any, passedUser
   if (existingEntry) {
     throw new Error("Документ уже проведён; повторное проведение запрещено");
   }
+
+  await assertPostingRevisionState(tx, doc, "POST");
 
   // 3. Fetch Organization to verify VAT status
   const org = await tx.organization.findUnique({
@@ -394,6 +404,10 @@ async function postDocumentInTransaction(documentId: string, tx: any, passedUser
   // 10. Audit Log
   const userId = passedUserId || "system";
 
+  await appendPostingRevision(tx, doc, "POST", userId, {
+    ...evalPayload, engineVersion: "posting-v1",
+  });
+
   await tx.auditLog.create({
     data: {
       orgId: doc.orgId,
@@ -440,11 +454,14 @@ async function voidDocumentInTransaction(documentId: string, tx: any, passedUser
   await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
   // 1. Fetch document
   const doc = await tx.document.findUnique({
-    where: { id: documentId }
+    where: { id: documentId },
+    include: { type: true }
   });
 
   if (!doc) throw new Error("Документ не найден");
 
+  assertNotOpeningBalance(doc.type.code);
+  await assertPostingRevisionState(tx, doc, "VOID");
   if (doc.status === "VOIDED") return;
 
   // 2. Check period lock
@@ -471,6 +488,8 @@ async function voidDocumentInTransaction(documentId: string, tx: any, passedUser
   if (settledDebt) {
     throw new Error("Задолженность документа уже погашена; сначала отмените документ расчёта");
   }
+
+  await appendPostingRevision(tx, doc, "VOID", passedUserId || "system", null);
 
   // 3. Mark document status as VOIDED. Clear sourceTransactionId too — it has a
   // unique DB constraint, so leaving it set on a voided document would permanently
@@ -552,6 +571,9 @@ export async function repostDocument(
 
 async function repostDocumentInTransaction(documentId: string, newTypeId: string, tx: any, passedUserId?: string) {
   await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
+  const targetType = await tx.documentType.findUnique({ where: { id: newTypeId } });
+  if (!targetType) throw new Error("Тип документа не найден");
+  assertNotOpeningBalance(targetType.code);
   // Save linked staged transaction IDs before voiding clears them
   const linkedStagedTxs = await tx.stagedTransaction.findMany({
     where: { documentId },

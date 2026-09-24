@@ -3,5 +3,5 @@ export function assertAccountingWriteRole(role: string) {
 }
 
 export function isSystemDocumentType(code: string) {
-  return ["PERIOD_CLOSING", "YEAR_END_CLOSE", "SOLIQ_IMPORT", "OPENING_CAPITAL_DECLARATION"].includes(code);
+  return ["PERIOD_CLOSING", "YEAR_END_CLOSE", "SOLIQ_IMPORT", "OPENING_CAPITAL_DECLARATION", "OPENING_BALANCE"].includes(code);
 }

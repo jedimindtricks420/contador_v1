@@ -62,6 +62,7 @@ describe.skipIf(!databaseUrl)("bank accounts on disposable PostgreSQL", () => {
       `ПолучательРасчСчет=${ownNumber}`, "НазначениеПлатежа=Synthetic", "КонецДокумента", "КонецФайла"].join("\n");
     const data = new FormData();
     data.set("bankAccountId", id);
+    data.set("confirmedCurrency", "UZS");
     data.set("file", new File([text], "synthetic.txt"));
     return importBank(new NextRequest("http://localhost/api/import/bank", { method: "POST", body: data }));
   };
@@ -77,6 +78,7 @@ describe.skipIf(!databaseUrl)("bank accounts on disposable PostgreSQL", () => {
   afterAll(async () => {
     try {
       await client.stagedTransaction.deleteMany({ where: { orgId: { in: orgIds } } });
+      await client.bankImportBatch.deleteMany({ where: { orgId: { in: orgIds } } });
       await client.organization.deleteMany({ where: { id: { in: orgIds } } });
     } finally { await client.$disconnect(); }
   });

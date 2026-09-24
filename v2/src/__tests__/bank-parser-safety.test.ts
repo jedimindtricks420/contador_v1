@@ -18,6 +18,32 @@ const statement = (overrides: Record<string, string> = {}, metadata = "") => [
 ].join("\n");
 
 describe("bank source identity and dates", () => {
+  it("preserves document numbers and both bank accounts", () => {
+    expect(parse1CExchange(statement({ Номер: "000012" })).transactions[0]).toMatchObject({
+      bankDocumentNumber: "000012", payerAccountNumber: otherAccount, recipientAccountNumber: ownAccount,
+    });
+  });
+
+  it.each([["860", "UZS"], ["usd", "USD"], ["978", "EUR"], ["643", "RUB"]])("normalizes explicit currency %s", (value, expected) => {
+    expect(parse1CExchange(statement({}, `Валюта=${value}`)).currency).toBe(expected);
+  });
+
+  it("does not invent a currency when the file does not declare it", () => {
+    expect(parse1CExchange(statement()).currency).toBeUndefined();
+  });
+
+  it.each(["", "000", "US", "USD RUB"])('rejects invalid currency "%s"', currency => {
+    expect(() => parse1CExchange(statement({}, `Валюта=${currency}`))).toThrow(BankStatementValidationError);
+  });
+
+  it("rejects conflicting header and document currencies", () => {
+    expect(() => parse1CExchange(statement({ КодВалюты: "840" }, "Валюта=UZS"))).toThrow(BankStatementValidationError);
+  });
+
+  it.each(["", "1".repeat(129), "12\u0000"])('rejects malformed document number "%s"', number => {
+    expect(() => parse1CExchange(statement({ Номер: number }))).toThrow(BankStatementValidationError);
+  });
+
   it.each(["string", "utf8"])("parses an unambiguous incoming operation from %s", encoding => {
     const text = statement();
     const result = parse1CExchange(encoding === "utf8" ? Buffer.from(text, "utf8") : text);

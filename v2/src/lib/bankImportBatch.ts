@@ -4,7 +4,7 @@ import { BANK_STATEMENT_MAX_TRANSACTIONS } from "@/lib/parsers/parser1c";
 import type { ParsedBankStatement } from "@/lib/parsers/types";
 import { BankStatementValidationError, normalizeBankAccountNumber, parseBankStatementMoney } from "@/lib/bankStatementValidation";
 
-export const BANK_IMPORT_PARSER_VERSION = "1c-bank-v1";
+export const BANK_IMPORT_PARSER_VERSION = "1c-bank-v2";
 
 export function bankSourceHash(source: Uint8Array): string {
   return createHash("sha256").update(source).digest("hex");
@@ -16,7 +16,7 @@ export function buildBankImportSource(source: Buffer, sourceName: string, parsed
   const periodEnd = parsed.periodEnd;
   if (!source.length || source.length > BANK_UPLOAD_MAX_FILE_BYTES || !accountNumber ||
       !periodStart || !periodEnd || !Number.isFinite(periodStart.getTime()) || !Number.isFinite(periodEnd.getTime()) ||
-      periodStart > periodEnd || !parsed.transactions.length || parsed.transactions.length > BANK_STATEMENT_MAX_TRANSACTIONS ||
+      periodStart > periodEnd || parsed.transactions.length > BANK_STATEMENT_MAX_TRANSACTIONS ||
       parsed.openingBalance === undefined || parsed.closingBalance === undefined) {
     throw new BankStatementValidationError("Неполный исходный снимок банковского импорта");
   }
@@ -37,6 +37,9 @@ export function buildBankImportSource(source: Buffer, sourceName: string, parsed
       rowNumber: index + 1, date: transaction.date.toISOString(), amount, direction: transaction.direction,
       description: transaction.description, counterpartyHint: transaction.counterpartyHint ?? null,
       counterpartyInn: transaction.counterpartyInn ?? null,
+      bankDocumentNumber: transaction.bankDocumentNumber ?? null,
+      payerAccountNumber: transaction.payerAccountNumber ?? null,
+      recipientAccountNumber: transaction.recipientAccountNumber ?? null,
     };
   });
   if (BigInt(openingBalance.replace(".", "")) + creditCents - debitCents !== BigInt(closingBalance.replace(".", ""))) {
@@ -49,6 +52,7 @@ export function buildBankImportSource(source: Buffer, sourceName: string, parsed
     rows,
     statement: {
       accountNumber, periodStart: periodStart.toISOString(), periodEnd: periodEnd.toISOString(),
+      currency: parsed.currency ?? null,
       openingBalance, closingBalance, credits: fixedMoney(creditCents), debits: fixedMoney(debitCents), rowCount: rows.length,
     },
   };

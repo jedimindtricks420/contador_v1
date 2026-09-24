@@ -12,6 +12,18 @@ const statement = (): ParsedBankStatement => ({
 });
 
 describe("bank import source contract", () => {
+  it("archives source currency and document references without changing their meaning", () => {
+    const parsed = statement();
+    parsed.currency = "USD";
+    parsed.transactions[0].bankDocumentNumber = "00012";
+    parsed.transactions[0].payerAccountNumber = "00000000000000000002";
+    parsed.transactions[0].recipientAccountNumber = parsed.accountNumber;
+    const source = buildBankImportSource(Buffer.from("source"), "bank.txt", parsed);
+    expect(source.parserVersion).toBe("1c-bank-v2");
+    expect(source.statement.currency).toBe("USD");
+    expect(source.rows[0]).toMatchObject({ bankDocumentNumber: "00012", payerAccountNumber: "00000000000000000002", recipientAccountNumber: parsed.accountNumber });
+  });
+
   it("retains original bytes, numbered rows and exact controls above Number precision", () => {
     const bytes = Buffer.from([0xc0, 0xc1, 0x0d, 0x0a]);
     const source = buildBankImportSource(bytes, "statement.txt", statement());

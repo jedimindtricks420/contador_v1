@@ -5,6 +5,9 @@ export interface ParsedTransaction {
   description: string;
   counterpartyHint?: string;
   counterpartyInn?: string;
+  bankDocumentNumber?: string;
+  payerAccountNumber?: string;
+  recipientAccountNumber?: string;
 }
 
 export interface ParsedBankStatement {
@@ -14,4 +17,5 @@ export interface ParsedBankStatement {
   periodStart?: Date;
   periodEnd?: Date;
   accountNumber?: string;
+  currency?: string;
 }

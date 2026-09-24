@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  serverExternalPackages: ["nodemailer", "xlsx"],
   basePath: "/v2",
   assetPrefix: "/v2",
   // Хост со общей RAM на ~30 контейнеров разных проектов, без swap. Параллельная

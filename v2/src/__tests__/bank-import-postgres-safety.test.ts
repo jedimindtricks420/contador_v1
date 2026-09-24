@@ -1,14 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as importBank } from "@/app/api/import/bank/route";
 import { DELETE as rollbackBank } from "@/app/api/import/bank/rollback/route";
 import { finalizePeriod } from "@/lib/closing";
 import type { ParsedTransaction } from "@/lib/parsers/types";
+import Decimal from "decimal.js";
 
 const { fixture } = vi.hoisted(() => ({ fixture: {
   client: null as PrismaClient | null, orgId: "", failBalance: false, failRollbackAudit: false, role: "OWNER",
+  failArchive: false, parsedOpening: "0.00", parsedClosing: "0.00",
+  periodStart: "2026-08-31T19:00:00Z", periodEnd: "2026-09-30T18:59:59Z",
   afterRollbackRowsLock: null as null | (() => Promise<void>),
   statementAccountNumber: "00000000000000000001" as string | undefined,
   beforeImportTransaction: null as null | (() => Promise<void>),
@@ -21,8 +24,9 @@ vi.mock("@/lib/context", () => ({ getActiveMembership: async () => ({
 }) }));
 vi.mock("@/lib/parsers/parser1c", async importOriginal => {
   const original = await importOriginal<typeof import("@/lib/parsers/parser1c")>();
-  return { parse1CExchange: (buffer: Buffer) => fixture.useRealParser ? original.parse1CExchange(buffer) : ({
-    transactions: fixture.rows, openingBalance: fixture.openingBalance,
+  return { ...original, parse1CExchange: (buffer: Buffer) => fixture.useRealParser ? original.parse1CExchange(buffer) : ({
+    transactions: fixture.rows, openingBalance: fixture.parsedOpening, closingBalance: fixture.parsedClosing,
+    periodStart: new Date(fixture.periodStart), periodEnd: new Date(fixture.periodEnd),
     accountNumber: fixture.statementAccountNumber,
   }) };
 });
@@ -33,6 +37,12 @@ vi.mock("@/lib/prisma", () => ({ default: {
     await fixture.beforeImportTransaction?.();
     return fixture.client!.$transaction(async (transaction) => callback(new Proxy(transaction, {
       get(target, key) {
+        if (key === "bankImportBatch" && fixture.failArchive) {
+          return new Proxy(target.bankImportBatch, { get(model, method) {
+            if (method === "create" || method === "update") return () => { throw new Error("injected archive failure"); };
+            return Reflect.get(model, method);
+          } });
+        }
         if (key === "$queryRaw") return async (...args: any[]) => {
           const result = await (target.$queryRaw as any)(...args);
           if (String(args[0][0]).startsWith('SELECT "id" FROM "StagedTransaction"')) await fixture.afterRollbackRowsLock?.();
@@ -73,9 +83,19 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
   const row = (amount: number, description: string): ParsedTransaction => ({
     date: new Date("2026-08-31T19:00:00Z"), amount, direction: "CREDIT", description,
   });
-  const upload = (preview = false) => {
+  const upload = async (preview = false) => {
+    if (!fixture.useRealParser) {
+      const bank = await bankState();
+      fixture.parsedOpening = new Decimal(fixture.openingBalance ?? bank.lastBalance.toString()).toFixed(2);
+      const delta = fixture.rows.reduce((total, transaction) => {
+        const cents = BigInt(new Decimal(transaction.amount).toFixed(2).replace(".", ""));
+        return total + (transaction.direction === "CREDIT" ? cents : -cents);
+      }, BigInt(0));
+      fixture.parsedClosing = new Decimal((BigInt(fixture.parsedOpening.replace(".", "")) + delta).toString()).div(100).toFixed(2);
+    }
     const data = new FormData();
     data.set("bankAccountId", bankAccountId);
+    data.set("confirmedCurrency", "UZS");
     data.set("parserType", "1C");
     data.set("file", new File([fixture.statementText], "synthetic.txt"));
     return importBank(new NextRequest(`http://localhost/api/import/bank${preview ? "?preview=true" : ""}`, { method: "POST", body: data }));
@@ -84,6 +104,11 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     method: "DELETE", body: JSON.stringify({ batchId }),
   }));
   const bankState = () => client.bankAccount.findUniqueOrThrow({ where: { id: bankAccountId } });
+  const nextMockPeriod = () => {
+    fixture.periodStart = "2026-09-30T19:00:00Z";
+    fixture.periodEnd = "2026-10-31T18:59:59Z";
+    fixture.rows = fixture.rows.map(transaction => ({ ...transaction, date: new Date(fixture.periodStart) }));
+  };
 
   beforeAll(async () => {
     fixture.client = client;
@@ -99,6 +124,9 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     orgIds.push(fixture.orgId);
     fixture.failBalance = false;
     fixture.failRollbackAudit = false;
+    fixture.failArchive = false;
+    fixture.periodStart = "2026-08-31T19:00:00Z";
+    fixture.periodEnd = "2026-09-30T18:59:59Z";
     fixture.role = "OWNER";
     fixture.afterRollbackRowsLock = null;
     fixture.beforeImportTransaction = null;
@@ -116,6 +144,7 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
   afterAll(async () => {
     try {
       await client.stagedTransaction.deleteMany({ where: { orgId: { in: orgIds } } });
+      await client.bankImportBatch.deleteMany({ where: { orgId: { in: orgIds } } });
       await client.organization.deleteMany({ where: { id: { in: orgIds } } });
       await client.documentType.deleteMany({ where: { id: { in: createdTypeIds } } });
       if (resultAccountId) await client.account.delete({ where: { id: resultAccountId } });
@@ -175,6 +204,16 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     expect((await bankState()).lastBalance.toString()).toBe("0");
   });
 
+  it("rejects a currency change between the initial read and account lock", async () => {
+    fixture.beforeImportTransaction = async () => {
+      await client.bankAccount.update({ where: { id: bankAccountId }, data: { currency: "USD" } });
+    };
+    expect((await upload()).status).toBe(422);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(0);
+    expect(await client.period.count({ where: { orgId: fixture.orgId } })).toBe(0);
+    expect(await client.bankImportBatch.count({ where: { orgId: fixture.orgId } })).toBe(0);
+  });
+
   it("compares formatted account numbers without losing leading zeroes", async () => {
     fixture.statementAccountNumber = "00000 00000 00000 00001";
     expect((await upload()).status).toBe(200);
@@ -192,6 +231,158 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     ].join("\n");
   };
 
+  const addDocumentNumber = (number = "0001") => {
+    fixture.statementText = fixture.statementText.replace("Дата=10.09.2026", `Номер=${number}\nДата=10.09.2026`);
+  };
+
+  const nextRealStatement = () => {
+    useStatement("0.10", "100.10", "100.20");
+    fixture.statementText = fixture.statementText.replace("01.09.2026", "01.10.2026")
+      .replace("30.09.2026", "31.10.2026").replace("10.09.2026", "10.10.2026");
+  };
+
+  const quietRealStatement = () => {
+    nextRealStatement();
+    fixture.statementText = fixture.statementText.split("СекцияДокумент=")[0].replace("КонечныйОстаток=100.20", "КонечныйОстаток=100.10") + "КонецФайла";
+  };
+
+  it("archives, deduplicates and rolls back a quiet period without synthetic operations", async () => {
+    useStatement();
+    expect((await upload()).status).toBe(200);
+    const before = await bankState();
+    quietRealStatement();
+    const response = await upload();
+    expect(response.status).toBe(200);
+    const quiet = await response.json();
+    expect(quiet).toMatchObject({ imported: 0, total: 0, emptyStatement: true });
+    expect(quiet.importBatchId).toBeTruthy();
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(1);
+    const after = await bankState();
+    expect(await (await upload()).json()).toMatchObject({ alreadyImported: true, importBatchId: null });
+    expect(await bankState()).toEqual(after);
+    expect(await (await rollback(quiet.importBatchId)).json()).toEqual({ deleted: 0 });
+    expect(await bankState()).toEqual(before);
+    expect((await client.bankImportBatch.findUniqueOrThrow({ where: { id: quiet.importBatchId } })).status).toBe("ROLLED_BACK");
+    expect((await upload()).status).toBe(200);
+    nextRealStatement();
+    fixture.statementText = fixture.statementText.replaceAll("10.2026", "11.2026").replace("31.11.2026", "30.11.2026");
+    expect((await upload()).status).toBe(200);
+  });
+
+  it("refuses quiet-period imports and rollbacks after the period is locked", async () => {
+    useStatement();
+    expect((await upload()).status).toBe(200);
+    quietRealStatement();
+    const period = await client.period.create({ data: { orgId: fixture.orgId, year: 2026, month: 10, status: "CLOSED" } });
+    expect((await upload()).status).toBe(422);
+    await client.period.update({ where: { id: period.id }, data: { status: "OPEN" } });
+    const quiet = await (await upload()).json();
+    await client.period.update({ where: { id: period.id }, data: { lockDate: new Date() } });
+    const before = await bankState();
+    expect((await rollback(quiet.importBatchId)).status).toBe(409);
+    expect(await bankState()).toEqual(before);
+  });
+
+  it.each(["overlap", "gap", "missing-history", "opening"])("rejects %s before committing another source or balance", async broken => {
+    useStatement();
+    const { importBatchId } = await (await upload()).json();
+    nextRealStatement();
+    if (broken === "overlap") fixture.statementText = fixture.statementText.replace("01.10.2026", "30.09.2026");
+    if (broken === "gap") fixture.statementText = fixture.statementText.replace("01.10.2026", "02.10.2026");
+    if (broken === "opening") fixture.statementText = fixture.statementText.replace("Остаток=100.10", "Остаток=100.11").replace("Остаток=100.20", "Остаток=100.21");
+    if (broken === "missing-history") await client.bankImportBatch.delete({ where: { id: importBatchId } });
+    const before = await bankState();
+    const response = await upload();
+    expect(response.status).toBe(422);
+    expect(await bankState()).toEqual(before);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(1);
+    expect(await client.period.count({ where: { orgId: fixture.orgId } })).toBe(1);
+    expect(await client.auditLog.count({ where: { orgId: fixture.orgId } })).toBe(1);
+  });
+
+  it("records the predecessor and restores it after rolling back the next real statement", async () => {
+    useStatement();
+    const first = await (await upload()).json();
+    const before = await bankState();
+    nextRealStatement();
+    const response = await upload();
+    expect(response.status).toBe(200);
+    const next = await response.json();
+    const archive = await client.bankImportBatch.findUniqueOrThrow({ where: { id: next.importBatchId } });
+    expect(archive.result).toMatchObject({ newValue: { sequenceVersion: 1, previousBatchId: first.importBatchId } });
+    expect((await rollback(next.importBatchId)).status).toBe(200);
+    expect(await bankState()).toEqual(before);
+    expect((await upload()).status).toBe(200);
+  });
+
+  it("serializes competing statements for the same next period", async () => {
+    useStatement();
+    expect((await upload()).status).toBe(200);
+    nextRealStatement();
+    const first = upload();
+    fixture.statementText = fixture.statementText.replace("Synthetic real parser", "Different payment");
+    const responses = await Promise.all([first, upload()]);
+    expect(responses.map(response => response.status).sort()).toEqual([200, 422]);
+    expect(await client.bankImportBatch.count({ where: { orgId: fixture.orgId } })).toBe(2);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(2);
+    expect((await bankState()).lastBalance.toFixed(2)).toBe("100.20");
+  });
+
+  it.each(["number", "payer"])("keeps similar payments distinct by %s and deduplicates exact repeats", async field => {
+    useStatement("0.10", "0.00", "0.10");
+    addDocumentNumber();
+    const start = fixture.statementText.indexOf("СекцияДокумент=");
+    const document = fixture.statementText.slice(start, fixture.statementText.indexOf("КонецФайла"));
+    const second = field === "number" ? document.replace("Номер=0001", "Номер=0002")
+      : document.replace("ПлательщикРасчСчет=00000000000000000002", "ПлательщикРасчСчет=00000000000000000003");
+    fixture.statementText = fixture.statementText.replace("КонецФайла", second + "КонецФайла").replace("КонечныйОстаток=0.10", "КонечныйОстаток=0.20");
+    expect(await (await upload()).json()).toMatchObject({ imported: 2, duplicates: 0 });
+    expect(await (await upload()).json()).toMatchObject({ imported: 0, duplicates: 2 });
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(2);
+    expect((await bankState()).lastBalance.toFixed(2)).toBe("0.20");
+  });
+
+  it.each(["amount", "description", "counterparty"])("rejects a changed %s for the same document reference", async field => {
+    useStatement();
+    addDocumentNumber();
+    expect((await upload()).status).toBe(200);
+    const before = await bankState();
+    if (field === "amount") fixture.statementText = fixture.statementText.replace("Сумма=0.10", "Сумма=0.20").replace("КонечныйОстаток=100.10", "КонечныйОстаток=100.20");
+    if (field === "description") fixture.statementText = fixture.statementText.replace("Synthetic real parser", "Changed purpose");
+    if (field === "counterparty") fixture.statementText = fixture.statementText.replace("КонецДокумента", "ПлательщикИНН=123456789\nКонецДокумента");
+    expect((await upload()).status).toBe(422);
+    expect(await bankState()).toEqual(before);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(1);
+    expect(await client.bankImportBatch.count({ where: { orgId: fixture.orgId } })).toBe(1);
+  });
+
+  it("refuses repeated document identity inside one file without partial writes", async () => {
+    useStatement();
+    addDocumentNumber();
+    const document = fixture.statementText.slice(fixture.statementText.indexOf("СекцияДокумент="), fixture.statementText.indexOf("КонецФайла"));
+    fixture.statementText = fixture.statementText.replace("КонецФайла", document + "КонецФайла").replace("КонечныйОстаток=100.10", "КонечныйОстаток=100.20");
+    expect((await upload()).status).toBe(422);
+    expect(await client.period.count({ where: { orgId: fixture.orgId } })).toBe(0);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(0);
+  });
+
+  it("does not silently upgrade an old operation to a numbered document", async () => {
+    useStatement();
+    expect((await upload()).status).toBe(200);
+    addDocumentNumber();
+    expect((await upload()).status).toBe(422);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(1);
+  });
+
+  it("requires the original archive when deduplicating a referenced document", async () => {
+    useStatement();
+    addDocumentNumber();
+    const { importBatchId } = await (await upload()).json();
+    await client.bankImportBatch.delete({ where: { id: importBatchId } });
+    expect((await upload()).status).toBe(422);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(1);
+  });
+
   it("imports and rolls back exact raw 1C bytes through the real parser", async () => {
     useStatement("9007199254740993.27", "0.00", "9007199254740993.27");
     const response = await upload();
@@ -200,8 +391,54 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     const source = await client.stagedTransaction.findFirstOrThrow({ where: { orgId: fixture.orgId } });
     expect(source.amount.toFixed(2)).toBe("9007199254740993.27");
     expect((await bankState()).lastBalance.toFixed(2)).toBe("9007199254740993.27");
+    const archive = await client.bankImportBatch.findUniqueOrThrow({ where: { id: importBatchId } });
+    expect(Buffer.from(archive.sourceData)).toEqual(Buffer.from(fixture.statementText));
+    expect(archive.rows).toEqual([expect.objectContaining({ amount: "9007199254740993.27" })]);
     expect((await rollback(importBatchId)).status).toBe(200);
     expect((await bankState()).lastBalance.toFixed(2)).toBe("0.00");
+    const after = await client.bankImportBatch.findUniqueOrThrow({ where: { id: importBatchId } });
+    expect(after).toMatchObject({ ...archive, status: "ROLLED_BACK", rolledBackBy: "synthetic-user", rolledBackAt: expect.any(Date), rollbackAuditId: expect.any(String) });
+  });
+
+  it.each(["import", "rollback"])("rolls back all SQL writes when the %s archive write fails", async operation => {
+    useStatement();
+    const batchId = operation === "rollback" ? (await (await upload()).json()).importBatchId : null;
+    const before = await bankState();
+    const rows = await client.stagedTransaction.findMany({ where: { orgId: fixture.orgId } });
+    const archives = await client.bankImportBatch.findMany({ where: { orgId: fixture.orgId } });
+    const audits = await client.auditLog.findMany({ where: { orgId: fixture.orgId } });
+    fixture.failArchive = true;
+    expect((await (batchId ? rollback(batchId) : upload())).status).toBe(500);
+    expect(await bankState()).toEqual(before);
+    expect(await client.stagedTransaction.findMany({ where: { orgId: fixture.orgId } })).toEqual(rows);
+    expect(await client.bankImportBatch.findMany({ where: { orgId: fixture.orgId } })).toEqual(archives);
+    expect(await client.auditLog.findMany({ where: { orgId: fixture.orgId } })).toEqual(audits);
+  });
+
+  it.each([false, true])("requires an archive for marked batches while preserving legacy v2: %s", async legacy => {
+    const { importBatchId } = await (await upload()).json();
+    await client.bankImportBatch.delete({ where: { id: importBatchId } });
+    if (legacy) {
+      const audit = await client.auditLog.findFirstOrThrow({ where: { orgId: fixture.orgId, action: "IMPORT_BANK" } });
+      const { bankBatchVersion, ...newValue } = audit.newValue as Record<string, any>;
+      expect(bankBatchVersion).toBe(1);
+      await client.auditLog.update({ where: { id: audit.id }, data: { newValue } });
+    }
+    expect((await rollback(importBatchId)).status).toBe(legacy ? 200 : 409);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(legacy ? 0 : 2);
+  });
+
+  it("rejects source rewriting and invalid hashes in SQL", async () => {
+    const { importBatchId } = await (await upload()).json();
+    const archive = await client.bankImportBatch.findUniqueOrThrow({ where: { id: importBatchId } });
+    await expect(client.bankImportBatch.update({ where: { id: importBatchId }, data: { sourceName: "changed" } })).rejects.toThrow(/cannot be rewritten/);
+    await expect(client.bankImportBatch.create({ data: {
+      ...archive, id: randomUUID(), sourceHash: "invalid",
+      rows: archive.rows as Prisma.InputJsonValue,
+      statement: archive.statement as Prisma.InputJsonValue,
+      result: archive.result as Prisma.InputJsonValue,
+    } })).rejects.toThrow(/source_check/);
+    expect(await client.bankImportBatch.findUniqueOrThrow({ where: { id: importBatchId } })).toEqual(archive);
   });
 
   it("returns exact string amounts in preview without creating a period", async () => {
@@ -296,8 +533,11 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
   });
 
   it("restores balances beyond Number precision and the previous sync timestamp", async () => {
-    const lastSyncedAt = new Date("2026-08-31T18:00:00Z");
-    await client.bankAccount.update({ where: { id: bankAccountId }, data: { lastBalance: "9007199254740993.27", lastSyncedAt } });
+    fixture.rows = [{ ...row(1, "initial"), amount: "9007199254740993.27" }];
+    expect((await upload()).status).toBe(200);
+    const { lastSyncedAt } = await bankState();
+    fixture.rows = [row(0.1, "first"), row(0.2, "second")];
+    nextMockPeriod();
     const { importBatchId } = await (await upload()).json();
     expect((await bankState()).lastBalance.toFixed(2)).toBe("9007199254740993.57");
     expect((await rollback(importBatchId)).status).toBe(200);
@@ -365,7 +605,8 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
   it("refuses rollback of an earlier import after a subsequent import", async () => {
     const first = await (await upload()).json();
     fixture.rows = [row(1, "later")];
-    await upload();
+    nextMockPeriod();
+    expect((await upload()).status).toBe(200);
     const before = await bankState();
     expect((await rollback(first.importBatchId)).status).toBe(409);
     expect(await bankState()).toEqual(before);
@@ -440,6 +681,7 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     const before = await bankState();
     const firstAudit = await client.auditLog.findFirstOrThrow({ where: { orgId: fixture.orgId, action: "IMPORT_BANK" } });
     fixture.rows = [row(1, "later-credit"), { ...row(1, "later-debit"), direction: "DEBIT" }];
+    nextMockPeriod();
     const later = await (await upload()).json();
     const laterAudit = await client.auditLog.findFirstOrThrow({ where: {
       orgId: fixture.orgId, newValue: { path: ["importBatchId"], equals: later.importBatchId },
@@ -459,6 +701,7 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     const previous = await bankState();
     await client.auditLog.updateMany({ where: { orgId: fixture.orgId }, data: { createdAt: new Date("2026-01-01T00:00:00Z") } });
     fixture.rows = [row(1, "later")];
+    nextMockPeriod();
     const latest = await (await upload()).json();
     expect((await rollback(latest.importBatchId)).status).toBe(200);
     expect(await bankState()).toEqual(previous);
@@ -591,7 +834,7 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     expect((await client.bankAccount.findUniqueOrThrow({ where: { id: bankAccountId } })).lastBalance.toString()).toBe("0");
   });
 
-  it("recognizes legacy hashes without losing an opposite-direction operation", async () => {
+  it("refuses a mixed legacy and new import without changing either direction", async () => {
     const credit = row(100, "legacy operation");
     const period = await client.period.create({ data: { orgId: fixture.orgId, year: 2026, month: 9 } });
     const legacyHash = createHash("sha256")
@@ -602,11 +845,11 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
     } });
     await client.bankAccount.update({ where: { id: bankAccountId }, data: { lastBalance: "100", lastSyncedAt: new Date() } });
     fixture.rows = [credit, { ...credit, direction: "DEBIT" }];
-    expect(await (await upload()).json()).toMatchObject({ imported: 1, duplicates: 1 });
-    expect(await (await upload()).json()).toMatchObject({ imported: 0, duplicates: 2 });
-    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(2);
+    fixture.openingBalance = 0;
+    expect((await upload()).status).toBe(422);
+    expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(1);
     expect(await client.stagedTransaction.findUnique({ where: { orgId_hash: { orgId: fixture.orgId, hash: legacyHash } } })).not.toBeNull();
-    expect((await client.bankAccount.findUniqueOrThrow({ where: { id: bankAccountId } })).lastBalance.toString()).toBe("0");
+    expect((await client.bankAccount.findUniqueOrThrow({ where: { id: bankAccountId } })).lastBalance.toString()).toBe("100");
   });
 
   it("recognizes a legacy numeric hash when the real parser returns fixed decimal strings", async () => {
@@ -651,7 +894,7 @@ describe.skipIf(!databaseUrl)("bank import on disposable PostgreSQL", () => {
 
   it("rolls back earlier rows when a later amount is invalid", async () => {
     fixture.rows.push(row(0.005, "invalid"));
-    expect((await upload()).status).toBe(500);
+    expect((await upload()).status).toBe(422);
     expect(await client.stagedTransaction.count({ where: { orgId: fixture.orgId } })).toBe(0);
   });
 

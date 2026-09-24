@@ -25,25 +25,34 @@ CREATE TABLE IF NOT EXISTS "BankImportBatch" (
   CONSTRAINT "BankImportBatch_orgId_fkey" FOREIGN KEY ("orgId")
     REFERENCES "Organization" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "BankImportBatch_bankAccountId_orgId_fkey" FOREIGN KEY ("bankAccountId", "orgId")
-    REFERENCES "BankAccount" ("id", "orgId") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "BankImportBatch_source_check" CHECK (
+    REFERENCES "BankAccount" ("id", "orgId") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+ALTER TABLE "BankImportBatch"
+  DROP CONSTRAINT IF EXISTS "BankImportBatch_source_check",
+  DROP CONSTRAINT IF EXISTS "BankImportBatch_protocol_check",
+  DROP CONSTRAINT IF EXISTS "BankImportBatch_status_check",
+  ADD CONSTRAINT "BankImportBatch_source_check" CHECK (
     octet_length("sourceData") BETWEEN 1 AND 5242880
     AND "sourceHash" = encode(sha256("sourceData"), 'hex')
     AND length("sourceName") BETWEEN 1 AND 255 AND length("parserVersion") > 0
     AND length("createdBy") > 0 AND length("bankCurrency") > 0
   ),
-  CONSTRAINT "BankImportBatch_protocol_check" CHECK (
-    jsonb_typeof("rows") = 'array' AND jsonb_array_length("rows") BETWEEN 1 AND 1000
+  ADD CONSTRAINT "BankImportBatch_protocol_check" CHECK (
+    jsonb_typeof("rows") = 'array' AND jsonb_array_length("rows") BETWEEN 0 AND 1000
+    AND (jsonb_array_length("rows") > 0 OR COALESCE(
+      "statement"->>'openingBalance' = "statement"->>'closingBalance'
+      AND "statement"->>'credits' = '0.00' AND "statement"->>'debits' = '0.00'
+      AND "statement"->>'rowCount' = '0', false))
     AND jsonb_typeof("statement") = 'object' AND jsonb_typeof("result") = 'object'
     AND "statement" ?& ARRAY['accountNumber', 'periodStart', 'periodEnd', 'openingBalance', 'closingBalance', 'credits', 'debits', 'rowCount']
     AND "result" ?& ARRAY['oldValue', 'newValue']
   ),
-  CONSTRAINT "BankImportBatch_status_check" CHECK (
+  ADD CONSTRAINT "BankImportBatch_status_check" CHECK (
     ("status" = 'IMPORTED' AND "rolledBackBy" IS NULL AND "rolledBackAt" IS NULL AND "rollbackAuditId" IS NULL)
     OR ("status" = 'ROLLED_BACK' AND "rolledBackBy" IS NOT NULL AND length("rolledBackBy") > 0
       AND "rolledBackAt" IS NOT NULL AND "rollbackAuditId" IS NOT NULL AND length("rollbackAuditId") > 0)
-  )
-);
+  );
 
 CREATE INDEX IF NOT EXISTS "BankImportBatch_orgId_bankAccountId_createdAt_idx"
   ON "BankImportBatch" ("orgId", "bankAccountId", "createdAt");

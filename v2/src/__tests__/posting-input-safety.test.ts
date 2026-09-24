@@ -51,6 +51,7 @@ describe("expression input safety (ACC-050)", () => {
 describe("posting input safety (ACC-004, ACC-050, ACC-054)", () => {
   const mockTx = {
     $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     document: { findUnique: vi.fn(), update: vi.fn() },
     period: { findUnique: vi.fn() },
     organization: { findUnique: vi.fn() },
@@ -84,6 +85,8 @@ describe("posting input safety (ACC-004, ACC-050, ACC-054)", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mockTx.$queryRaw.mockResolvedValue([]);
+    mockTx.$executeRaw.mockResolvedValue(1);
     mockTx.document.findUnique.mockResolvedValue(documentWith("100.25"));
     mockTx.period.findUnique.mockResolvedValue({ orgId: "org-safety", year: 2026, month: 9, status: "OPEN", lockDate: null });
     mockTx.organization.findUnique.mockResolvedValue({ isVatPayer: false });

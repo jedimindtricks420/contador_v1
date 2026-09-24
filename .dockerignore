@@ -4,3 +4,13 @@ node_modules
 *.md
 docs
 ai
+**/node_modules
+**/.next
+**/.env
+**/.env.*
+**/.git
+**/.claude
+**/backups
+**/*.dump
+**/coverage
+**/*.tsbuildinfo

@@ -23,6 +23,8 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState("");
+  const [currencyRequired, setCurrencyRequired] = useState(false);
+  const [currencyConfirmed, setCurrencyConfirmed] = useState(false);
   const [lastBatch, setLastBatch] = useState<LastBatch | null>(null);
   const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
@@ -52,6 +54,10 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
       fd.append("file", uploadFile);
       fd.append("bankAccountId", selectedBankAccountId);
       fd.append("parserType", parserType);
+      if (currencyConfirmed) {
+        const account = bankAccounts.find(account => account.id === selectedBankAccountId);
+        if (account) fd.append("confirmedCurrency", account.currency);
+      }
 
       const res = await fetch("/v2/api/import/bank", {
         method: "POST",
@@ -59,13 +65,18 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
       });
       const result = await res.json();
       if (res.ok) {
-        setUploadResult(`Импортировано: ${result.imported} транзакций, дубликатов: ${result.duplicates}`);
-        if (result.importBatchId && result.imported > 0) {
+        setUploadResult(result.emptyStatement
+          ? (result.alreadyImported ? "Выписка без операций уже загружена" : "Период без операций подтверждён выпиской")
+          : `Импортировано: ${result.imported} транзакций, дубликатов: ${result.duplicates}`);
+        if (result.importBatchId) {
           setLastBatch({ batchId: result.importBatchId, count: result.imported, fileName: uploadFile.name });
         }
         setUploadFile(null);
+        setCurrencyRequired(false);
+        setCurrencyConfirmed(false);
         onRefreshStats();
       } else {
+        setCurrencyRequired(result.code === "BANK_CURRENCY_CONFIRMATION_REQUIRED");
         setUploadResult(`Ошибка: ${result.error}`);
       }
     } catch (err: any) {
@@ -126,13 +137,18 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
       )}
 
       {/* Upload Panel */}
-      <div className="bg-gray-50/20 border border-gray-200 rounded p-5 space-y-4">
+      <fieldset disabled={uploading} className="bg-gray-50/20 border border-gray-200 rounded p-5 space-y-4 min-w-0">
         <div>
           <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Банковский счёт</label>
           <SearchableSelect
             options={bankAccounts.map((acc) => ({ value: acc.id, label: `${acc.name} (${acc.currency})` }))}
             value={selectedBankAccountId}
-            onChange={setSelectedBankAccountId}
+            onChange={(accountId) => {
+              setSelectedBankAccountId(accountId);
+              setCurrencyRequired(false);
+              setCurrencyConfirmed(false);
+              setUploadResult("");
+            }}
           />
           <p className="text-[10px] text-gray-400 mt-1">1CClientBankExchange (.txt), до 5 МиБ</p>
         </div>
@@ -146,6 +162,8 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
             onChange={(e) => {
               setUploadFile(e.target.files?.[0] || null);
               setUploadResult("");
+              setCurrencyRequired(false);
+              setCurrencyConfirmed(false);
             }}
             className="hidden"
           />
@@ -160,10 +178,17 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
           </label>
         </div>
 
+        {uploadFile && currencyRequired && (
+          <label className="flex items-start gap-2 text-xs text-gray-700">
+            <input type="checkbox" checked={currencyConfirmed} onChange={event => setCurrencyConfirmed(event.target.checked)} />
+            <span>Подтверждаю валюту выписки: {bankAccounts.find(account => account.id === selectedBankAccountId)?.currency}</span>
+          </label>
+        )}
+
         {uploadFile && (
           <button
             onClick={handleImport}
-            disabled={uploading}
+            disabled={uploading || (currencyRequired && !currencyConfirmed)}
             className="w-full bg-black hover:opacity-80 text-white text-xs font-bold py-2 rounded transition disabled:opacity-50"
           >
             {uploading ? "Импорт..." : "Загрузить и распознать выписку"}
@@ -179,7 +204,7 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
         {lastBatch && (
           <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded text-xs">
             <span className="text-green-800 font-semibold">
-              Загружено {lastBatch.count} транзакций из «{lastBatch.fileName}»
+              {lastBatch.count === 0 ? "Подтверждён период без операций" : `Загружено ${lastBatch.count} транзакций`} из «{lastBatch.fileName}»
             </span>
             <button
               onClick={() => setShowRollbackConfirm(true)}
@@ -190,7 +215,7 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
             </button>
           </div>
         )}
-      </div>
+      </fieldset>
 
       {/* Nav Buttons */}
       <div className="flex justify-between items-center pt-4 border-t border-gray-100">
@@ -222,7 +247,7 @@ export default function Step1Import({ onNext, stats, onRefreshStats }: Step1Impo
               </button>
             </div>
             <p className="text-xs text-gray-600">
-              Будут отменены <strong>{lastBatch.count} транзакций</strong> из «{lastBatch.fileName}».
+              Будет отменён импорт «{lastBatch.fileName}» ({lastBatch.count} транзакций).
               Остаток и время синхронизации восстановятся из снимка импорта, строки сохранятся в аудите.
               Закрытый период, обработанные операции или изменённое состояние счёта блокируют откат.
             </p>
